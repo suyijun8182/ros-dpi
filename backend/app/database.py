@@ -105,7 +105,8 @@ def _create_database_if_missing(err: Exception) -> bool:
         return False
     url = engine.url
     name = url.database
-    server = create_engine(url.set(database=None), pool_pre_ping=True)
+    # 注意：url.set(database=None) 在 SQLAlchemy 2.0 里表示"不修改"，必须用 _replace 真正去掉库名
+    server = create_engine(url._replace(database=None), pool_pre_ping=True)
     try:
         with server.connect() as conn:
             conn.exec_driver_sql(
