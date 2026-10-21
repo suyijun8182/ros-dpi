@@ -35,7 +35,16 @@ jobs:
           MYSQL_HOST: 127.0.0.1
           MYSQL_PORT: 3306
           MYSQL_ROOT_PASSWORD: rootpw
-        run: python -m pytest -q tests_mysql
+        # 失败时把报错摘要写进公开注释，便于不登录也能看到原因
+        run: |
+          set +e
+          python -m pytest -q -x tests_mysql -p no:cacheprovider 2>&1 | tee /tmp/mysql-test.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" != "0" ]; then
+            msg=$(grep -E "^E |Error|assert|FAILED" /tmp/mysql-test.log | tail -25 | sed -e 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=MySQL wizard test::${msg}"
+          fi
+          exit $rc
       - uses: actions/setup-node@v4
         with:
           node-version: '20'

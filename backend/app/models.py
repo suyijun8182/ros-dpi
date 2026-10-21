@@ -6,7 +6,8 @@ from app.database import Base
 
 def _traffic_cols():
     return [
-        Column("ts", BigInteger, primary_key=True),
+        # 复合主键里唯一的整数列，MySQL 上会被默认加 AUTO_INCREMENT，显式关掉
+        Column("ts", BigInteger, primary_key=True, autoincrement=False),
         Column("host", String(64), primary_key=True),
         Column("app", String(48), primary_key=True),
         Column("up", BigInteger, nullable=False, default=0),
@@ -36,7 +37,7 @@ class TrafficDay(Base):
 class HostDomainDay(Base):
     """每台终端每天访问的域名及字节数（主机详情 "最近访问域名"、未识别域名 Top）。"""
     __tablename__ = "host_domain_day"
-    ts = Column(BigInteger, primary_key=True)
+    ts = Column(BigInteger, primary_key=True, autoincrement=False)
     host = Column(String(64), primary_key=True)
     domain = Column(String(255), primary_key=True)
     app = Column(String(48), nullable=False)
