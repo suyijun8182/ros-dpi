@@ -107,27 +107,22 @@ jobs:
           cache-to: type=gha,mode=max
 
   # 把 DOCKERHUB.md 同步到 Docker Hub 的 Overview。独立 job：失败不影响镜像发布。
-  # DOCKERHUB_TOKEN 需要 Read, Write, Delete 权限，Read & Write 只能推镜像、改不了说明。
+  # 用社区维护的 action（跟进 Docker Hub 认证接口变化），出错时原因会写进任务注释。
   dockerhub-overview:
     needs: build-and-push
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-      DOCKERHUB_REPO: suyijun8182/ros-dpi
-      DOCKERHUB_SHORT: "RouterOS per-device traffic & app (DPI) statistics via IPFIX + DNS. RouterOS 终端流量与应用统计。"
+      HAS_TOKEN: ${{ secrets.DOCKERHUB_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v7
       - name: Sync Docker Hub overview (DOCKERHUB.md)
-        if: env.DOCKERHUB_TOKEN != ''
-        run: |
-          set -euo pipefail
-          JWT=$(curl -s -H "Content-Type: application/json" \
-            -d "$(jq -n --arg u "$DOCKERHUB_USERNAME" --arg p "$DOCKERHUB_TOKEN" '{username:$u,password:$p}')" \
-            https://hub.docker.com/v2/users/login/ | jq -r .token)
-          [ -n "$JWT" ] && [ "$JWT" != "null" ] || { echo "Docker Hub 登录失败：检查 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN"; exit 1; }
-          BODY=$(jq -n --arg full "$(cat DOCKERHUB.md)" --arg short "$DOCKERHUB_SHORT" '{full_description:$full, description:$short}')
-          CODE=$(curl -s -o /tmp/dh.json -w '%{http_code}' -X PATCH -H "Authorization: JWT $JWT" \
-            -H "Content-Type: application/json" -d "$BODY" "https://hub.docker.com/v2/repositories/$DOCKERHUB_REPO/")
-          [ "$CODE" = "200" ] && echo "Overview 已同步" || { echo "同步失败（HTTP $CODE）"; cat /tmp/dh.json; exit 1; }
+        if: env.HAS_TOKEN == 'true'
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: suyijun8182/ros-dpi
+          readme-filepath: ./DOCKERHUB.md
+          short-description: "RouterOS per-device traffic & app (DPI) stats via IPFIX + DNS. RouterOS 终端流量与应用统计"
