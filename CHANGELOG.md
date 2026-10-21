@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.1] - 2026-10-22
+
+debug1
+
+- README 与 Docker Hub 页面直接贴出完整的 `docker-compose.yml`；compose 改为自包含，不再需要 `.env` 文件。
+- 新增“首次使用”说明：首次打开网页只需设置管理员密码，MySQL 无需手动配置；补充使用已有 MySQL、修改密码、忘记管理员密码的方法。
+- 使用外部 MySQL 时，数据库不存在会自动创建（需要账号有建库权限）。
+- compose 默认镜像改为 Docker Hub（`suyijun8182/ros-dpi`），GHCR 同步发布。
+
 ## [0.1.0] - 2026-10-21
 
 首个版本。

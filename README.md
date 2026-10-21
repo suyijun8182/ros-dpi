@@ -41,17 +41,83 @@ RouterOS ◀─REST 只读（可选）── 主机名、IP↔MAC、WAN 口速�
 
 ### 部署
 
+**1. 新建目录，保存下面的内容为 `docker-compose.yml`**（也可以直接下载：`curl -O https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.yml`）
+
+```yaml
+# ROS-DPI：RouterOS 终端流量与应用统计
+# 用法：保存为 docker-compose.yml，改掉标了「必改」的三处，然后 docker compose up -d
+# 浏览器打开 http://<本机IP>:8080，首次打开设置管理员密码即可，数据库无需手动配置
+services:
+  ros-dpi:
+    image: suyijun8182/ros-dpi:latest        # 也可用 ghcr.io/suyijun8182/ros-dpi:latest
+    container_name: ros-dpi
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8080:8080/tcp"     # Web 界面
+      - "2055:2055/udp"     # IPFIX / NetFlow：RouterOS Traffic Flow 发到这里
+      - "37008:37008/udp"   # TZSP：RouterOS 镜像的 DNS 应答发到这里
+    environment:
+      TZ: Asia/Shanghai
+      # 「必改」密码与下方 MYSQL_PASSWORD 保持一致
+      DATABASE_URL: mysql+pymysql://rosdpi:rosdpi-change-me@mysql:3306/rosdpi?charset=utf8mb4
+      # 「必改」内网网段，逗号分隔（之后也可在 系统设置 → 网络 里改）
+      LAN_CIDRS: 192.168.88.0/24
+      # 管理员 admin 的初始密码；留空则首次打开网页时设置
+      ADMIN_PASSWORD: ""
+      # RouterOS 只读 API（可选：显示主机名、WAN 速率）
+      ROS_URL: ""                 # 例如 https://192.168.88.1
+      ROS_USER: ""
+      ROS_PASSWORD: ""
+      ROS_VERIFY_TLS: "false"
+    volumes:
+      - ./data:/app/data
+
+  mysql:
+    image: mysql:8.4
+    container_name: ros-dpi-mysql
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      MYSQL_DATABASE: rosdpi                    # 首次启动自动创建库和账号，表由 ROS-DPI 自动建立
+      MYSQL_USER: rosdpi
+      MYSQL_PASSWORD: rosdpi-change-me          # 「必改」与上方 DATABASE_URL 中的密码一致
+      MYSQL_ROOT_PASSWORD: root-change-me       # 「必改」
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--innodb-buffer-pool-size=256M"]
+    volumes:
+      - ./mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+```
+
+**2. 改三处「必改」**：两处数据库密码（`DATABASE_URL` 里的和 `MYSQL_PASSWORD` 要一致）、`LAN_CIDRS` 改成你的内网网段。
+
+**3. 启动**
+
 ```bash
-mkdir ros-dpi && cd ros-dpi
-curl -O https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/.env.example
-# 编辑 .env：修改 MYSQL_PASSWORD / MYSQL_ROOT_PASSWORD，填写 LAN_CIDRS
 docker compose up -d
 ```
 
-打开 `http://<主机IP>:8080`，第一次访问时设置管理员密码。
+镜像同时发布在 Docker Hub（`suyijun8182/ros-dpi`）和 GHCR（`ghcr.io/suyijun8182/ros-dpi`），支持 amd64 / arm64。群晖、飞牛、威联通等 NAS 可以在 Docker / Container Manager 里新建“项目”，把上面的内容粘贴进去即可。
 
-镜像：`ghcr.io/suyijun8182/ros-dpi`（amd64 / arm64）。已有 MySQL 时，删掉 compose 里的 `mysql` 服务，把 `DATABASE_URL` 指向你的数据库即可。
+### 首次使用
+
+1. 浏览器打开 `http://<主机IP>:8080`。
+2. 第一次打开会显示 **“首次使用：设置管理员”**，设置 admin 的密码后自动登录。如果在 compose 里填了 `ADMIN_PASSWORD`，就直接用 `admin` + 该密码登录。
+3. 到 **系统设置 → 接入向导** 复制 RouterOS 命令，在路由器终端执行（见下一节）。大约 1 分钟后概览页开始有数据。
+
+**需要手动配置 MySQL 吗？不需要。**
+
+- 用上面的 compose：MySQL 容器第一次启动时会按 `MYSQL_DATABASE / MYSQL_USER / MYSQL_PASSWORD` 自动建好库和账号；ROS-DPI 启动时会自动建表。不用导入 SQL，网页里也没有数据库设置步骤。
+- MySQL 第一次初始化需要 20～60 秒，ROS-DPI 会等它就绪再启动。期间打不开网页属于正常现象，可以用 `docker logs -f ros-dpi` 查看进度。
+- 用已有的 MySQL：删掉 compose 里的 `mysql` 服务和 `depends_on`，把 `DATABASE_URL` 改成你的数据库地址。库不存在时会自动创建（账号需要有建库权限），否则请先执行 `CREATE DATABASE rosdpi CHARACTER SET utf8mb4;`。
+- 改密码要趁早：MySQL 数据目录（`./mysql`）一旦初始化，再改 compose 里的密码不会生效。如果确实要改，需要先删掉 `./mysql` 目录重新初始化（会清空统计数据）。
+- 忘记管理员密码：执行 `docker exec ros-dpi-mysql mysql -urosdpi -p<数据库密码> rosdpi -e "DELETE FROM users"`，然后刷新网页重新设置。统计数据不受影响。
 
 ### RouterOS 配置
 
@@ -77,7 +143,7 @@ docker compose up -d
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `DATABASE_URL` | compose 中已设置 | `mysql+pymysql://user:pass@host:3306/rosdpi?charset=utf8mb4` |
+| `DATABASE_URL` | compose 中已写好 | `mysql+pymysql://user:pass@host:3306/rosdpi?charset=utf8mb4` |
 | `LAN_CIDRS` | 私网三段 + `fd00::/8` | 内网网段，逗号分隔，界面里也能改 |
 | `ADMIN_PASSWORD` | 空 | 首次启动创建 `admin` 用的密码；留空则在登录页设置 |
 | `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | 空 | RouterOS REST 地址与只读账号，如 `https://192.168.88.1` |
@@ -122,7 +188,9 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
 
 **Limitations.** Clients using DoH/DoT (or resolving DNS elsewhere) show up as generic HTTPS/QUIC.
 
-**Deploy.** Copy `docker-compose.yml` and `.env.example` (as `.env`), set the MySQL passwords and `LAN_CIDRS`, run `docker compose up -d`, then open `http://<host>:8080`. RouterOS commands are listed above and in **Settings → Setup guide** inside the app.
+**Deploy.** Save the `docker-compose.yml` shown above (or `curl -O https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.yml`), change the two database passwords (they must match) and `LAN_CIDRS`, then run `docker compose up -d`. Images: `suyijun8182/ros-dpi` on Docker Hub and `ghcr.io/suyijun8182/ros-dpi`, amd64/arm64.
+
+**First run.** Open `http://<host>:8080` and set the admin password (or log in as `admin` with `ADMIN_PASSWORD` if you set it). No database setup is needed: the MySQL container creates the database and user on first start, and ROS-DPI creates its tables automatically (and the database itself, when using an external MySQL account allowed to create databases). MySQL's first initialization takes 20–60 s; ROS-DPI waits for it. RouterOS commands are listed above and in **Settings → Setup guide**.
 
 ## License
 

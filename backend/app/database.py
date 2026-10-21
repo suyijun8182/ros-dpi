@@ -56,8 +56,25 @@ def upsert_add(session, table, rows: list[dict], keys: list[str], add_cols: list
     session.execute(stmt)
 
 
+def _create_database_if_missing(err: Exception) -> bool:
+    """MySQL 报 1049（库不存在）时，用同一账号连到服务器建库。成功返回 True。"""
+    if not is_mysql() or "1049" not in str(err):
+        return False
+    url = engine.url
+    name = url.database
+    server = create_engine(url.set(database=None), pool_pre_ping=True)
+    try:
+        with server.connect() as conn:
+            conn.exec_driver_sql(
+                f"CREATE DATABASE IF NOT EXISTS `{name}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+        print(f"[db] 已自动创建数据库 {name}")
+        return True
+    finally:
+        server.dispose()
+
+
 def init_db(retries: int = 20, delay: float = 3.0):
-    """建表。容器启动时 MySQL 往往还没就绪，这里重试。"""
+    """建库建表。容器启动时 MySQL 往往还没就绪，这里重试。"""
     from app import models  # noqa: F401  注册模型
 
     for i in range(1, retries + 1):
@@ -65,6 +82,11 @@ def init_db(retries: int = 20, delay: float = 3.0):
             Base.metadata.create_all(engine)
             return
         except Exception as e:  # noqa: BLE001
+            try:
+                if _create_database_if_missing(e):
+                    continue
+            except Exception as ce:  # noqa: BLE001
+                print(f"[db] 数据库不存在，且自动创建失败（账号可能没有建库权限）：{ce}")
             print(f"[db] 数据库未就绪（{i}/{retries}）：{type(e).__name__}: {str(e)[:120]}")
             if i == retries:
                 raise
