@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2] - 2026-10-22
+
+debug2
+
+- 默认部署方式改为连接用户已有的 MySQL：`docker-compose.yml` 只包含 ROS-DPI 一个服务。
+- README 新增“准备数据库”：建库、建账号、授权的 SQL，命令行与图形界面（phpMyAdmin、NAS 数据库管理等）的操作方法，远程连接与 `127.0.0.1` 的注意事项，以及常见连接错误的排查方法。
+- 自带 MySQL 的部署方式移到 `docker-compose.with-mysql.yml`，供还没有 MySQL 的用户使用。
+
 ## [0.1.1] - 2026-10-22
 
 debug1
