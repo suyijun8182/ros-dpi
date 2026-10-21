@@ -31,30 +31,38 @@ class RosPoller:
         return httpx.Client(base_url=s.ros_url.rstrip("/") + "/rest", auth=(s.ros_user, s.ros_password),
                             verify=s.ros_verify_tls, timeout=10.0)
 
+    @staticmethod
+    def _get(c: httpx.Client, path: str):
+        # 注意：httpx 的 raise_for_status() 成功时返回响应对象本身，不能写成 `raise_for_status() or r.json()`
+        r = c.get(path)
+        r.raise_for_status()
+        return r.json()
+
     def poll(self):
         if not self.enabled:
             return
         try:
             with self._client() as c:
-                get = lambda p: (r := c.get(p)).raise_for_status() or r.json()  # noqa: E731
-                ident = get("/system/identity")
-                self.identity = ident.get("name", "") if isinstance(ident, dict) else ""
-                self.resource = get("/system/resource")
-                ifaces = get("/interface")
-                arp = get("/ip/arp")
-                leases = get("/ip/dhcp-server/lease")
-                addrs = get("/ip/address")
-                routes = get("/ip/route?dst-address=0.0.0.0/0")
+                ident = self._get(c, "/system/identity")
+                resource = self._get(c, "/system/resource")
+                ifaces = self._get(c, "/interface")
+                arp = self._get(c, "/ip/arp")
+                leases = self._get(c, "/ip/dhcp-server/lease")
+                addrs = self._get(c, "/ip/address")
+                routes = self._get(c, "/ip/route?dst-address=0.0.0.0/0")
                 try:
-                    nb6 = get("/ipv6/neighbor")
-                    addrs6 = get("/ipv6/address")
+                    nb6 = self._get(c, "/ipv6/neighbor")
+                    addrs6 = self._get(c, "/ipv6/address")
                 except httpx.HTTPError:
                     nb6, addrs6 = [], []  # IPv6 包未启用
             self._apply(ifaces, arp, leases, addrs, routes, nb6, addrs6)
+            # 全部成功后再更新展示用的状态，失败时保留上一次的结果
+            self.identity = ident.get("name", "") if isinstance(ident, dict) else ""
+            self.resource = resource if isinstance(resource, dict) else {}
             self.ok, self.error = True, ""
         except Exception as e:  # noqa: BLE001
-            self.ok, self.error = False, f"{type(e).__name__}: {str(e)[:200]}"
-            print(f"[ros] 轮询失败：{self.error}")
+            self.ok, self.error = False, _explain(e)
+            print(f"[ros] 轮询失败：{self.error}", flush=True)
         self.last_poll = int(time.time())
 
     def _apply(self, ifaces, arp, leases, addrs, routes, nb6, addrs6):
@@ -112,7 +120,7 @@ class RosPoller:
         self.engine.set_auto_nets(nets)
 
     def status(self) -> dict:
-        r = self.resource or {}
+        r = self.resource if isinstance(self.resource, dict) else {}
         return {
             "enabled": self.enabled, "ok": self.ok, "error": self.error, "last_poll": self.last_poll,
             "identity": self.identity, "version": r.get("version"), "board": r.get("board-name"),
@@ -120,6 +128,22 @@ class RosPoller:
             "mem_total": _int(r.get("total-memory")), "mem_free": _int(r.get("free-memory")),
             "wan_interface": self.wan_name,
         }
+
+
+def _explain(e: Exception) -> str:
+    """常见错误翻译成可操作的提示。"""
+    if isinstance(e, httpx.HTTPStatusError):
+        code = e.response.status_code
+        if code == 401:
+            return "RouterOS 拒绝登录（401）：检查 ROS_USER / ROS_PASSWORD，以及该用户的 address 是否允许本机 IP"
+        if code == 403:
+            return "RouterOS 权限不足（403）：用户组需要 read、rest-api 权限"
+        return f"RouterOS 返回 HTTP {code}：{e.request.url.path}"
+    if isinstance(e, httpx.ConnectError):
+        return f"连不上 RouterOS：检查 ROS_URL，并确认 /ip service 中 www-ssl（或 www）已启用（{e}）"
+    if isinstance(e, httpx.TimeoutException):
+        return "连接 RouterOS 超时：检查 ROS_URL 与防火墙"
+    return f"{type(e).__name__}: {str(e)[:200]}"
 
 
 def _int(v):

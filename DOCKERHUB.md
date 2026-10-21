@@ -8,6 +8,7 @@ Source & docs: https://github.com/suyijun8182/ros-dpi
 
 ## What's new
 
+- **0.1.3**: fix the 500 error on the overview page when the RouterOS API (`ROS_URL`) is configured; clearer RouterOS connection errors.
 - **0.1.2**: first-run setup wizard: enter your MySQL connection in the browser, like EasySub. The compose file no longer needs database settings. A README guide covers creating the database.
 - **0.1.1**: full `docker-compose.yml` on this page (no `.env` needed), first-run notes, database auto-created on external MySQL.
 - **0.1.0**: first release. Overview, hosts, applications, flow Sankey, custom rules, setup guide. zh/en, light/dark.

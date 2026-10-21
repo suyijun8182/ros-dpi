@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.3] - 2026-10-22
+
+- 修复：配置 RouterOS API（`ROS_URL`）后，概览页报“服务器内部错误：AttributeError: 'Response' object has no attribute 'get'”，页面打不开。原因是读取 RouterOS 返回数据时把 HTTP 响应对象当成了 JSON。
+- RouterOS 连接失败时给出具体提示：401 账号或密码错误、403 权限不足、连不上、超时。轮询失败时保留上一次成功的路由器信息。
+- 新增模拟 RouterOS REST 接口的测试。
+
 ## [0.1.2] - 2026-10-22
 
 debug2
