@@ -54,6 +54,7 @@
           <div class="err" v-if="saveErr">{{ saveErr }}</div>
           <div><button class="btn primary" @click="save">{{ saved ? t('common.saved') : t('common.save') }}</button></div>
           <div class="faint small">{{ t('settings.retention') }}：{{ t('settings.retentionText', s.retention) }}</div>
+          <div class="faint small" v-if="s.database">{{ t('settings.dbInfo', { db: `${s.database.user}@${s.database.host || ''}${s.database.port ? ':' + s.database.port : ''}/${s.database.database}` }) }}（{{ s.database.source === 'env' ? t('settings.dbFromEnv') : t('settings.dbFromWizard') }}）</div>
         </div>
       </div>
 

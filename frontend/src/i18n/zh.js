@@ -9,6 +9,15 @@ export default {
     name: '名称', category: '分类', share: '占比', never: '从未', confirmDelete: '确定删除？', unknown: '未知',
     theme: '切换深浅色', lang: 'English', allApps: '全部应用', allHosts: '全部终端',
   },
+  setup: {
+    title: '连接 MySQL 数据库', intro: '统计数据保存在你的 MySQL 中。请填写为 ROS-DPI 准备的数据库和账号。',
+    step1: '连接数据库', step2: '设置管理员', host: 'MySQL 地址', port: '端口', user: '账号', password: '密码',
+    database: '数据库名', hostHint: 'MySQL 和本程序在同一台机器时，请填这台机器的局域网 IP，不要填 127.0.0.1。表会自动创建。',
+    test: '测试连接', testing: '正在测试…', save: '保存并继续', saving: '正在初始化…',
+    sqlTitle: '还没建库？查看建库 SQL', sqlHint: '用 root 等管理员账号在 MySQL 中执行（把 your-password 换成自己的密码）：',
+    waitTitle: '正在连接数据库…', waitText: '已保存过数据库配置，但暂时连不上 MySQL。MySQL 刚启动时需要一点时间，本页每 5 秒自动重试。',
+    retry: '立即重试',
+  },
   login: {
     title: '登录', setupTitle: '首次使用：设置管理员', username: '用户名', password: '密码',
     password2: '确认密码', submit: '登录', setup: '创建管理员', mismatch: '两次输入的密码不一致',
@@ -53,6 +62,6 @@ export default {
     guideNote: '流量统计依赖 Traffic Flow；应用识别依赖 DNS 嗅探。终端使用 DoH/DoT 加密 DNS 时识别率会下降。',
     copy: '复制', copied: '已复制', password: '修改密码', oldPw: '原密码', newPw: '新密码', retention: '数据保留',
     retentionText: '分钟明细 {minute} 天，小时 {hour} 天，每日 {day} 天，域名 {domain} 天（通过环境变量修改）',
-    version: '版本', wanAuto: '自动识别', rosHint: '未配置。设置环境变量 ROS_URL、ROS_USER、ROS_PASSWORD 后，可显示主机名和 WAN 口速率。',
+    version: '版本', dbInfo: '数据库：{db}', dbFromEnv: '来自环境变量 DATABASE_URL', dbFromWizard: '来自安装向导（data/db_config.json）', wanAuto: '自动识别', rosHint: '未配置。设置环境变量 ROS_URL、ROS_USER、ROS_PASSWORD 后，可显示主机名和 WAN 口速率。',
   },
 }

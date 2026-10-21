@@ -6,8 +6,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
+from app import database
 from app.config import get_settings
-from app.database import SessionLocal
 from app.models import Setting, User
 
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -23,7 +23,7 @@ def secret_key() -> str:
     if get_settings().secret_key:
         _secret = get_settings().secret_key
         return _secret
-    with SessionLocal() as db:
+    with database.session() as db:
         row = db.get(Setting, "secret_key")
         if row is None:
             row = Setting(key="secret_key", value=secrets.token_urlsafe(48))
@@ -36,7 +36,7 @@ def secret_key() -> str:
 def ensure_admin():
     """设置了 ADMIN_PASSWORD 且还没有账号时，创建 admin。"""
     pw = get_settings().admin_password
-    with SessionLocal() as db:
+    with database.session() as db:
         if pw and db.query(User).count() == 0:
             db.add(User(username="admin", password_hash=pwd.hash(pw)))
             db.commit()

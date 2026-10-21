@@ -10,6 +10,15 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: rootpw
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -prootpw"
+          --health-interval=5s --health-timeout=5s --health-retries=30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
@@ -19,7 +28,14 @@ jobs:
         working-directory: backend
         run: |
           pip install -r requirements.txt pytest
-          python -m pytest -q
+          python -m pytest -q tests
+      - name: Setup wizard on real MySQL
+        working-directory: backend
+        env:
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PORT: 3306
+          MYSQL_ROOT_PASSWORD: rootpw
+        run: python -m pytest -q tests_mysql
       - uses: actions/setup-node@v4
         with:
           node-version: '20'

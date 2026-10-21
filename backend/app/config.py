@@ -12,8 +12,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # mysql+pymysql://user:pass@host:3306/rosdpi?charset=utf8mb4；开发/测试可用 sqlite:///./dev.db
-    database_url: str = "sqlite:///./data/rosdpi.db"
+    # 留空（默认）：首次打开网页时在安装向导里填写 MySQL 信息，保存到 data/db_config.json
+    # 设置后跳过向导：mysql+pymysql://user:pass@host:3306/rosdpi?charset=utf8mb4；开发/测试可用 sqlite:///./dev.db
+    database_url: str = ""
 
     http_port: int = 8080
     ipfix_port: int = 2055

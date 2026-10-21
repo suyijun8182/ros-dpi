@@ -50,12 +50,12 @@ def test_api_flow():
 
 def test_flow_graph():
     from app import stats, timeutil
-    from app.database import SessionLocal
+    from app import database
     with engine.lock:
         engine.add_flow(dict(src="192.168.88.60", dst="91.108.4.1", sport=1, dport=443, proto=6, bytes=300,
                              src_mac="AA:00:00:00:00:60"), time.time())
     engine.flush()
-    with SessionLocal() as db:
+    with database.session() as db:
         g = stats.flow_graph(db, *timeutil.range_bounds("today"), max_hosts=1, max_apps=1)
     ids = {n["id"] for n in g["nodes"]}
     assert all(l["source"] in ids and l["target"] in ids for l in g["links"])

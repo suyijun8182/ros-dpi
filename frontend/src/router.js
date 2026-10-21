@@ -1,7 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { auth } from './api.js'
+import { auth, checkSetup, setupState } from './api.js'
 
 const routes = [
+  { path: '/setup', name: 'setup', component: () => import('./views/Setup.vue'), meta: { public: true } },
   { path: '/login', name: 'login', component: () => import('./views/Login.vue'), meta: { public: true } },
   { path: '/', name: 'overview', component: () => import('./views/Overview.vue') },
   { path: '/hosts', name: 'hosts', component: () => import('./views/Hosts.vue') },
@@ -16,7 +17,12 @@ const routes = [
 
 const router = createRouter({ history: createWebHistory(), routes })
 
-router.beforeEach(to => {
+router.beforeEach(async to => {
+  if (!setupState.checked) {
+    try { await checkSetup() } catch (e) { /* 后端不可达时照常进入页面，由页面显示错误 */ }
+  }
+  if (!setupState.configured && to.name !== 'setup') return { name: 'setup' }
+  if (setupState.configured && to.name === 'setup') return { name: 'login' }
   if (!to.meta.public && !auth.token) return { name: 'login', query: { next: to.fullPath } }
 })
 

@@ -1,7 +1,7 @@
 # ROS-DPI + 自带 MySQL（适合还没有 MySQL 的用户）
 # 已有 MySQL 请改用 docker-compose.yml。
 # 用法：保存为 docker-compose.yml，改掉标了「必改」的三处，然后 docker compose up -d
-# MySQL 容器首次启动会自动建好 rosdpi 库和账号，无需再执行建库 SQL
+# MySQL 容器首次启动会自动建好 rosdpi 库和账号；这里已写好 DATABASE_URL，网页上不会出现数据库设置，只需设置管理员密码
 services:
   ros-dpi:
     image: suyijun8182/ros-dpi:latest        # 也可用 ghcr.io/suyijun8182/ros-dpi:latest

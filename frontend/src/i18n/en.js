@@ -9,6 +9,15 @@ export default {
     name: 'Name', category: 'Category', share: 'Share', never: 'Never', confirmDelete: 'Delete this?', unknown: 'Unknown',
     theme: 'Toggle light/dark', lang: '中文', allApps: 'All applications', allHosts: 'All hosts',
   },
+  setup: {
+    title: 'Connect to MySQL', intro: 'Statistics are stored in your MySQL. Enter the database and account you prepared for ROS-DPI.',
+    step1: 'Connect database', step2: 'Create admin', host: 'MySQL host', port: 'Port', user: 'User', password: 'Password',
+    database: 'Database', hostHint: 'If MySQL runs on this same machine, use its LAN IP, not 127.0.0.1. Tables are created automatically.',
+    test: 'Test connection', testing: 'Testing…', save: 'Save and continue', saving: 'Initializing…',
+    sqlTitle: 'No database yet? Show the SQL', sqlHint: 'Run this in MySQL as root or another admin (replace your-password):',
+    waitTitle: 'Connecting to the database…', waitText: 'A database configuration is saved, but MySQL is not reachable yet. MySQL may still be starting; this page retries every 5 seconds.',
+    retry: 'Retry now',
+  },
   login: {
     title: 'Sign in', setupTitle: 'First run: create admin', username: 'Username', password: 'Password',
     password2: 'Confirm password', submit: 'Sign in', setup: 'Create admin', mismatch: 'Passwords do not match',
@@ -53,6 +62,6 @@ export default {
     guideNote: 'Byte counts come from Traffic Flow; app identification relies on DNS sniffing. Clients using DoH/DoT reduce accuracy.',
     copy: 'Copy', copied: 'Copied', password: 'Change password', oldPw: 'Current password', newPw: 'New password', retention: 'Retention',
     retentionText: 'Minute detail {minute} d, hourly {hour} d, daily {day} d, domains {domain} d (set via environment variables)',
-    version: 'Version', wanAuto: 'Detect automatically', rosHint: 'Not configured. Set ROS_URL, ROS_USER and ROS_PASSWORD to show hostnames and WAN rate.',
+    version: 'Version', dbInfo: 'Database: {db}', dbFromEnv: 'from DATABASE_URL', dbFromWizard: 'from setup wizard (data/db_config.json)', wanAuto: 'Detect automatically', rosHint: 'Not configured. Set ROS_URL, ROS_USER and ROS_PASSWORD to show hostnames and WAN rate.',
   },
 }

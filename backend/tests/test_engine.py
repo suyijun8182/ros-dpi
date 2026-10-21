@@ -7,7 +7,7 @@ from packets import ipfix, tzsp_dns
 
 from app import stats, timeutil
 from app.classify import Classifier
-from app.database import SessionLocal
+from app import database
 from app.engine import Engine
 
 Z = ZoneInfo("Asia/Shanghai")
@@ -70,7 +70,7 @@ def test_flush_and_ranges():
     e.flush(now)
     e.add_flow(dict(src="6.6.6.6", dst="192.168.88.11", sport=443, dport=1, proto=6, bytes=4000), now)
     e.flush(now)  # 同一分钟再写一次，应累加
-    with SessionLocal() as db:
+    with database.session() as db:
         t = stats.total(db, *timeutil.range_bounds("today"), host="AA:00:00:00:00:11")
         assert t == {"up": 1050, "down": 4000, "total": 5050, "flows": 3}
         apps = {a["id"]: a for a in stats.top_apps(db, *timeutil.range_bounds("month"), host="AA:00:00:00:00:11")}

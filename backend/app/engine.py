@@ -11,7 +11,8 @@ from app.classify import GENERIC_APPS, Classifier
 from app.collector.ipfix import FlowDecoder
 from app.collector.tzsp import parse_tzsp_dns
 from app.config import get_settings
-from app.database import SessionLocal, upsert_add
+from app import database
+from app.database import upsert_add
 from app.dnsmap import DnsMap
 from app.models import (CustomRule, DnsCache, Host, HostDomainDay, Setting, TrafficDay, TrafficHour,
                         TrafficMinute)
@@ -69,7 +70,7 @@ class Engine:
             self._lan_cache.clear()
 
     def reload_rules(self):
-        with SessionLocal() as db:
+        with database.session() as db:
             rules = db.scalars(select(CustomRule)).all()
         self.classifier.load_custom(rules)
 
@@ -166,6 +167,8 @@ class Engine:
 
     # ---------- 落库 ----------
     def flush(self, now: float | None = None):
+        if not database.is_configured():
+            return  # 安装向导完成前先留在内存里，配置好后的第一次落库一起写入
         now = now or time.time()
         with self.lock:
             buf, self._buf = self._buf, defaultdict(lambda: [0, 0, 0])
@@ -188,7 +191,7 @@ class Engine:
         rows = [{"host": host, "app": app, "up": up, "down": down, "flows": f}
                 for (host, app), (up, down, f) in buf.items()]
         dirty_dns = self.dns.take_dirty()
-        with SessionLocal() as db:
+        with database.session() as db:
             for table, ts in ((TrafficMinute.__table__, m), (TrafficHour.__table__, h), (TrafficDay.__table__, d)):
                 for chunk in _chunks([{**r, "ts": ts} for r in rows], 500):
                     upsert_add(db, table, chunk, ["ts", "host", "app"], ["up", "down", "flows"])
@@ -227,7 +230,7 @@ class Engine:
     def load_state(self):
         """启动时恢复 DNS 映射、自定义规则和界面设置。"""
         now = int(time.time())
-        with SessionLocal() as db:
+        with database.session() as db:
             rows = db.execute(select(DnsCache.ip, DnsCache.name, DnsCache.cname, DnsCache.expires)
                               .where(DnsCache.expires > now)).all()
             lan = db.get(Setting, "lan_cidrs")
@@ -237,9 +240,11 @@ class Engine:
         self.reload_rules()
 
     def cleanup(self):
+        if not database.is_configured():
+            return
         s = get_settings()
         now = int(time.time())
-        with SessionLocal() as db:
+        with database.session() as db:
             db.execute(delete(TrafficMinute).where(TrafficMinute.ts < now - s.retention_minute_days * 86400))
             db.execute(delete(TrafficHour).where(TrafficHour.ts < now - s.retention_hour_days * 86400))
             db.execute(delete(TrafficDay).where(TrafficDay.ts < now - s.retention_day_days * 86400))

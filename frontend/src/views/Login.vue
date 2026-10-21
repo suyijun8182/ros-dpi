@@ -8,6 +8,10 @@
           <div class="muted b2">{{ t('app.subtitle') }}</div>
         </div>
       </div>
+      <ol class="steps" v-if="setup">
+        <li class="done">{{ t('setup.step1') }}</li>
+        <li class="on">{{ t('setup.step2') }}</li>
+      </ol>
       <h2>{{ setup ? t('login.setupTitle') : t('login.title') }}</h2>
       <label>{{ t('login.username') }}<input class="input" v-model="username" autocomplete="username" /></label>
       <label>{{ t('login.password') }}<input class="input" type="password" v-model="password" :autocomplete="setup ? 'new-password' : 'current-password'" /></label>
@@ -74,4 +78,9 @@ h2 { font: 600 20px/1.2 var(--cond); margin: 10px 0 0; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); }
 .full { width: 100%; justify-content: center; height: 38px; }
 .foot { display: flex; gap: 8px; justify-content: center; }
+.steps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; gap: 6px; counter-reset: s; }
+.steps li { flex: 1; font-size: 13px; color: var(--faint); padding-top: 8px; border-top: 3px solid var(--line); counter-increment: s; }
+.steps li::before { content: counter(s) ". "; }
+.steps li.done { color: var(--muted); border-top-color: var(--pair-green); }
+.steps li.on { color: var(--ink); border-top-color: var(--pair-blue); }
 </style>

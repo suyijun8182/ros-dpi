@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app import __version__, stats, timeutil
 from app.classify import GENERIC_APPS
 from app.config import get_settings
+from app import database
 from app.database import get_db
 from app.engine import engine, parse_cidrs
 from app.models import CustomRule, Setting
@@ -139,7 +140,17 @@ def get_settings_api(db: Session = Depends(get_db)):
         "ros_url": s.ros_url, "ros_user": s.ros_user,
         "ports": {"http": s.http_port, "ipfix": s.ipfix_port, "tzsp": s.tzsp_port},
         "tz": s.tz,
+        "database": _db_info(),
     }
+
+
+def _db_info():
+    eng = database.engine
+    if eng is None:
+        return None
+    u = eng.url
+    return {"source": "env" if get_settings().database_url else "wizard", "dialect": u.get_backend_name(),
+            "host": u.host, "port": u.port, "database": u.database, "user": u.username}
 
 
 @router.put("/settings")

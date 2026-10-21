@@ -41,7 +41,7 @@ RouterOS ◀─REST 只读（可选）── 主机名、IP↔MAC、WAN 口速�
 
 ### 部署
 
-ROS-DPI 把统计数据存在 **MySQL**（5.7 / 8.x 均可）。默认你已经有一个 MySQL（NAS 自带的、单独跑的容器、其他服务器上的都可以），只需要给 ROS-DPI 建一个库和账号。还没有 MySQL 的话，见下面的[自带 MySQL 的部署方式](#还没有-mysql)。
+ROS-DPI 把统计数据存在 **MySQL**（5.7 / 8.x 均可）。默认你已经有一个 MySQL，比如 NAS 自带的、单独跑的容器，或者其他服务器上的。只需要给 ROS-DPI 建一个库和账号，连接信息在**第一次打开网页时填写**，和 EasySub 的流程一样。还没有 MySQL 的话，见[自带 MySQL 的部署方式](#还没有-mysql)。
 
 #### 1. 准备数据库
 
@@ -54,20 +54,20 @@ GRANT ALL PRIVILEGES ON rosdpi.* TO 'rosdpi'@'%';
 FLUSH PRIVILEGES;
 ```
 
-- 命令行：`mysql -h <MySQL地址> -u root -p`，输入 root 密码后粘贴上面的语句；MySQL 跑在容器里时可以用 `docker exec -it <mysql容器名> mysql -u root -p`。
-- 图形界面（phpMyAdmin、群晖 / 飞牛的 MariaDB 管理页、Navicat、DBeaver 等）：打开 SQL 窗口粘贴执行，或者按界面新建数据库 `rosdpi`（字符集选 `utf8mb4`），再新建用户 `rosdpi`、主机填 `%`，授予该库的全部权限。
-- 表不用手动建，ROS-DPI 第一次启动时会自动创建。
-- 如果 MySQL 只允许本机连接，需要把 `bind-address` 改为 `0.0.0.0`（或者 ROS-DPI 主机的 IP），并确认 3306 端口能从运行 ROS-DPI 的主机访问。
+- 命令行：`mysql -h <MySQL地址> -u root -p`，输入 root 密码后粘贴上面的语句。MySQL 跑在容器里时，可以用 `docker exec -it <mysql容器名> mysql -u root -p`。
+- 图形界面（phpMyAdmin、群晖 / 飞牛的 MariaDB 管理页、Navicat、DBeaver 等）：打开 SQL 窗口粘贴执行；或者按界面新建数据库 `rosdpi`（字符集选 `utf8mb4`），再新建用户 `rosdpi`，主机填 `%`，授予该库的全部权限。
+- 表不用手动建，ROS-DPI 会自动创建。如果直接用 root 账号，连库都可以不建，安装向导会自动创建。
+- 如果 MySQL 只允许本机连接，需要把 `bind-address` 改为 `0.0.0.0`，并确认运行 ROS-DPI 的主机能访问 3306 端口。
 
-#### 2. 编写 `docker-compose.yml`
+#### 2. 编写 `docker-compose.yml` 并启动
 
-新建一个目录，保存下面的内容（也可以直接下载：`curl -O https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.yml`）：
+新建一个目录，保存下面的内容（也可以直接下载：`curl -O https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.yml`），把 `LAN_CIDRS` 改成你的内网网段：
 
 ```yaml
 # ROS-DPI：RouterOS 终端流量与应用统计
-# 前提：已有 MySQL 5.7+ / 8.x，并已按 README「准备数据库」建好 rosdpi 库和账号
-# 用法：保存为 docker-compose.yml，改掉标了「必改」的两处，然后 docker compose up -d
-# 浏览器打开 http://<本机IP>:8080，首次打开设置管理员密码
+# 前提：已有 MySQL 5.7+ / 8.x，并已按 README「准备数据库」建好库和账号
+# 用法：保存为 docker-compose.yml，把 LAN_CIDRS 改成你的内网网段，然后 docker compose up -d
+# 浏览器打开 http://<本机IP>:8080，按安装向导填写 MySQL 信息、设置管理员密码
 services:
   ros-dpi:
     image: suyijun8182/ros-dpi:latest        # 也可用 ghcr.io/suyijun8182/ros-dpi:latest
@@ -79,9 +79,7 @@ services:
       - "37008:37008/udp"   # TZSP：RouterOS 镜像的 DNS 应答发到这里
     environment:
       TZ: Asia/Shanghai
-      # 「必改」你的 MySQL：mysql+pymysql://账号:密码@MySQL地址:端口/库名?charset=utf8mb4
-      # MySQL 在本机时地址填本机局域网 IP，不要填 127.0.0.1（那是容器自己）
-      DATABASE_URL: mysql+pymysql://rosdpi:your-password@192.168.1.10:3306/rosdpi?charset=utf8mb4
+      # MySQL 连接信息在首次打开网页时填写（保存在 ./data/db_config.json）
       # 「必改」内网网段，逗号分隔（之后也可在 系统设置 → 网络 里改）
       LAN_CIDRS: 192.168.88.0/24
       # 管理员 admin 的初始密码；留空则首次打开网页时设置
@@ -92,26 +90,18 @@ services:
       ROS_PASSWORD: ""
       ROS_VERIFY_TLS: "false"
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data      # 保存数据库连接配置，务必保留这个卷
 ```
-
-需要改两处「必改」：
-
-- `DATABASE_URL`：填上一步创建的账号、密码和 MySQL 地址。MySQL 和 ROS-DPI 在同一台机器上时，地址填这台机器的局域网 IP，**不能填 `127.0.0.1` 或 `localhost`**（在容器里它指向容器自己）。密码里有 `@ : / ? #` 等特殊字符时，需要做 URL 编码，例如 `@` 写成 `%40`。
-- `LAN_CIDRS`：你的内网网段。
-
-#### 3. 启动
 
 ```bash
 docker compose up -d
-docker logs -f ros-dpi     # 看到 “ROS-DPI 0.x 已启动” 就说明数据库连接成功
 ```
 
 镜像同时发布在 Docker Hub（`suyijun8182/ros-dpi`）和 GHCR（`ghcr.io/suyijun8182/ros-dpi`），支持 amd64 / arm64。群晖、飞牛、威联通等 NAS 可以在 Docker / Container Manager 里新建“项目”，把 compose 内容粘贴进去即可。
 
 #### 还没有 MySQL？
 
-可以用 [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml)，它会同时启动一个 MySQL 8.4 容器，并且自动建好 `rosdpi` 库和账号，**不需要执行第 1 步的 SQL**。下载后改名为 `docker-compose.yml`，改掉其中三处「必改」（两处数据库密码要一致，以及 `LAN_CIDRS`），然后 `docker compose up -d`。MySQL 第一次初始化需要 20～60 秒，ROS-DPI 会等它就绪再启动。
+用 [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml)：它会同时启动一个 MySQL 8.4 容器，自动建好库和账号，并且已经把连接信息写进了配置，**不需要第 1 步，网页上也不会出现数据库设置**。下载后改名为 `docker-compose.yml`，改掉其中三处「必改」（两处数据库密码要一致，以及 `LAN_CIDRS`），然后 `docker compose up -d`。MySQL 第一次初始化需要 20～60 秒。
 
 ```bash
 curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.with-mysql.yml
@@ -119,17 +109,26 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 
 ### 首次使用
 
-1. 浏览器打开 `http://<主机IP>:8080`。
-2. 第一次打开会显示 **“首次使用：设置管理员”**，设置 admin 的密码后自动登录。如果在 compose 里填了 `ADMIN_PASSWORD`，就直接用 `admin` + 该密码登录。网页里没有数据库设置步骤，数据库只需要按上文准备好。
-3. 到 **系统设置 → 接入向导** 复制 RouterOS 命令，在路由器终端执行（见下一节）。大约 1 分钟后概览页开始有数据。
+浏览器打开 `http://<主机IP>:8080`，按两步完成设置：
+
+1. **连接数据库**：填写 MySQL 地址、端口、账号、密码、数据库名。可以先点“测试连接”，没问题再点“保存并继续”。ROS-DPI 会自动建表，并把连接信息保存在 `./data/db_config.json`，之后重启不用再填。
+   - MySQL 和 ROS-DPI 在同一台机器上时，地址填这台机器的局域网 IP，**不能填 `127.0.0.1` 或 `localhost`**（在容器里它指向容器自己）。
+   - 连接失败时，页面会直接说明原因（地址不通、账号或密码错误、没有权限等）。
+2. **设置管理员**：设置 admin 的密码后自动登录。如果在 compose 里填了 `ADMIN_PASSWORD`，这一步会跳过，直接用 `admin` 和该密码登录。
+
+![安装向导](docs/images/setup-wizard.png)
+
+完成后，到 **系统设置 → 接入向导** 复制 RouterOS 命令，在路由器终端执行（见下一节）。大约 1 分钟后，概览页开始有数据。
 
 **常见问题**
 
 | 现象 | 原因与处理 |
 |---|---|
-| 日志反复出现 “数据库未就绪” | MySQL 地址、端口不通，或者填了 `127.0.0.1`；在 ROS-DPI 主机上执行 `nc -zv <MySQL地址> 3306` 测试 |
-| `Access denied for user 'rosdpi'` | 账号或密码不对，或者账号的主机不是 `%`（只允许 localhost 登录） |
-| `Unknown database 'rosdpi'` | 没建库；如果账号有建库权限，ROS-DPI 会自动创建，否则请执行第 1 步的 SQL |
+| 提示“连不上 MySQL” | 地址或端口不通，或者填了 `127.0.0.1`；MySQL 需要允许远程连接（`bind-address`），防火墙要放行 3306 |
+| 提示“账号或密码错误” | 检查密码；账号的主机要是 `%`，只允许 `localhost` 的账号无法从容器连接 |
+| 提示“没有该数据库的权限” | 执行第 1 步的 `GRANT` 语句 |
+| 重启后网页显示“正在连接数据库” | MySQL 还没启动完成，页面会每 5 秒自动重试，不需要重新填写 |
+| 需要更换数据库 | 删除 `./data/db_config.json`，然后重启容器，会重新出现安装向导 |
 | 忘记管理员密码 | 在 MySQL 中执行 `DELETE FROM rosdpi.users;`，然后刷新网页重新设置，统计数据不受影响 |
 
 ### RouterOS 配置
@@ -156,7 +155,7 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `DATABASE_URL` | 必填 | `mysql+pymysql://user:pass@host:3306/rosdpi?charset=utf8mb4` |
+| `DATABASE_URL` | 空 | 留空则用网页安装向导；设置后跳过向导，格式 `mysql+pymysql://user:pass@host:3306/rosdpi?charset=utf8mb4` |
 | `LAN_CIDRS` | 私网三段 + `fd00::/8` | 内网网段，逗号分隔，界面里也能改 |
 | `ADMIN_PASSWORD` | 空 | 首次启动创建 `admin` 用的密码；留空则在登录页设置 |
 | `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | 空 | RouterOS REST 地址与只读账号，如 `https://192.168.88.1` |
@@ -210,11 +209,11 @@ GRANT ALL PRIVILEGES ON rosdpi.* TO 'rosdpi'@'%';
 FLUSH PRIVILEGES;
 ```
 
-Then save the `docker-compose.yml` shown above (or `curl -O https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.yml`), set `DATABASE_URL` (use the host's LAN IP, not `127.0.0.1`) and `LAN_CIDRS`, and run `docker compose up -d`. Tables are created automatically. Images: `suyijun8182/ros-dpi` on Docker Hub and `ghcr.io/suyijun8182/ros-dpi`, amd64/arm64.
+Save the `docker-compose.yml` shown above (or `curl -O https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.yml`), set `LAN_CIDRS`, and run `docker compose up -d`. Images: `suyijun8182/ros-dpi` on Docker Hub and `ghcr.io/suyijun8182/ros-dpi`, amd64/arm64.
 
-No MySQL yet? Use [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml): it starts MySQL 8.4 alongside and creates the database and user for you.
+No MySQL yet? Use [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml): it starts MySQL 8.4 alongside and is pre-configured, so the database step is skipped.
 
-**First run.** Open `http://<host>:8080` and set the admin password (or log in as `admin` with `ADMIN_PASSWORD`). There is no database step in the web UI. RouterOS commands are listed above and in **Settings → Setup guide**.
+**First run.** Open `http://<host>:8080`. A two-step setup wizard asks for (1) the MySQL host, port, user, password and database, with a connection test, and (2) the admin password. Tables are created automatically and the connection is saved to `./data/db_config.json`. If MySQL runs on the same machine, use its LAN IP, not `127.0.0.1`. To change databases later, delete that file and restart. Setting `DATABASE_URL` skips the wizard. RouterOS commands are listed above and in **Settings → Setup guide**.
 
 ## License
 
