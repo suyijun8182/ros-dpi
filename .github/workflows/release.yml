@@ -1,0 +1,34 @@
+name: GitHub Release
+
+# 推送 v* tag 时创建 GitHub Release，正文取自 CHANGELOG.md 对应版本段落。
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create release
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"; VER="${TAG#v}"
+          NOTES=$(awk -v v="## [$VER]" 'index($0,v)==1{f=1;next} /^## \[/{if(f)exit} f' CHANGELOG.md)
+          [ -n "$NOTES" ] || NOTES="详见提交记录。"
+          {
+            echo '### 升级'
+            echo
+            echo '```bash'
+            echo 'docker compose pull && docker compose up -d'
+            echo '```'
+            echo
+            echo "$NOTES"
+          } > notes.md
+          gh release view "$TAG" >/dev/null 2>&1 && { echo "已存在 $TAG"; exit 0; }
+          gh release create "$TAG" --title "$TAG" --notes-file notes.md --verify-tag

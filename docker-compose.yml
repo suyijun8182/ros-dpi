@@ -1,0 +1,39 @@
+# ROS-DPI：RouterOS 终端流量 / 应用统计
+# 使用：cp .env.example .env，修改密码后 docker compose up -d
+services:
+  ros-dpi:
+    image: ghcr.io/suyijun8182/ros-dpi:latest
+    # 本地构建时改用：build: .
+    container_name: ros-dpi
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: mysql+pymysql://rosdpi:${MYSQL_PASSWORD}@mysql:3306/rosdpi?charset=utf8mb4
+    ports:
+      - "8080:8080/tcp"
+      - "2055:2055/udp"     # IPFIX / NetFlow
+      - "37008:37008/udp"   # TZSP（DNS 镜像）
+    volumes:
+      - ./data:/app/data
+
+  mysql:
+    image: mysql:8.4
+    container_name: ros-dpi-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: rosdpi
+      MYSQL_USER: rosdpi
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      TZ: ${TZ:-Asia/Shanghai}
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--innodb-buffer-pool-size=256M"]
+    volumes:
+      - ./mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 20

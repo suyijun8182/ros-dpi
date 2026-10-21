@@ -1,0 +1,117 @@
+name: Test, build and publish
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Backend tests
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt pytest
+          python -m pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Frontend build (含 i18n 检查)
+        working-directory: frontend
+        run: |
+          npm ci || npm install
+          npm run build
+
+  build-and-push:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    # 推送到 GHCR 需要 packages:write
+    permissions:
+      contents: read
+      packages: write
+    env:
+      HAS_DOCKERHUB: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 没配置 DOCKERHUB_* secrets 时只推 GHCR
+      - name: Login to Docker Hub
+        if: env.HAS_DOCKERHUB == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Image names
+        id: images
+        run: |
+          {
+            echo 'list<<EOF'
+            echo "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/ros-dpi"
+            [ "$HAS_DOCKERHUB" = "true" ] && echo "suyijun8182/ros-dpi"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.images.outputs.list }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # 把 DOCKERHUB.md 同步到 Docker Hub 的 Overview。独立 job：失败不影响镜像发布。
+  # DOCKERHUB_TOKEN 需要 Read, Write, Delete 权限，Read & Write 只能推镜像、改不了说明。
+  dockerhub-overview:
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      DOCKERHUB_REPO: suyijun8182/ros-dpi
+      DOCKERHUB_SHORT: "RouterOS per-device traffic & app (DPI) statistics via IPFIX + DNS. RouterOS 终端流量与应用统计。"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync Docker Hub overview (DOCKERHUB.md)
+        if: env.DOCKERHUB_TOKEN != ''
+        run: |
+          set -euo pipefail
+          JWT=$(curl -s -H "Content-Type: application/json" \
+            -d "$(jq -n --arg u "$DOCKERHUB_USERNAME" --arg p "$DOCKERHUB_TOKEN" '{username:$u,password:$p}')" \
+            https://hub.docker.com/v2/users/login/ | jq -r .token)
+          [ -n "$JWT" ] && [ "$JWT" != "null" ] || { echo "Docker Hub 登录失败：检查 DOCKERHUB_USERNAME / DOCKERHUB_TOKEN"; exit 1; }
+          BODY=$(jq -n --arg full "$(cat DOCKERHUB.md)" --arg short "$DOCKERHUB_SHORT" '{full_description:$full, description:$short}')
+          CODE=$(curl -s -o /tmp/dh.json -w '%{http_code}' -X PATCH -H "Authorization: JWT $JWT" \
+            -H "Content-Type: application/json" -d "$BODY" "https://hub.docker.com/v2/repositories/$DOCKERHUB_REPO/")
+          [ "$CODE" = "200" ] && echo "Overview 已同步" || { echo "同步失败（HTTP $CODE）"; cat /tmp/dh.json; exit 1; }

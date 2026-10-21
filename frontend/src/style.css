@@ -1,0 +1,188 @@
+/*
+ * 设计语言：取自网线 T568B 线序。
+ * 橙对 = 上行，蓝对 = 下行，绿对 = 在线/正常，棕对 = 辅助。
+ * 数字与标题用 Barlow Semi Condensed（等宽数字），正文 Barlow，中文回落系统字体。
+ */
+:root {
+  --paper: #eef1ef;
+  --panel: #ffffff;
+  --sunk: #e4e9e7;
+  --ink: #1b262c;
+  --muted: #5e6b70;
+  --faint: #8c989b;
+  --line: #d5dcda;
+  --line-strong: #b9c3c1;
+
+  --pair-orange: #e07a2e;
+  --pair-blue: #2c6bc9;
+  --pair-green: #2f9a57;
+  --pair-brown: #8b5e3c;
+  --alert: #d1443b;
+
+  --up: var(--pair-orange);
+  --down: var(--pair-blue);
+  --ok: var(--pair-green);
+  --warn: #d49a1e;
+  --bad: var(--alert);
+  --accent: var(--pair-blue);
+  --focus: #2c6bc9;
+
+  --r-sm: 5px;
+  --r: 8px;
+
+  --sans: "Barlow", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --cond: "Barlow Semi Condensed", "Barlow", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #151a1c;
+    --panel: #1c2326;
+    --sunk: #12171a;
+    --ink: #e4eae8;
+    --muted: #93a1a3;
+    --faint: #67777a;
+    --line: #2a3437;
+    --line-strong: #3a4649;
+    --pair-orange: #f0954a;
+    --pair-blue: #5a92e8;
+    --pair-green: #4cc27a;
+    --pair-brown: #b88660;
+    --alert: #ef6158;
+    --focus: #7aaaf0;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #151a1c;
+  --panel: #1c2326;
+  --sunk: #12171a;
+  --ink: #e4eae8;
+  --muted: #93a1a3;
+  --faint: #67777a;
+  --line: #2a3437;
+  --line-strong: #3a4649;
+  --pair-orange: #f0954a;
+  --pair-blue: #5a92e8;
+  --pair-green: #4cc27a;
+  --pair-brown: #b88660;
+  --alert: #ef6158;
+  --focus: #7aaaf0;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+a { color: inherit; text-decoration: none; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 3px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---------- 文字 ---------- */
+.num { font-family: var(--cond); font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.addr { font-family: var(--cond); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+.up { color: var(--up); }
+.down { color: var(--down); }
+.small { font-size: 13px; }
+
+/* ---------- 版面 ---------- */
+.page { max-width: 1440px; margin: 0 auto; }
+.page-h { display: flex; align-items: flex-end; gap: 16px; margin: 6px 0 22px; flex-wrap: wrap; }
+.page-h h1 { font: 600 30px/1.1 var(--cond); margin: 0; letter-spacing: -.01em; }
+.page-h .sp { flex: 1; }
+.page-h .lead { color: var(--muted); font-size: 14px; padding-bottom: 3px; }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); min-width: 0; }
+.panel-h { display: flex; align-items: center; gap: 12px; padding: 14px 18px 0; font: 600 17px/1.3 var(--cond); letter-spacing: .01em; flex-wrap: wrap; }
+.panel-h > :not(h2) { font: 400 13.5px/1.4 var(--sans); letter-spacing: 0; }
+.panel-h h2 { font: 600 17px/1.3 var(--cond); margin: 0; letter-spacing: .01em; }
+.panel-h .sp { flex: 1; }
+.panel-b { padding: 12px 18px 18px; }
+
+.grid { display: grid; gap: 16px; }
+.g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.g-2-1 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.mt { margin-top: 16px; }
+@media (max-width: 1100px) { .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g-2-1, .g3 { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .g4, .g2 { grid-template-columns: 1fr; } }
+
+/* ---------- 控件 ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 34px; padding: 0 14px;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  background: var(--panel); cursor: pointer; white-space: nowrap; font-weight: 500;
+}
+.btn:hover { border-color: var(--ink); }
+.btn.primary { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.btn.primary:hover { background: var(--pair-blue); border-color: var(--pair-blue); color: #fff; }
+.btn.danger:hover { border-color: var(--bad); color: var(--bad); }
+.btn.ghost { border-color: transparent; background: none; color: var(--muted); }
+.btn.ghost:hover { color: var(--ink); border-color: var(--line); }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 13px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.input {
+  height: 36px; padding: 0 11px; width: 100%;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  background: var(--panel); outline: none;
+}
+textarea.input { height: auto; padding: 9px 11px; font-family: var(--cond); font-size: 15px; line-height: 1.6; }
+.input:focus { border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 18%, transparent); }
+
+/* 分段选择器：选中项下方是一段"线色"下划线 */
+.seg { display: inline-flex; gap: 2px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.seg button {
+  border: 0; background: none; cursor: pointer; color: var(--muted);
+  padding: 6px 10px 7px; font-weight: 500; position: relative;
+}
+.seg button:hover { color: var(--ink); }
+.seg button.on { color: var(--ink); }
+.seg button.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: var(--ink); }
+
+/* ---------- 表格 ---------- */
+table.tbl { width: 100%; border-collapse: collapse; }
+.tbl th, .tbl td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl th { color: var(--muted); font-weight: 500; font-size: 13px; position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.tbl th.sort { cursor: pointer; user-select: none; }
+.tbl th.sort:hover, .tbl th.sorted { color: var(--ink); }
+.tbl td.r, .tbl th.r { text-align: right; }
+.tbl tbody tr:last-child td { border-bottom: 0; }
+.tbl tbody tr:hover { background: color-mix(in srgb, var(--sunk) 60%, transparent); }
+.tbl tr.link { cursor: pointer; }
+.tbl-wrap { overflow-x: auto; }
+.tbl td .num, .tbl td.num { font-size: 15px; }
+
+/* ---------- 小部件 ---------- */
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); flex: none; }
+.dot.on { background: var(--ok); }
+.dot.warn { background: var(--warn); }
+.dot.bad { background: var(--bad); }
+
+/* 应用/分类标记：左侧一小段色条，像线缆上的色标 */
+.tag { display: inline-flex; align-items: center; gap: 7px; font-size: 13.5px; }
+.chip { width: 4px; height: 14px; border-radius: 2px; display: inline-block; flex: none; }
+
+.empty { padding: 36px 18px; text-align: center; color: var(--muted); }
+.err { color: var(--bad); font-size: 14px; }
+code, pre { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; font-size: 13px; }
+pre.code { background: var(--sunk); border-radius: var(--r-sm); padding: 14px 16px; overflow-x: auto; margin: 0; line-height: 1.7; }
+
+/* 上下行比例条：橙 / 蓝 两股 */
+.pair { display: flex; height: 4px; border-radius: 2px; overflow: hidden; background: var(--line); }
+.pair > i { display: block; height: 100%; }
+.pair > .d { background: var(--down); }
+.pair > .u { background: var(--up); }

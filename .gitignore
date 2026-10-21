@@ -1,0 +1,13 @@
+.env
+data/
+mysql/
+node_modules/
+frontend/dist/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.db
+*.db-wal
+*.db-shm
+项目说明.txt
