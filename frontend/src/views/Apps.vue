@@ -9,8 +9,9 @@
     <div v-if="error" class="err">{{ error }}</div>
     <template v-if="d">
       <div class="panel">
-        <div class="panel-h"><h2>{{ t('apps.byGroup') }}</h2><span class="faint small">{{ t('apps.byGroupHint') }}</span></div>
-        <div class="panel-b"><Composition :groups="d.groups" clickable :active="group" :active-cat="cat" @pick="pick" /></div>
+        <div class="panel-h"><h2>{{ t('apps.byGroup') }}</h2><span class="faint small">{{ t('apps.byGroupHint') }}</span><span class="sp" />
+          <button v-if="group" class="more" @click="pick({})">{{ t('apps.showAll') }}</button></div>
+        <div class="panel-b"><Composition :groups="d.groups" clickable drill :active="group" height="340px" @pick="pick" /></div>
       </div>
 
       <div class="panel mt">

@@ -11,7 +11,8 @@ const systemTheme = () => (media && media.matches ? 'dark' : 'light')
 export const ui = reactive({
   range: read('rosdpi.range', 'today'),
   theme: document.documentElement.dataset.theme || systemTheme(),
-  trendMode: read('rosdpi.trendMode', 'groups'),  // 趋势图：groups 按应用大类堆叠 | pair 上下行
+  trendMode: read('rosdpi.trendMode', 'pair'),    // 历史流量：pair 上下行合计 | groups 按应用大类
+  rateUnit: read('rosdpi.rateUnit', 'bit'),        // 速率单位：bit（bit/s）| byte（Byte/s）
   side: read('rosdpi.side', 'full'),               // 侧边栏：full 图标 + 文字 | mini 只有图标
 })
 
@@ -20,6 +21,7 @@ media && media.addEventListener && media.addEventListener('change', () => {
 })
 
 watch(() => ui.range, v => { try { localStorage.setItem('rosdpi.range', v) } catch (e) { /* ignore */ } })
+watch(() => ui.rateUnit, v => { try { localStorage.setItem('rosdpi.rateUnit', v) } catch (e) { /* ignore */ } })
 watch(() => ui.side, v => { try { localStorage.setItem('rosdpi.side', v) } catch (e) { /* ignore */ } })
 watch(() => ui.trendMode, v => { try { localStorage.setItem('rosdpi.trendMode', v) } catch (e) { /* ignore */ } })
 

@@ -45,6 +45,41 @@
       </div>
     </div>
 
+    <!-- 接入自检：读取 RouterOS 的 sniff-tzsp 规则（只读），检查目标端口 / 地址、是否停用、命中数 -->
+    <div class="panel mt" v-if="sys && sys.ros_check" id="check">
+      <div class="panel-h"><h2>{{ t('check.title') }}</h2><span class="faint small">{{ t('check.hint') }}</span></div>
+      <div class="panel-b">
+        <div v-if="!sys.ros_check.checked" class="muted small">{{ t('check.needRos') }}</div>
+        <template v-else>
+          <div class="tbl-wrap">
+            <table class="tbl ck">
+              <thead><tr><th>{{ t('check.rule') }}</th><th>{{ t('check.use') }}</th><th>{{ t('check.target') }}</th>
+                <th class="r">{{ t('check.packets') }}</th><th>{{ t('check.state') }}</th></tr></thead>
+              <tbody>
+                <tr v-for="r in sys.ros_check.rules" :key="r.family + r.id">
+                  <td><b>{{ r.comment || r.id }}</b> <span class="faint small">{{ r.family === 'ipv6' ? 'IPv6 ' : '' }}{{ r.chain }} · {{ r.protocol }}</span></td>
+                  <td>{{ t('check.kind.' + r.kind) }}</td>
+                  <td class="addr">{{ r.target }}:{{ r.target_port }}</td>
+                  <td class="r num">{{ r.packets.toLocaleString() }}</td>
+                  <td><span v-if="!r.problems.length" class="pill ok">{{ t('check.ok') }}</span>
+                    <span v-for="p in r.problems" :key="p" class="pill bad">{{ t('check.problem.' + p) }}</span></td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="!sys.ros_check.rules.length" class="empty">{{ t('check.none') }}</div>
+          </div>
+          <div v-if="fixes.length || sys.ros_check.issues.length" class="fixes">
+            <div class="sec">{{ t('check.fixTitle') }}<span class="sp" />
+              <button v-if="fixes.length" class="btn sm" @click="copyFix">{{ fixCopied ? t('settings.copied') : t('settings.copy') }}</button></div>
+            <ul class="iss">
+              <li v-for="c in sys.ros_check.issues.filter(c => c !== 'rule_problem')" :key="c">{{ t('check.issue.' + c) }}</li>
+            </ul>
+            <pre class="code" v-if="fixes.length">{{ fixes.join('\n') }}</pre>
+          </div>
+        </template>
+      </div>
+    </div>
+
     <div class="grid g2 mt" v-if="s">
       <div class="panel">
         <div class="panel-h">{{ t('settings.network') }}</div>
@@ -168,6 +203,40 @@ const guide = computed(() => {
 /user add name=rosdpi group=rosdpi password=<强密码> address=${ip}`
 })
 
+// 按自检结果生成修改命令：有注释时按注释定位，没有就用规则编号
+const fixes = computed(() => {
+  const c = sys.value?.ros_check
+  if (!c || !c.checked) return []
+  const out = []
+  for (const r of c.rules) {
+    if (!r.problems.length) continue
+    const base = r.family === 'ipv6' ? '/ipv6 firewall mangle' : '/ip firewall mangle'
+    const sel = r.comment ? `[find comment="${r.comment}"]` : r.id
+    if (r.problems.includes('disabled')) out.push(`${base} enable ${sel}`)
+    const sets = []
+    if (r.problems.includes('port')) sets.push(`sniff-target-port=${c.port}`)
+    if (r.problems.includes('target') && c.target) sets.push(`sniff-target=${c.target}`)
+    if (sets.length) out.push(`${base} set ${sel} ${sets.join(' ')}`)
+  }
+  const tgt = c.target || hostIp.value || '<HOST_IP>'
+  const tail = `action=sniff-tzsp sniff-target=${tgt} sniff-target-port=${c.port} comment=ROSDPI-SNI`
+  if (c.issues.includes('no_sni')) {
+    out.push(`/ip firewall mangle add chain=forward protocol=tcp dst-port=443 connection-bytes=0-4000 ${tail}`)
+    out.push(`/ip firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 ${tail}`)
+  } else if (c.issues.includes('no_quic')) {
+    out.push(`/ip firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 ${tail}`)
+  }
+  return [...new Set(out)]
+})
+const fixCopied = ref(false)
+async function copyFix() {
+  try {
+    await navigator.clipboard.writeText(fixes.value.join('\n'))
+    fixCopied.value = true
+    setTimeout(() => (fixCopied.value = false), 1500)
+  } catch (e) { /* 非 https 下剪贴板不可用 */ }
+}
+
 async function copy() {
   try {
     await navigator.clipboard.writeText(guide.value)
@@ -186,6 +255,9 @@ async function copy() {
 .kv > :last-child { color: var(--text); text-align: right; overflow: hidden; text-overflow: ellipsis; }
 .srv { display: flex; flex-direction: column; align-items: flex-end; }
 .what { margin: 6px 0 0; line-height: 1.5; }
+.ck .pill { margin-right: 4px; }
+.fixes { margin-top: 14px; display: grid; gap: 10px; }
+.iss { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13.5px; }
 .match { border-top: 1px solid var(--line); margin-top: 4px; }
 .match .st-h { gap: 10px; }
 .mbar { display: flex; gap: 2px; height: 10px; margin: 6px 0 8px; }

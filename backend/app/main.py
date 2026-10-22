@@ -60,6 +60,8 @@ async def lifespan(app: FastAPI):
     sched.add_job(_safe(engine.cleanup, "cleanup"), "cron", minute=17, max_instances=1)
     sched.add_job(_safe(_reconnect, "db-reconnect"), "interval", seconds=30, max_instances=1, coalesce=True)
     if poller.enabled:
+        sched.add_job(_safe(poller.sample, "ros-rate"), "interval", seconds=max(s.ros_rate_seconds, 2),
+                      max_instances=1, coalesce=True)
         sched.add_job(_safe(poller.poll, "ros-poll"), "interval", seconds=s.ros_poll_seconds,
                       max_instances=1, coalesce=True)
         asyncio.get_running_loop().run_in_executor(None, poller.poll)

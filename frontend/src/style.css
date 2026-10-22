@@ -24,8 +24,11 @@
   --pair-brown: #8b5e3c;
   --alert: #d1443b;
 
+  /* 图表线色（维盟）：上行钢蓝、下行青绿；表格里的箭头：上行橙、下行青绿 */
+  --line-up: #2b6583;
+  --line-down: #3fb3bd;
   --up: var(--pair-orange);
-  --down: var(--pair-blue);
+  --down: #1a9aa6;
   --ok: var(--pair-green);
   --warn: #d49a1e;
   --bad: var(--alert);
@@ -73,6 +76,9 @@
     --pair-brown: #b88660;
     --alert: #ef6158;
     --focus: #74b0d1;
+    --line-up: #74b0d1;
+    --line-down: #4fd0cf;
+    --down: #3fc4c8;
     --g-media: #3987e5;
     --g-game: #d95926;
     --g-social: #199e70;
@@ -106,6 +112,9 @@
   --pair-brown: #b88660;
   --alert: #ef6158;
   --focus: #74b0d1;
+  --line-up: #74b0d1;
+  --line-down: #4fd0cf;
+  --down: #3fc4c8;
   --g-media: #3987e5;
   --g-game: #d95926;
   --g-social: #199e70;

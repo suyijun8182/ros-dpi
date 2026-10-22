@@ -55,6 +55,10 @@ def compute(db) -> dict:
         if r["mem_total"]:
             used = 1 - (r["mem_free"] or 0) / r["mem_total"]
             items.append(_item("mem", 10, used < .9, used=round(used, 3)))
+        chk = poller.check()
+        bad = [x for x in chk["rules"] if x["problems"]]
+        items.append(_item("rules", 10, not bad, rules=len(chk["rules"]), bad=len(bad),
+                           port=chk.get("port"), wrong=sorted({x["target_port"] for x in bad if "port" in x["problems"]})))
         full = [p for p in poller.pools if p["size"] and p["used"] / p["size"] >= .75]
         worst = max(full, key=lambda p: p["used"] / p["size"]) if full else None
         items.append(_item("pool", 10 if worst and worst["used"] / worst["size"] >= .9 else 5, not worst,

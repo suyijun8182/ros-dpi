@@ -1,6 +1,7 @@
 """通过 RouterOS REST API（只读，仅 GET）获取终端名称、IP↔MAC、LAN 前缀、接口速率、WAN 线路、DHCP 地址池和系统状态。"""
 import ipaddress
 import time
+from collections import deque
 
 import httpx
 
@@ -26,6 +27,11 @@ class RosPoller:
         self._if_prev: dict[str, tuple[float, int, int]] = {}
         self.wans: list[dict] = []
         self.pools: list[dict] = []
+        # 实时流量：WAN 口计数器采样（ts, 上行 B/s, 下行 B/s），保留最近 1 小时
+        self.samples: deque = deque(maxlen=1440)
+        self.mangle: list[dict] = []        # 接入自检用：RouterOS 的 mangle 规则（只读）
+        self.ip_settings: dict = {}
+        self._sample_prev: dict[str, tuple[float, int, int]] = {}
 
     @property
     def enabled(self) -> bool:
@@ -72,9 +78,13 @@ class RosPoller:
                     nb6, addrs6 = [], []  # IPv6 包未启用
                 extra = {k: self._opt(c, path) for k, path in (
                     ("pools", "/ip/pool"), ("servers", "/ip/dhcp-server"), ("dhcpc", "/ip/dhcp-client"),
-                    ("pppoe", "/interface/pppoe-client"))}
+                    ("pppoe", "/interface/pppoe-client"), ("mangle", "/ip/firewall/mangle"),
+                    ("mangle6", "/ipv6/firewall/mangle"), ("ipset", "/ip/settings"))}
             self._apply(ifaces, arp, leases, addrs, routes, nb6, addrs6)
             self._apply_status(ifaces, addrs, leases, routes, extra)
+            self.mangle = [{**r, "_family": "ipv4"} for r in extra["mangle"] or []] + \
+                [{**r, "_family": "ipv6"} for r in extra["mangle6"] or []]
+            self.ip_settings = extra["ipset"] if isinstance(extra["ipset"], dict) else {}
             # 全部成功后再更新展示用的状态，失败时保留上一次的结果
             self.identity = ident.get("name", "") if isinstance(ident, dict) else ""
             self.resource = resource if isinstance(resource, dict) else {}
@@ -194,6 +204,79 @@ class RosPoller:
             "dynamic": le.get("dynamic") == "true", "expires_after": le.get("expires-after") or "",
             "last_seen": le.get("last-seen") or "",
         } for le in leases]
+
+    def sample(self):
+        """只读一次接口计数，算出所有 WAN 线路的合计速率（比 poll 轻得多，可以几秒一次）"""
+        names = [w["name"] for w in self.wans] or ([self.wan_name] if self.wan_name else [])
+        if not self.enabled or not names:
+            return
+        try:
+            with self._client() as c:
+                ifaces = self._get(c, "/interface?.proplist=name,rx-byte,tx-byte")
+        except Exception:  # noqa: BLE001  采样失败不影响主轮询，下次再试
+            return
+        now = time.time()
+        up = down = 0.0
+        got = False
+        for i in ifaces:
+            n = i.get("name")
+            if n not in names:
+                continue
+            rx, tx = int(i.get("rx-byte", 0) or 0), int(i.get("tx-byte", 0) or 0)
+            prev = self._sample_prev.get(n)
+            self._sample_prev[n] = (now, rx, tx)
+            if prev and now > prev[0]:
+                dt = now - prev[0]
+                up += max(tx - prev[2], 0) / dt
+                down += max(rx - prev[1], 0) / dt
+                got = True
+        if got:
+            self.samples.append((int(now), up, down))
+            self.wan_rate = (up, down)
+
+    def check(self) -> dict:
+        """接入自检：检查 RouterOS 上镜像到 ROS-DPI 的 sniff-tzsp 规则（目标端口、是否停用、有没有命中）。
+
+        返回 {checked, rules: [...], issues: [code...]}。没配 ROS API 时 checked=False。
+        """
+        if not self.enabled or not self.ok:
+            return {"checked": False, "rules": [], "issues": []}
+        sniff = [r for r in self.mangle if r.get("action") == "sniff-tzsp"]
+        kind_of = lambda r: "dns" if r.get("src-port") == "53" else "sni" if "443" in (r.get("dst-port") or "") else "other"
+        # 参照：ROS-DPI 已经收到 DNS 应答时，DNS 规则的目标地址和端口就是对的（端口映射可能不是 37008:37008）；
+        # 否则退回和本机监听端口比较
+        dns_ok = self.engine.stats.get("dns_answers", 0) > 0
+        ref = next(((r.get("sniff-target"), int(r.get("sniff-target-port") or 37008)) for r in sniff
+                    if kind_of(r) == "dns" and r.get("disabled") != "true"), None) if dns_ok else None
+        port = ref[1] if ref else get_settings().tzsp_port
+        rules, issues = [], []
+        for r in sniff:
+            kind = kind_of(r)
+            probs = []
+            if r.get("disabled") == "true":
+                probs.append("disabled")
+            tport = int(r.get("sniff-target-port") or 37008)
+            if tport != port:
+                probs.append("port")
+            if ref and r.get("sniff-target") and r.get("sniff-target") != ref[0] and r["_family"] == "ipv4":
+                probs.append("target")
+            rules.append({"id": r.get(".id"), "family": r["_family"], "chain": r.get("chain"), "kind": kind,
+                          "protocol": r.get("protocol") or "", "comment": r.get("comment") or "",
+                          "target": r.get("sniff-target") or "", "target_port": tport,
+                          "packets": int(r.get("packets") or 0), "disabled": r.get("disabled") == "true", "problems": probs})
+        # 规则存在但有问题（端口 / 地址 / 停用）时，按规则逐条给修改命令；只有完全没有某类规则时才建议新增
+        if any(x["problems"] for x in rules):
+            issues.append("rule_problem")
+        if not any(x["kind"] == "dns" for x in rules):
+            issues.append("no_dns")
+        if not any(x["kind"] == "sni" for x in rules):
+            issues.append("no_sni")
+        elif not any(x["kind"] == "sni" and x["protocol"] == "udp" for x in rules):
+            issues.append("no_quic")
+        if self.ip_settings.get("ipv4-fasttrack-active") == "true":
+            issues.append("fasttrack")
+        return {"checked": True, "port": port, "target": ref[0] if ref else None, "rules": rules, "issues": issues,
+                "fasttrack": self.ip_settings.get("ipv4-fasttrack-active") == "true"}
 
     def status(self) -> dict:
         r = self.resource if isinstance(self.resource, dict) else {}

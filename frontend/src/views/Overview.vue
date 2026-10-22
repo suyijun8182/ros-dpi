@@ -40,7 +40,7 @@
         <div class="panel card">
           <div class="panel-h"><h2>{{ t('overview.health') }}</h2><span class="sp" /><button class="more" @click="showHealth = true">{{ t('common.details') }} ›</button></div>
           <div class="gauge">
-            <Chart :option="gaugeOpt" height="150px" />
+            <Chart :option="gaugeOpt" height="172px" />
             <div class="lv" :class="d.health.level">{{ t('health.level.' + d.health.level) }}<span v-if="issues.length"> · {{ t('health.issues', { n: issues.length }) }}</span></div>
           </div>
         </div>
@@ -99,26 +99,15 @@
         </div>
       </div>
 
-      <!-- 第三行：DPI 应用构成 + 流量 / 在线数 -->
+      <!-- 第三行：DPI 应用构成（实心饼图）+ 流量卡片（实时流量 / 历史流量 / 历史用户），版式同维盟首页 -->
       <div class="grid g-2-3 mt">
         <div class="panel">
           <div class="panel-h"><h2>{{ t('overview.mix') }}</h2><span class="sp" /><router-link to="/apps" class="more">{{ t('common.details') }} ›</router-link></div>
-          <div class="panel-b"><Composition :groups="d.groups" compact clickable
+          <div class="panel-b"><Composition :groups="d.groups" clickable height="356px"
             @pick="p => $router.push({ path: '/apps', query: p.cat ? { cat: p.cat } : { group: p.group } })" /></div>
         </div>
-        <div class="panel">
-          <div class="panel-h">
-            <div class="seg" role="tablist">
-              <button v-for="m in ['live', 'trend', 'online']" :key="m" role="tab" :aria-selected="tab === m" :class="{ on: tab === m }" @click="tab = m">{{ t('overview.tab.' + m) }}</button>
-            </div>
-            <span class="sp" />
-            <div class="seg mini" v-if="tab === 'trend' && d.trend_groups.series.length">
-              <button v-for="m in ['groups', 'pair']" :key="m" :class="{ on: ui.trendMode === m }" @click="ui.trendMode = m">{{ t('chart.mode.' + m) }}</button>
-            </div>
-            <span class="faint small" v-else>{{ tabHint }}</span>
-          </div>
-          <div class="panel-b"><Chart :option="tabOpt" height="300px" /></div>
-        </div>
+        <TrafficPanel realtime :total="d.range_total" :live="{ up: liveUp, down: liveDown }" :points="d.trend"
+                      :groups="d.trend_groups" :online="d.online_trend" :gran="gran" height="292px" />
       </div>
 
       <div class="grid g2 mt">
@@ -154,20 +143,20 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http, { enc } from '../api.js'
-import { gaugeOption, onlineOption, stackedOption, trendOption } from '../charts.js'
+import { gaugeOption, onlineOption } from '../charts.js'
 import BarList from '../components/BarList.vue'
 import Chart from '../components/Chart.vue'
 import Composition from '../components/Composition.vue'
 import Icon from '../components/Icon.vue'
 import Modal from '../components/Modal.vue'
 import RangeTabs from '../components/RangeTabs.vue'
+import TrafficPanel from '../components/TrafficPanel.vue'
 import { appName, bytes, catColor, catName, groupName, pct, rate } from '../format.js'
 import { usePoll } from '../poll.js'
 import { ui } from '../state.js'
 
 const { t, locale } = useI18n()
 const d = ref(null)
-const tab = ref('live')
 const showHealth = ref(false)
 const { loading, error } = usePoll(async () => { d.value = await http.get('/overview', { params: { range: ui.range } }) },
   30000, () => ui.range)
@@ -189,19 +178,13 @@ const gran = computed(() => (['today', 'yesterday'].includes(ui.range) ? 'hour' 
 const deps = () => [ui.theme, locale.value]
 const gaugeOpt = computed(() => (deps(), gaugeOption(d.value.health.score)))
 const sparkOpt = computed(() => (deps(), onlineOption(d.value.online_realtime, 'minute', true)))
-const tabOpt = computed(() => {
-  deps()
-  if (tab.value === 'live') return trendOption(d.value.realtime, 'minute', true)
-  if (tab.value === 'online') return onlineOption(d.value.online_trend, gran.value)
-  return ui.trendMode === 'groups' && d.value.trend_groups.series.length ? stackedOption(d.value.trend_groups) : trendOption(d.value.trend, gran.value)
-})
-const tabHint = computed(() => (tab.value === 'live' ? t('overview.realtimeHint') : t('range.' + ui.range)))
 
 function healthText(it) {
   const p = { ...it.params }
   if (p.ratio != null) p.ratio = pct(p.ratio, 0)
   if (p.used != null && p.size == null) p.used = pct(p.used, 0)
   if (p.down) p.down = p.down.join('、')
+  if (Array.isArray(p.wrong)) p.wrong = p.wrong.join('、')
   return t(`health.${it.code}.${it.ok ? 'ok' : 'bad'}`, p)
 }
 
@@ -230,7 +213,7 @@ const hostItems = computed(() => d.value.top_hosts.map(h => ({
 .bars b { color: var(--ink); text-align: right; font-weight: 600; }
 .hint { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .gauge { position: relative; padding: 0 12px 12px; }
-.lv { text-align: center; font-weight: 600; margin-top: -8px; }
+.lv { text-align: center; font-weight: 600; margin-top: -18px; }
 .lv.excellent { color: var(--accent); }
 .lv.good { color: var(--pair-blue); }
 .lv.fair { color: var(--warn); }
@@ -257,8 +240,6 @@ const hostItems = computed(() => d.value.top_hosts.map(h => ({
 
 .g-2-3 { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
 @media (max-width: 1180px) { .g-2-3 { grid-template-columns: 1fr; } }
-.panel-h .seg button { padding: 4px 10px 8px; font-size: 14.5px; }
-.panel-h .seg.mini button { font-size: 13px; padding: 4px 8px 7px; }
 
 .hh { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
 .hh b { font-size: 40px; font-weight: 600; color: var(--accent); }

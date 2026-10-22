@@ -26,6 +26,13 @@ ROS = {
     "/rest/ip/pool": [{"name": "dhcp_pool0", "ranges": "192.168.88.10-192.168.88.19,192.168.88.100/30"}],
     "/rest/ip/dhcp-server": [{"name": "defconf", "interface": "bridge", "address-pool": "dhcp_pool0"}],
     "/rest/ip/dhcp-client": [{"interface": "ether1", "status": "bound"}],
+    # 接入自检：DNS 规则正常；SNI 规则端口填错（真实遇到过：37880）
+    "/rest/ip/firewall/mangle": [
+        {".id": "*7", "action": "sniff-tzsp", "chain": "forward", "protocol": "udp", "src-port": "53",
+         "sniff-target": "192.168.88.10", "sniff-target-port": "37008", "packets": "100", "disabled": "false", "comment": "ROSDPI-DNS"},
+        {".id": "*9", "action": "sniff-tzsp", "chain": "forward", "protocol": "tcp", "dst-port": "443",
+         "sniff-target": "192.168.88.10", "sniff-target-port": "37880", "packets": "1964", "disabled": "false", "comment": "ROSDPI-SNI"}],
+    "/rest/ip/settings": {"ipv4-fasttrack-active": "false"},
 }
 
 
@@ -43,6 +50,7 @@ def _use_mock(monkeypatch, status=200):
 
 def test_poll_success_populates_router_state(monkeypatch):
     _use_mock(monkeypatch)
+    monkeypatch.setitem(engine.stats, "dns_answers", 5)  # DNS 规则在正常工作，自检以它的端口为准
     poller.poll()
     st = poller.status()
     assert st["ok"] and st["error"] == ""
@@ -56,6 +64,13 @@ def test_poll_success_populates_router_state(monkeypatch):
     # 全网状态：WAN 线路；DHCP 地址池容量 = 10 + 4，已用 = 1 条租约
     assert poller.wans[0]["name"] == "ether1" and poller.wans[0]["type"] == "dhcp" and poller.wans[0]["ip"] == "100.64.1.2"
     assert poller.pools == [{"server": "defconf", "interface": "bridge", "pool": "dhcp_pool0", "size": 14, "used": 1}]
+    # 实时流量采样：两次采样之间 WAN 口计数增加，得到速率点
+    poller.samples.clear(); poller._sample_prev.clear()
+    poller.sample()
+    ROS["/rest/interface"][0]["rx-byte"] = "1001000"
+    poller._sample_prev["ether1"] = (poller._sample_prev["ether1"][0] - 2, 1000, 500)
+    poller.sample()
+    assert len(poller.samples) == 1 and poller.samples[0][2] > 0
 
     # 配置了 ROS 后，概览页能正常返回路由器信息（此前这里会 500）
     with TestClient(app) as c:
@@ -68,6 +83,12 @@ def test_poll_success_populates_router_state(monkeypatch):
         assert ov["wans"][0]["running"] and ov["pools"][0]["size"] == 14
         codes = {i["code"]: i for i in ov["health"]["items"]}
         assert codes["wan"]["ok"] and codes["cpu"]["ok"] and 0 <= ov["health"]["score"] <= 100
+        chk = c.get("/api/system", headers={"Authorization": f"Bearer {tok}"}).json()["ros_check"]
+        sni = next(x for x in chk["rules"] if x["kind"] == "sni")
+        assert chk["checked"] and sni["problems"] == ["port"] and sni["target_port"] == 37880
+        # SNI 规则存在、只是端口错：建议改端口，不建议重复新增；但缺 UDP（QUIC）规则
+        assert "rule_problem" in chk["issues"] and "no_sni" not in chk["issues"] and "no_quic" in chk["issues"]
+        assert not codes["rules"]["ok"] and codes["rules"]["params"]["wrong"] == [37880]
         leases = c.get("/api/dhcp/leases", headers={"Authorization": f"Bearer {tok}"}).json()
         assert leases["leases"][0]["mac"] == "AA:BB:CC:DD:EE:31" and leases["leases"][0]["host_name"] == "iPhone"
 

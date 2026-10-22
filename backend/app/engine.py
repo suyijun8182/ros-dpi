@@ -3,7 +3,7 @@ import ipaddress
 import struct
 import threading
 import time
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 
 from sqlalchemy import delete, select
 
@@ -21,6 +21,9 @@ from app.models import (CustomRule, DnsCache, Host, HostDomainDay, Setting, Traf
 
 _ZERO = {"0.0.0.0", "::"}
 ONLINE_SECONDS = 300  # 最近 5 分钟有流量算在线
+SESSION_IDLE = 300    # 实时连接：5 分钟没有新流量就从列表里去掉
+MAX_SESSIONS = 50_000
+IP_DEST_PER_HOST = 30  # 没有域名的访问目标（只有 IP），每台终端每分钟只记流量最大的 30 个，防止 P2P 撑爆表
 
 
 def parse_cidrs(text: str) -> list:
@@ -54,6 +57,10 @@ class Engine:
         self._buf: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0, 0, 0])
         self._dom: dict[tuple[str, str, str], int] = defaultdict(int)
         self._seen: dict[str, tuple[str, str | None, int]] = {}  # host_key -> (ip, mac, ts)
+        self._ipdest: dict[tuple[str, str, str], int] = defaultdict(int)  # (host_key, 远端 IP, app) -> bytes
+        # 实时连接：(host_key, 远端 IP, 远端端口, 协议, 终端端口) ->
+        #   [终端 IP, app, 域名, 域名来源, 累计上行, 累计下行, 开始, 最近, 本窗口上行, 本窗口下行, 上行速率, 下行速率]
+        self.sessions: OrderedDict[tuple, list] = OrderedDict()
 
         # 最近一个分钟窗口的统计，用于实时速率
         self.last_flush = time.time()
@@ -215,11 +222,44 @@ class Engine:
         b[2] += 1
         if qname:
             self._dom[(key, qname, app)] += nbytes
+        else:
+            self._ipdest[(key, remote, app)] += nbytes
+        self._track_session(key, host_ip, hport, remote, rport, proto, app, qname, src_kind, direction, nbytes, now)
         self._seen[key] = (host_ip, mac, int(now))
         self.stats["flows"] += 1
         self.stats["bytes_seen"] += nbytes
         self.stats["last_flow"] = int(now)
         return key, app, direction
+
+    def _track_session(self, key, host_ip, hport, remote, rport, proto, app, qname, src_kind, direction, nbytes, now):
+        sk = (key, remote, rport, proto, hport)
+        s = self.sessions.get(sk)
+        if s is None:
+            if len(self.sessions) >= MAX_SESSIONS:
+                self.sessions.popitem(last=False)
+            s = self.sessions[sk] = [host_ip, app, qname, src_kind, 0, 0, now, now, 0, 0, 0.0, 0.0]
+        else:
+            self.sessions.move_to_end(sk)
+            if qname and not s[2]:
+                s[2], s[3], s[1] = qname, src_kind, app  # 后到的 SNI / DNS 让这条连接认得更准
+        i = 4 if direction == "up" else 5
+        s[i] += nbytes
+        s[i + 4] += nbytes
+        s[7] = now
+
+    def session_list(self, now: float | None = None) -> list[dict]:
+        now = now or time.time()
+        with self.lock:
+            items = list(self.sessions.items())
+        out = []
+        for (key, remote, rport, proto, hport), s in items:
+            if now - s[7] > SESSION_IDLE:
+                continue
+            out.append({"host": key, "host_ip": s[0], "host_port": hport if hport >= 0 else None, "remote": remote,
+                        "port": rport, "proto": proto, "app": s[1], "domain": s[2], "source": s[3],
+                        "up": s[4], "down": s[5], "start": int(s[6]), "last": int(s[7]),
+                        "rate_up": s[10], "rate_down": s[11]})
+        return out
 
     # ---------- 落库 ----------
     def flush(self, now: float | None = None):
@@ -230,6 +270,13 @@ class Engine:
             buf, self._buf = self._buf, defaultdict(lambda: [0, 0, 0])
             dom, self._dom = self._dom, defaultdict(int)
             seen, self._seen = self._seen, {}
+            ipdest, self._ipdest = self._ipdest, defaultdict(int)
+            # 实时连接：本窗口的字节数换算成速率，然后清零；去掉 5 分钟没动静的
+            win = max(now - self.last_flush, 1.0)
+            for sk in [k for k, v in self.sessions.items() if now - v[7] > SESSION_IDLE]:
+                del self.sessions[sk]
+            for v in self.sessions.values():
+                v[10], v[11], v[8], v[9] = v[8] / win, v[9] / win, 0, 0
         elapsed = max(now - self.last_flush, 1.0)
         self.last_flush = now
 
@@ -256,6 +303,12 @@ class Engine:
                     upsert_add(db, table, chunk, ["ts", "host", "app"], ["up", "down", "flows"])
             drows = [{"ts": d, "host": host, "domain": name[:255], "app": app, "bytes": n}
                      for (host, name, app), n in dom.items()]
+            per_host: dict[str, list] = defaultdict(list)
+            for (host, ip, app), n in ipdest.items():
+                per_host[host].append((n, ip, app))
+            for host, lst in per_host.items():
+                for n, ip, app in sorted(lst, reverse=True)[:IP_DEST_PER_HOST]:
+                    drows.append({"ts": d, "host": host, "domain": ip, "app": app, "bytes": n})
             for chunk in _chunks(drows, 500):
                 upsert_add(db, HostDomainDay.__table__, chunk, ["ts", "host", "domain"], ["bytes"], ["app"])
             self._save_hosts(db, seen)

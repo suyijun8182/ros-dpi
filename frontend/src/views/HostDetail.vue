@@ -38,11 +38,13 @@
 
       <div class="grid g-2-3 mt">
         <div class="panel">
-          <div class="panel-h"><h2>{{ t('overview.mix') }}</h2></div>
-          <div class="panel-b"><Composition :groups="d.groups" compact clickable :active="openGroup" :center-label="t('range.' + ui.range)"
-                                            @pick="p => (openGroup = openGroup === p.group && !p.cat ? '' : p.group)" /></div>
+          <div class="panel-h"><h2>{{ t('overview.mix') }}</h2><span class="sp" />
+            <button v-if="openGroup" class="more" @click="openGroup = ''">{{ t('apps.showAll') }}</button></div>
+          <div class="panel-b"><Composition :groups="d.groups" clickable drill :active="openGroup" height="300px"
+                                            @pick="p => (openGroup = p.group)" /></div>
         </div>
-        <TrendPanel :title="t('overview.trend')" :sub="t('range.' + ui.range)" :points="d.trend" :groups="d.trend_groups" :gran="gran" height="260px" />
+        <TrafficPanel :total="d.range_total" :live="{ up: d.rate_up, down: d.rate_down }" :points="d.trend" :groups="d.trend_groups"
+                      :gran="gran" height="254px" />
       </div>
 
       <div class="grid g2 mt">
@@ -93,7 +95,7 @@ import http, { enc } from '../api.js'
 import Composition from '../components/Composition.vue'
 import RangeTabs from '../components/RangeTabs.vue'
 import Stat from '../components/Stat.vue'
-import TrendPanel from '../components/TrendPanel.vue'
+import TrafficPanel from '../components/TrafficPanel.vue'
 import { ago, appName, bytes, catColor, catName, datetime, pct, rate } from '../format.js'
 import { usePoll } from '../poll.js'
 import { ui } from '../state.js'

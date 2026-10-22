@@ -15,7 +15,7 @@
         <Stat :label="t('range.month')" :value="bytes(d.totals.month.total)" :up="d.totals.month.up" :down="d.totals.month.down" />
         <Stat :label="t('apps.usedBy')" :value="d.hosts.length" :sub="t('range.' + ui.range)" />
       </div>
-      <TrendPanel class="mt" :title="t('overview.trend')" :sub="t('range.' + ui.range)" :points="d.trend" :gran="gran" height="260px" />
+      <TrafficPanel class="mt" :total="d.range_total" :points="d.trend" :gran="gran" height="280px" />
       <div class="panel mt">
         <div class="panel-h">{{ t('apps.usedBy') }}</div>
         <div class="tbl-wrap">
@@ -48,7 +48,7 @@ import { useI18n } from 'vue-i18n'
 import http, { enc } from '../api.js'
 import RangeTabs from '../components/RangeTabs.vue'
 import Stat from '../components/Stat.vue'
-import TrendPanel from '../components/TrendPanel.vue'
+import TrafficPanel from '../components/TrafficPanel.vue'
 import { appName, bytes, catColor, catName, groupName, pct } from '../format.js'
 import { usePoll } from '../poll.js'
 import { ui } from '../state.js'

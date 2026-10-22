@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     ros_password: str = ""
     ros_verify_tls: bool = False
     ros_poll_seconds: int = 30
+    ros_rate_seconds: int = 5  # WAN 口速率采样间隔（实时流量图），只读一次接口计数
 
     tz: str = "Asia/Shanghai"
 

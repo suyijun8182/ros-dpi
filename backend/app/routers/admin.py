@@ -194,6 +194,7 @@ def system():
         # 流量靠什么认出域名（按字节）：conn 本连接 SNI、pair 本终端 DNS/SNI、ip 全网 IP 表、none 没有域名
         "match": dict(st["match"]),
         "router": poller.status(),
+        "ros_check": poller.check(),
         "generic_apps": sorted(GENERIC_APPS),
     }
 

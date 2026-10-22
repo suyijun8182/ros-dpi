@@ -67,19 +67,30 @@ def test_api_flow():
         assert len(meta["apps"]) > 250 and {g["id"] for g in meta["groups"]} >= {"media", "game", "unknown"}
 
 
-def test_flow_graph():
-    from app import stats, timeutil
-    from app import database
+def test_sessions_and_destinations():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app import database, stats, timeutil
+    now = time.time()
     with engine.lock:
-        engine.add_flow(dict(src="192.168.88.60", dst="91.108.4.1", sport=1, dport=443, proto=6, bytes=300,
-                             src_mac="AA:00:00:00:00:60"), time.time())
-    engine.flush()
+        engine.add_flow(dict(src="192.168.88.61", dst="203.0.113.99", sport=5001, dport=443, proto=6, bytes=4000,
+                             src_mac="AA:00:00:00:00:61"), now)
+        engine.add_flow(dict(src="203.0.113.99", dst="192.168.88.61", sport=443, dport=5001, proto=6, bytes=60000), now)
+    engine.flush(now + 60)
+    with TestClient(app) as c:
+        if not c.get("/api/auth/status").json()["initialized"]:
+            c.post("/api/auth/setup", json={"username": "admin", "password": "secret1"})
+        h = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": "admin", "password": "secret1"}).json()["token"]}
+        r = c.get("/api/sessions?q=203.0.113.99", headers=h).json()
+        sess = r["sessions"][0]
+        assert sess["host"] == "AA:00:00:00:00:61" and sess["port"] == 443 and sess["up"] == 4000 and sess["down"] == 60000
+        assert sess["rate_down"] > 0 and sess["app"]["id"] == "https"
+        # 没有域名的远端 IP 也进了访问目标排行；未识别域名 Top 里不出现 IP
+        d = c.get("/api/destinations?kind=ip&q=203.0.113.99", headers=h).json()["rows"]
+        assert d[0]["dest"] == "203.0.113.99" and d[0]["bytes"] == 64000 and d[0]["hosts"] == 1
+        hosts = c.get("/api/destinations/hosts?dest=203.0.113.99", headers=h).json()
+        assert hosts[0]["key"] == "AA:00:00:00:00:61"
+        assert all(u["domain"] != "203.0.113.99" for u in c.get("/api/rules/unknown-domains?range=today", headers=h).json())
     with database.session() as db:
-        g = stats.flow_graph(db, *timeutil.range_bounds("today"), max_hosts=1, max_apps=1)
-    ids = {n["id"] for n in g["nodes"]}
-    assert all(l["source"] in ids and l["target"] in ids for l in g["links"])
-    assert "h:__other_hosts" in ids or len([n for n in g["nodes"] if n["kind"] == "host"]) == 1
-    # 守恒：终端→分类 的总量 == 分类→应用 的总量 == total
-    hc = sum(l["value"] for l in g["links"] if l["source"].startswith("h:"))
-    ca = sum(l["value"] for l in g["links"] if l["source"].startswith("g:"))
-    assert hc == ca == g["total"]
+        assert stats.base_domain("a.b.example.com.cn") == "example.com.cn" and stats.base_domain("www.bilibili.com") == "bilibili.com"

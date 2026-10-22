@@ -15,7 +15,7 @@
 - **全网概览**：一屏看全的仪表盘：路由器状态、**网络健康指数**（逐项扣分和改进建议）、在线终端、**DHCP 地址池**、每条 **WAN 线路**的状态和速率；流量构成环图（应用大类 → 小类）；实时流量、流量趋势、历史在线终端数；Top 应用与 Top 终端排行。
 - **主机监控**：在线终端 / 全部终端 / DHCP 租约 / 命名管理四个标签。每台终端的 IP、MAC、主机名、在线时长、连接数、当前速率、今日 / 本周 / 本月流量，可导出 CSV；可以按 MAC 或按 IP 给设备命名（也能提前给还没上线的设备命名）；详情页可看该终端的应用排行、应用构成、按大类的趋势和访问过的域名。
 - **应用统计**：参照 Panabit 分三级（应用大类 → 小类 → 应用）：10 个大类、43 个小类、2800 多个内置应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……，其中约 2500 个来自 v2fly 开源域名库）。识别不出具体应用的流量，会按 CDN 的 CNAME 归到阿里云 / 腾讯云 / Akamai 等厂商。可以查看每个应用被哪些终端使用。
-- **流量流向**：桑基图展示 终端 → 应用大类 → 应用 的流向。
+- **流量流向**：**实时连接**（此刻哪台终端连到哪个域名 / IP、什么应用、多快）和**访问目标排行**（流量最大的远端域名和 IP，可按主域名合并，看是哪些终端在访问）。
 - **识别规则**：按域名后缀、IP 段、端口自定义识别规则；列出“未识别域名 Top”，一键归类。
 - 顶栏功能搜索（终端、IP、MAC、应用、页面），按 / 键聚焦。
 - 中英双语，深浅色主题，手机可用。
@@ -174,6 +174,7 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 | `ADMIN_PASSWORD` | 空 | 首次启动创建 `admin` 用的密码；留空则在登录页设置 |
 | `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | 空 | RouterOS REST 地址与只读账号，如 `https://192.168.88.1` |
 | `ROS_VERIFY_TLS` | `false` | 是否校验 ROS 证书 |
+| `ROS_POLL_SECONDS` / `ROS_RATE_SECONDS` | 30 / 5 | RouterOS 完整轮询间隔 / WAN 口速率采样间隔（实时流量图） |
 | `WAN_INTERFACE` | 自动 | WAN 接口名，默认按默认路由识别 |
 | `TZ` | `Asia/Shanghai` | 统计用时区，每周从周一开始 |
 | `HTTP_PORT` / `IPFIX_PORT` / `TZSP_PORT` | 8080 / 2055 / 37008 | 端口 |
@@ -209,7 +210,7 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
 - **Overview**: a dashboard with router status, a network health score with fixes, DHCP pool usage, WAN line status, online-host history, live rate, and a two-ring traffic-mix donut (app group → category), trends stacked by app group, ranked top apps and hosts.
 - **Hosts**: every device with IP, MAC, hostname, online state, live rate and daily / weekly / monthly totals; name devices by MAC or by IP (even before they appear); per-host app breakdown and visited domains.
 - **Applications**: a Panabit-style three-level library: 10 app groups, 43 categories, 2800+ built-in apps (about 2500 converted from v2fly/domain-list-community). Traffic that can't be tied to an app is attributed to its CDN (Alibaba Cloud, Tencent Cloud, Akamai, Cloudflare…) via CNAME.
-- **Flows**: a Sankey diagram from hosts through app groups to apps.
+- **Flows**: live connections (which host talks to which domain or IP, which app, how fast) and top destinations (remote domains and IPs by traffic, mergeable by base domain, with the hosts behind each).
 - **Rules**: custom domain / CIDR / port rules, and a list of top unidentified domains to classify.
 - Chinese and English UI, light and dark themes, works on phones.
 

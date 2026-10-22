@@ -1,4 +1,5 @@
 """统计查询。今日/本周/本月 都从天表汇总（流量落库时同时写分钟/小时/天三张表，不需要 rollup）。"""
+import ipaddress
 import time
 from collections import defaultdict
 
@@ -232,59 +233,71 @@ def unknown_domains(db, start, end, limit=100) -> list[dict]:
     t = HostDomainDay
     q = select(t.domain, func.sum(t.bytes), func.count(distinct(t.host))) \
         .where(t.ts >= start, t.ts < end, t.app.in_(list(GENERIC_APPS))) \
-        .group_by(t.domain).order_by(func.sum(t.bytes).desc()).limit(limit)
-    return [{"domain": d, "bytes": int(b), "hosts": int(h)} for d, b, h in db.execute(q)]
+        .group_by(t.domain).order_by(func.sum(t.bytes).desc()).limit(limit * 3)
+    # 只有 IP 的访问目标没法按域名建规则，不列在这里
+    return [{"domain": d, "bytes": int(b), "hosts": int(h)} for d, b, h in db.execute(q) if not is_ip(d)][:limit]
 
 
 def online_count(db) -> int:
     return db.scalar(select(func.count()).select_from(Host).where(Host.last_seen > time.time() - ONLINE_SECONDS)) or 0
 
 
-def flow_graph(db, start, end, max_hosts=12, max_apps=16, host=None) -> dict:
-    """流向图（桑基图）数据：终端 → 应用大类 → 应用。超出上限的终端/应用合并为"其他"。"""
-    t = TrafficDay
-    q = _where(select(t.host, t.app, *_sum_cols(t)), t, start, end, host).group_by(t.host, t.app)
-    rows = [(h, a, int(u), int(d)) for h, a, u, d, _f in db.execute(q)]
-    host_tot: dict[str, int] = defaultdict(int)
-    app_tot: dict[str, int] = defaultdict(int)
-    for h, a, u, d in rows:
-        host_tot[h] += u + d
-        app_tot[a] += u + d
-    top_h = set(sorted(host_tot, key=host_tot.get, reverse=True)[:max_hosts])
-    top_a = set(sorted(app_tot, key=app_tot.get, reverse=True)[:max_apps])
-    meta = host_meta(db, top_h)
+_CC_SLD = {"com", "net", "org", "gov", "edu", "co", "ac"}
 
-    hg: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0, 0])
-    ga: dict[tuple[str, str], list[int]] = defaultdict(lambda: [0, 0])
-    for h, a, u, d in rows:
-        hk = h if h in top_h else "__other_hosts"
-        grp = app_meta(a)["group"]
-        ak = a if a in top_a else f"__other_apps:{grp}"
-        for acc, key in ((hg, (hk, grp)), (ga, (grp, ak))):
-            acc[key][0] += u
-            acc[key][1] += d
 
-    nodes: dict[str, dict] = {}
+def is_ip(x: str) -> bool:
+    try:
+        ipaddress.ip_address(x)
+        return True
+    except ValueError:
+        return False
 
-    def node(nid, kind, **kw):
-        nodes.setdefault(nid, {"id": nid, "kind": kind, **kw})
-        return nid
 
-    links = []
-    for (hk, grp), (u, d) in hg.items():
-        hm = meta.get(hk)
-        src = node(f"h:{hk}", "host", key=None if hk == "__other_hosts" else hk,
-                   name=hm["name"] if hm else None, online=hm["online"] if hm else False)
-        gi = engine.classifier.group_info(grp)
-        dst = node(f"g:{grp}", "group", group=grp, name=gi["name"], name_en=gi["name_en"])
-        links.append({"source": src, "target": dst, "up": u, "down": d, "value": u + d})
-    for (grp, ak), (u, d) in ga.items():
-        if ak.startswith("__other_apps:"):
-            dst = node(f"a:{ak}", "app", app=None, group=grp, category=None)
-        else:
-            am = app_meta(ak)
-            dst = node(f"a:{ak}", "app", app=ak, group=grp, category=am["category"], name=am["name"],
-                       name_en=am["name_en"])
-        links.append({"source": f"g:{grp}", "target": dst, "up": u, "down": d, "value": u + d})
-    links = [x for x in links if x["value"] > 0]
-    return {"nodes": list(nodes.values()), "links": links, "total": sum(host_tot.values())}
+def base_domain(name: str) -> str:
+    """主域名：www.bilibili.com → bilibili.com，a.b.example.com.cn → example.com.cn；IP 原样返回"""
+    if is_ip(name):
+        return name
+    p = name.split(".")
+    n = 3 if len(p) >= 3 and p[-2] in _CC_SLD and len(p[-1]) == 2 else 2
+    return ".".join(p[-n:])
+
+
+def destinations(db, start, end, q: str = "", merge: bool = False, kind: str = "all", limit: int = 300) -> list[dict]:
+    """访问目标排行：按流量排序的远端域名 / IP，附带主要应用和访问的终端数。merge=True 时按主域名合并。"""
+    t = HostDomainDay
+    rows = db.execute(select(t.domain, t.app, t.host, func.sum(t.bytes))
+                      .where(t.ts >= start, t.ts < end).group_by(t.domain, t.app, t.host)).all()
+    s = q.strip().lower()
+    agg: dict[str, dict] = {}
+    for dom, app, host, b in rows:
+        ip = is_ip(dom)
+        if (kind == "domain" and ip) or (kind == "ip" and not ip):
+            continue
+        k = base_domain(dom) if merge else dom
+        if s and s not in dom.lower():
+            continue
+        a = agg.setdefault(k, {"dest": k, "ip": ip, "bytes": 0, "hosts": set(), "apps": defaultdict(int), "names": set()})
+        a["bytes"] += int(b)
+        a["hosts"].add(host)
+        a["apps"][app] += int(b)
+        a["names"].add(dom)
+    out = []
+    for a in sorted(agg.values(), key=lambda x: x["bytes"], reverse=True)[:limit]:
+        top_app = max(a["apps"], key=a["apps"].get)
+        out.append({"dest": a["dest"], "ip": a["ip"], "bytes": a["bytes"], "hosts": len(a["hosts"]),
+                    "names": len(a["names"]), "app": app_meta(top_app)})
+    return out
+
+
+def destination_hosts(db, dest: str, start, end, merge: bool = False) -> list[dict]:
+    """某个访问目标被哪些终端访问、各用了多少"""
+    t = HostDomainDay
+    q = select(t.host, t.domain, func.sum(t.bytes)).where(t.ts >= start, t.ts < end)
+    q = q.where((t.domain == dest) | t.domain.like(f"%.{dest}")) if merge else q.where(t.domain == dest)
+    per: dict[str, list] = defaultdict(lambda: [0, set()])
+    for host, dom, b in db.execute(q.group_by(t.host, t.domain)):
+        per[host][0] += int(b)
+        per[host][1].add(dom)
+    meta = host_meta(db, per)
+    return sorted(({**meta[h], "bytes": v[0], "names": sorted(v[1])[:5]} for h, v in per.items()),
+                  key=lambda x: x["bytes"], reverse=True)

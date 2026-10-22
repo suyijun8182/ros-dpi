@@ -224,7 +224,49 @@ def app_detail(app_id: str, range: str = Query("today", pattern=RANGES), db: Ses
     }
 
 
-@router.get("/flow")
-def flow(range: str = Query("today", pattern=RANGES), host: str | None = None,
-         hosts: int = Query(12, ge=3, le=40), apps: int = Query(16, ge=3, le=60), db: Session = Depends(get_db)):
-    return stats.flow_graph(db, *_bounds(range), max_hosts=hosts, max_apps=apps, host=host)
+@router.get("/realtime")
+def realtime(db: Session = Depends(get_db)):
+    """实时流量曲线（最近 1 小时，速率 B/s）。有 RouterOS API 时用 WAN 口计数器的秒级采样，否则用每分钟的流量记录。"""
+    now = int(time.time())
+    if poller.enabled and poller.ok and len(poller.samples) >= 2:
+        pts = [{"ts": ts, "up": u, "down": d} for ts, u, d in poller.samples if ts >= now - 3600]
+        return {"source": "wan", "interface": poller.wan_name, "points": pts}
+    pts = [{"ts": p["ts"], "up": p["up"] / 60, "down": p["down"] / 60}
+           for p in stats.trend(db, "minute", now - 3600, now + 1)]
+    return {"source": "flow", "interface": None, "points": pts}
+
+
+@router.get("/sessions")
+def sessions(q: str = "", host: str | None = None, limit: int = Query(300, ge=10, le=2000), db: Session = Depends(get_db)):
+    """实时连接：此刻还在传数据的连接，按实时速率、再按累计流量排序。"""
+    rows = engine.session_list()
+    if host:
+        rows = [r for r in rows if r["host"] == host]
+    meta = stats.host_meta(db, {r["host"] for r in rows})
+    s = q.strip().lower()
+    out = []
+    for r in rows:
+        m = meta[r["host"]]
+        app = stats.app_meta(r["app"])
+        if s and not any(s in str(v).lower() for v in (m["name"], r["host_ip"], r["remote"], r["domain"], app["name"],
+                                                         app["name_en"], r["port"]) if v):
+            continue
+        out.append({**r, "host_name": m["name"], "online": m["online"], "app": app})
+    out.sort(key=lambda r: (r["rate_up"] + r["rate_down"], r["up"] + r["down"]), reverse=True)
+    return {"count": len(out), "rate_up": sum(r["rate_up"] for r in out), "rate_down": sum(r["rate_down"] for r in out),
+            "sessions": out[:limit]}
+
+
+@router.get("/destinations")
+def destinations(range: str = Query("today", pattern=RANGES), q: str = "", merge: bool = False,
+                 kind: str = Query("all", pattern="^(all|domain|ip)$"), db: Session = Depends(get_db)):
+    """访问目标排行（远端域名 / IP）"""
+    start, end = _bounds(range)
+    return {"range_total": stats.total(db, start, end), "rows": stats.destinations(db, start, end, q, merge, kind)}
+
+
+@router.get("/destinations/hosts")
+def destination_hosts(dest: str, range: str = Query("today", pattern=RANGES), merge: bool = False,
+                      db: Session = Depends(get_db)):
+    """某个访问目标被哪些终端访问"""
+    return stats.destination_hosts(db, dest, *_bounds(range), merge=merge)
