@@ -36,7 +36,7 @@ import http from '../api.js'
 import { duration } from '../csv.js'
 import { appName, bytes, catColor } from '../format.js'
 
-const props = defineProps({ host: String })
+const props = defineProps({ host: String, person: [Number, String] })
 const { t, locale } = useI18n()
 const pad = n => String(n).padStart(2, '0')
 const fmtDay = x => `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`
@@ -56,10 +56,10 @@ function shift(n) {
   x.setDate(x.getDate() + n)
   day.value = fmtDay(x)
 }
-watch([day, () => props.host], async () => {
+watch([day, () => props.host, () => props.person], async () => {
   d.value = null
   max.value = 12
-  d.value = await http.get('/audit/timeline', { params: { host: props.host, day: day.value } })
+  d.value = await http.get('/audit/timeline', { params: { host: props.host || undefined, person: props.person || undefined, day: day.value } })
 }, { immediate: true })
 </script>
 

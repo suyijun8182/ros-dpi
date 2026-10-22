@@ -18,6 +18,25 @@ from cryptography.hazmat.primitives.hmac import HMAC
 
 # ---------------------------------------------------------------- 以太网 / IP
 
+def ip_ttl(frame: bytes) -> int | None:
+    """以太网帧里 IP 包的 TTL（IPv6 为 hop limit），私接路由检测用"""
+    if len(frame) < 14:
+        return None
+    off = 12
+    etype = int.from_bytes(frame[off:off + 2], "big")
+    off += 2
+    while etype in (0x8100, 0x88A8):
+        if len(frame) < off + 4:
+            return None
+        etype = int.from_bytes(frame[off + 2:off + 4], "big")
+        off += 4
+    if etype == 0x0800 and len(frame) > off + 8:
+        return frame[off + 8]
+    if etype == 0x86DD and len(frame) > off + 7:
+        return frame[off + 7]
+    return None
+
+
 def ethernet_ip(frame: bytes) -> tuple[str, str, int, bytes] | None:
     """以太网帧 → (src_ip, dst_ip, ip_proto, l4_bytes)。不处理分片和 IPv6 扩展头。"""
     if len(frame) < 14:

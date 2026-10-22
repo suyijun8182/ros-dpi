@@ -8,6 +8,7 @@ Source & docs: https://github.com/suyijun8182/ros-dpi
 
 ## What's new
 
+- **0.5.0**: people and scenarios: group devices per person (home: family members; business: people and departments), per-person traffic, online time and behaviour tags over the last 7 days (home: screen time, gaming and short-video limits, late nights, adult content; business: leisure at work, job hunting, trading at work), automatic device-type detection (IEEE OUI). Audit: rules scoped to people or departments, new large-upload and rogue-router (TTL-based) rules, Syslog forwarding, retention set in the UI, generated RouterOS control commands. Notifications rebuilt after EasySub with 13 channels, per-rule channel choice and quiet hours. Applications page with fixed categories and a treemap; destinations on a world map; date ranges trimmed to today / yesterday / this week / this month; consistent up/down colours.
 - **0.4.0**: audit system: per-visit access log (CSV export, 30-day retention), per-host daily timeline, audit rules with alerts to WeCom / DingTalk / Feishu / Bark / Telegram / webhooks, daily and weekly reports, operation log. Admin and read-only user accounts. Applications page reworked as WayOS-style DPI drill-down (group → category → app). sing-box connections identified by rule-set / policy-group name, with a new proxy-routing view per policy group and node. Destinations show the country. Fixes: live up/down rates were almost identical when a policy-routing table pointed at a side router; the network status row no longer wraps with several WAN lines.
 - **0.3.0**: optional sing-box Clash API and MosDNS integration (per-device proxied traffic and DNS), IP→ASN identification (iptoasn.com, public domain), daily self-tested auto-update of the v2fly rules, RouterOS rule self-check, page-by-page layout fixes for desktop / tablet / phone. Also includes 0.2.1: charts restyled after WayOS 4.0 (solid pie with paged legend, traffic card with live / history / online tabs, upright up/down lines); WAN rate sampled every 5 seconds for the live chart; the Flows page is now live connections plus top destinations (the Sankey diagram is gone).
 - **0.2.0**: redesigned UI after WayOS 4.0 (sidebar layout, new "seven layers" logo, new login page); dashboard with network health score, DHCP pools, WAN line status and online-host history; session time and connection count per host; DHCP lease list; live per-app rates; top-bar search; CSV export. Also includes: 2800+ apps / ~38k domains (adds v2fly/domain-list-community, MIT); per-connection SNI identification from TLS ClientHello and decrypted QUIC Initial packets (v1/v2), so apps are identified even with DoH and on shared CDN IPs; domain-source breakdown in Settings.
@@ -25,6 +26,8 @@ Source & docs: https://github.com/suyijun8182/ros-dpi
 - Name hosts by MAC or by IP
 - Audit: access log, per-host timeline, alert rules with push notifications, daily / weekly reports, operation log
 - Admin and read-only user accounts
+- People and departments (home / business scenarios), behaviour tags, device-type detection
+- Syslog forwarding, configurable retention, RouterOS control-command generator, 13 notification channels
 - Per-minute / hour / day aggregation in MySQL
 
 ## Quick start

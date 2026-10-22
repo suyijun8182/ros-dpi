@@ -18,7 +18,9 @@ def _sum_cols(t):
 
 def _where(q, t, start, end, host=None, app=None):
     q = q.where(t.ts >= start, t.ts < end)
-    if host:
+    if isinstance(host, (list, tuple, set)):  # 一组终端（按人员 / 部门汇总）
+        q = q.where(t.host.in_(list(host) or ["-"]))
+    elif host:
         q = q.where(t.host == host)
     if app:
         q = q.where(t.app == app)
@@ -96,6 +98,8 @@ def host_meta(db, keys) -> dict[str, dict]:
     now = time.time()
     rows = db.scalars(select(Host).where(Host.key.in_(keys))).all()
     names = hostnames.load(db)
+    from app import people
+    people.load(db)
     out = {}
     for h in rows:
         alias, by = hostnames.resolve(names, h.mac, h.ip)
@@ -104,15 +108,18 @@ def host_meta(db, keys) -> dict[str, dict]:
                       "alias_by": by, "name": alias or h.hostname or h.ip or h.key, "first_seen": h.first_seen,
                       "last_seen": h.last_seen, "online": bool(h.last_seen and now - h.last_seen < ONLINE_SECONDS)}
         out[h.key]["online_since"] = h.online_since if out[h.key]["online"] else None
+        out[h.key].update(dtype=h.dtype or h.dtype_auto or "unknown", dtype_manual=h.dtype, dtype_auto=h.dtype_auto, vendor=h.vendor)
     for k in keys:
         if k not in out:
             ip = k.removeprefix("IP:")
             alias, by = hostnames.resolve(names, None, ip)
             out[k] = {"key": k, "mac": None, "ip": ip, "hostname": None, "alias": alias, "alias_by": by,
-                      "name": alias or ip, "first_seen": None, "last_seen": None, "online": False, "online_since": None}
+                      "name": alias or ip, "first_seen": None, "last_seen": None, "online": False, "online_since": None,
+                      "dtype": "unknown", "dtype_manual": None, "dtype_auto": None, "vendor": None}
         rate = engine.host_rate.get(k, (0, 0))
         out[k]["rate_up"], out[k]["rate_down"] = rate
         out[k]["conns"] = engine.host_conns.get(k, 0)
+        out[k]["person"] = people.person_of(k)
     return out
 
 

@@ -44,7 +44,9 @@ export function countryName(cc) {
   const lang = i18n.global.locale.value === 'zh' ? 'zh-CN' : 'en'
   try {
     regionNames[lang] = regionNames[lang] || new Intl.DisplayNames([lang], { type: 'region' })
-    return regionNames[lang].of(cc.toUpperCase()) || cc
+    const n = regionNames[lang].of(cc.toUpperCase()) || cc
+    // 中文界面按国内惯例：中国台湾 / 中国香港 / 中国澳门
+    return lang === 'zh-CN' && ['TW', 'HK', 'MO'].includes(cc.toUpperCase()) && !n.startsWith('中国') ? '中国' + n.replace(/特别行政区$/, '') : n
   } catch (e) { return cc }
 }
 

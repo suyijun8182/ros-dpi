@@ -5,14 +5,16 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts/core'
-import { BarChart, GaugeChart, LineChart, PieChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { BarChart, GaugeChart, LineChart, MapChart, PieChart, TreemapChart } from 'echarts/charts'
+import { GeoComponent, GridComponent, LegendComponent, TooltipComponent, VisualMapComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { ui } from '../state.js'
 
-echarts.use([LineChart, PieChart, BarChart, GaugeChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
+echarts.use([LineChart, PieChart, BarChart, GaugeChart, TreemapChart, MapChart, GridComponent, TooltipComponent, LegendComponent,
+  GeoComponent, VisualMapComponent, CanvasRenderer])
 
-const props = defineProps({ option: Object, height: { type: String, default: '260px' } })
+// maps：要用的地图 GeoJSON（{名字: geojson}），在这里注册，保证和画图用的是同一个 echarts
+const props = defineProps({ option: Object, height: { type: String, default: '260px' }, maps: Object })
 const emit = defineEmits(['click'])
 const el = ref(null)
 let chart = null
@@ -20,6 +22,7 @@ let ro = null
 
 function render() {
   if (!chart || !props.option) return
+  for (const [name, geo] of Object.entries(props.maps || {})) if (!echarts.getMap(name)) echarts.registerMap(name, geo)
   chart.setOption(props.option, true)
 }
 

@@ -17,11 +17,10 @@ from zoneinfo import ZoneInfo
 import httpx
 from sqlalchemy import select
 
-from app import database
+from app import database, notify, people, sharing
 from app.config import get_settings
 from app.models import AuditEvent, AuditRule, Setting
 
-CHANNEL_TYPES = ("wecom", "dingtalk", "feishu", "bark", "telegram", "webhook")
 
 
 def _tz():
@@ -47,76 +46,9 @@ def domain_match(domain: str, suffix: str) -> bool:
     return domain == suffix or domain.endswith("." + suffix)
 
 
-class Notifier:
-    """把文字消息推送到用户配置的各个通道（企业微信 / 钉钉 / 飞书群机器人、Bark、Telegram、通用 Webhook）"""
-
-    def __init__(self):
-        self.last: dict[int, dict] = {}  # 通道序号 -> {ok, error, ts}
-
-    @staticmethod
-    def channels() -> list[dict]:
-        if not database.is_configured():
-            return []
-        with database.session() as db:
-            row = db.get(Setting, "notify_channels")
-        try:
-            return [c for c in json.loads(row.value) if isinstance(c, dict)] if row and row.value else []
-        except ValueError:
-            return []
-
-    def send(self, title: str, text: str, channels: list[dict] | None = None, wait: bool = False) -> list[dict]:
-        chans = [c for c in (channels if channels is not None else self.channels()) if c.get("enabled", True)]
-        results = []
-
-        def run():
-            for i, c in enumerate(chans):
-                try:
-                    self._send_one(c, title, text)
-                    r = {"ok": True, "error": "", "ts": int(time.time())}
-                except Exception as e:  # noqa: BLE001
-                    r = {"ok": False, "error": f"{type(e).__name__}: {str(e)[:160]}", "ts": int(time.time())}
-                self.last[i] = r
-                results.append({"name": c.get("name") or c.get("type"), **r})
-
-        if wait:
-            run()
-        else:
-            threading.Thread(target=run, daemon=True).start()
-        return results
-
-    @staticmethod
-    def _send_one(c: dict, title: str, text: str):
-        t, url = c.get("type"), (c.get("url") or "").strip()
-        body = f"{title}\n{text}"
-        with httpx.Client(timeout=10) as h:
-            if t == "wecom":
-                r = h.post(url, json={"msgtype": "text", "text": {"content": body}})
-            elif t == "dingtalk":
-                r = h.post(url, json={"msgtype": "text", "text": {"content": body}})
-            elif t == "feishu":
-                r = h.post(url, json={"msg_type": "text", "content": {"text": body}})
-            elif t == "bark":
-                r = h.post(url.rstrip("/"), json={"title": title, "body": text, "group": "ROS-DPI"})
-            elif t == "telegram":
-                r = h.post(f"https://api.telegram.org/bot{c.get('token', '')}/sendMessage",
-                           json={"chat_id": c.get("chat_id"), "text": body})
-            else:
-                r = h.post(url, json={"title": title, "text": text, "source": "ros-dpi"})
-            r.raise_for_status()
-            # 群机器人接口出错时 HTTP 也是 200，看返回码
-            try:
-                j = r.json()
-            except ValueError:
-                return
-            code = j.get("errcode", j.get("code", 0)) if isinstance(j, dict) else 0
-            if code not in (0, None, 200):
-                raise RuntimeError(j.get("errmsg") or j.get("msg") or str(j)[:120])
-
-
 class Auditor:
     def __init__(self, engine):
         self.engine = engine
-        self.notifier = Notifier()
         self._rules: list = []
         self._loaded = 0
         self._acc: dict[tuple, int] = defaultdict(int)     # (rule, host, 日期) -> 生效时段内累计字节
@@ -146,15 +78,24 @@ class Auditor:
         cl = self.engine.classifier
         day = datetime.fromtimestamp(now, _tz()).strftime("%Y%m%d")
         events = []
+        sharing_hits = None
         for rule in rules:
             if not in_window(rule, now):
                 continue
-            only = {x for x in (rule.hosts or "").split(",") if x}
+            only = people.expand_scope([x for x in (rule.hosts or "").split(",") if x])
             hits: dict[str, dict] = defaultdict(lambda: {"bytes": 0, "items": defaultdict(int)})
             if rule.kind == "new_host":
                 for key, ip, mac in new_hosts:
                     if not only or key in only:
                         hits[key]["items"][ip or key] += 0
+            elif rule.kind == "sharing":
+                if sharing_hits is None:
+                    sharing_hits = sharing.suspects(self.engine.ttl_snapshot())[1]
+                for s in sharing_hits:
+                    if not only or s["host"] in only:
+                        for ttl, n in s["ttls"].items():
+                            hits[s["host"]]["items"][f"TTL {ttl}"] += 0
+                        hits[s["host"]]["items"]["|".join(s["reasons"])] += 0
             elif rule.kind == "domain":
                 for (host, domain, _app), b in dom.items():
                     if (not only or host in only) and domain_match(domain, rule.value or ""):
@@ -166,6 +107,14 @@ class Auditor:
                         continue
                     if rule.kind == "traffic":
                         ok = True
+                    elif rule.kind == "upload":
+                        # 大流量外发：只算上行；value 可选，限定应用大类或分类（例如网盘）
+                        a = cl.app_info(app)
+                        ok = not rule.value or rule.value in (a.category, cl.category_info(a.category)["group"])
+                        if ok and up:
+                            hits[host]["bytes"] += up
+                            hits[host]["items"][app] += up
+                        continue
                     else:
                         a = cl.app_info(app)
                         grp = cl.category_info(a.category)["group"]
@@ -174,9 +123,15 @@ class Auditor:
                         hits[host]["bytes"] += up + down
                         hits[host]["items"][app] += up + down
             for host, h in hits.items():
-                if rule.kind != "new_host" and h["bytes"] <= 0:
+                if rule.kind not in ("new_host", "sharing") and h["bytes"] <= 0:
                     continue
                 key = (rule.id, host)
+                if rule.kind == "sharing":
+                    if self._fired.get(key, 0) >= _day_start(now):  # 私接路由：每台一天提醒一次
+                        continue
+                    self._fired[key] = now
+                    events.append((rule, host, {"bytes": 0, "total": 0, "items": list(h["items"].items())[:6]}))
+                    continue
                 if rule.min_bytes:
                     self._acc[(rule.id, host, day)] += h["bytes"]
                     if self._acc[(rule.id, host, day)] < rule.min_bytes:
@@ -204,30 +159,65 @@ class Auditor:
                                        detail=json.dumps(detail, ensure_ascii=False), notified=0))
             db.add_all(rows)
             db.commit()
-            push_ids = [row.id for row, (rule, _h, _d) in zip(rows, events) if rule.notify]
+            from app import compliance
+            for rule, host, detail in events:
+                compliance.send_event(rule.name, host, detail)
+            push = [(row.id, rule, host, detail) for row, (rule, host, detail) in zip(rows, events) if rule.notify]
         self.events += len(events)
-        lines = []
-        for rule, host, detail in events:
-            if not rule.notify:
-                continue
-            m = meta[host]
-            what = "、".join(self._label(x) for x, _b in detail["items"][:3])
-            size = _fmt_bytes(detail.get("total") or detail["bytes"])
-            lines.append(f"· {m['name']}（{m['ip']}）{what} {size if rule.kind != 'new_host' else ''}".rstrip()
-                         + f"  [{rule.name}]")
-        if lines and any(c.get("enabled", True) for c in self.notifier.channels()):
-            t = datetime.fromtimestamp(now, _tz()).strftime("%m-%d %H:%M")
-            threading.Thread(target=self._push, args=(f"ROS-DPI 审计提醒 {t}", "\n".join(lines), push_ids),
-                             daemon=True).start()
-
-    def _push(self, title: str, text: str, ids: list[int]):
-        """至少一个通道发送成功才把事件标成已推送；没配通道或全部失败时保持未推送"""
-        res = self.notifier.send(title, text, wait=True)
-        if ids and any(r["ok"] for r in res):
+        if not push:
+            return
+        if notify.in_quiet(now):
+            # 免打扰：先标成“待推送”，结束后由 flush_deferred 汇总发出
             with database.session() as db:
-                for ev in db.scalars(select(AuditEvent).where(AuditEvent.id.in_(ids))):
-                    ev.notified = 1
+                for ev in db.scalars(select(AuditEvent).where(AuditEvent.id.in_([p[0] for p in push]))):
+                    ev.notified = 2
                 db.commit()
+            return
+        self._dispatch([(i, rule, host, detail, meta[host]) for i, rule, host, detail in push], now)
+
+    def line(self, rule_name: str, kind: str, m: dict, detail: dict) -> str:
+        what = "、".join(self._label(x) for x, _b in detail.get("items", [])[:3])
+        size = _fmt_bytes(detail.get("total") or detail.get("bytes") or 0)
+        who = m["name"] + (f"（{m['person']['name']}）" if m.get("person") else "")
+        return f"· {who} {m.get('ip') or ''} {what} {size if kind not in ('new_host', 'sharing') else ''}".rstrip() + f"  [{rule_name}]"
+
+    def _dispatch(self, items: list, now: float, title: str | None = None):
+        """items: [(事件 id, 规则, 终端, detail, 终端信息)]。按规则选的渠道分组发送，成功后标成已推送"""
+        by_types: dict[tuple, list] = defaultdict(list)
+        for i, rule, host, detail, m in items:
+            types = tuple(sorted(x for x in (rule.channels or "").split(",") if x)) or ()
+            by_types[types].append((i, self.line(rule.name, rule.kind, m, detail)))
+        t = datetime.fromtimestamp(now, _tz()).strftime("%m-%d %H:%M")
+        for types, rows in by_types.items():
+            threading.Thread(target=self._push, args=(title or f"ROS-DPI 审计提醒 {t}", "\n".join(r[1] for r in rows),
+                                                      [r[0] for r in rows], list(types) or None), daemon=True).start()
+
+    def _push(self, title: str, text: str, ids: list[int], types: list[str] | None = None):
+        """至少一个渠道发送成功才把事件标成已推送；没配渠道或全部失败时保持未推送"""
+        res = notify.send(title, text, types=types, wait=True)
+        with database.session() as db:
+            for ev in db.scalars(select(AuditEvent).where(AuditEvent.id.in_(ids))):
+                ev.notified = 1 if any(r["ok"] for r in res) else 0
+            db.commit()
+
+    def flush_deferred(self):
+        """免打扰结束后：把期间记下的事件汇总推送一次（每分钟检查）"""
+        if not database.is_configured() or notify.in_quiet():
+            return
+        from app import stats
+        with database.session() as db:
+            evs = db.scalars(select(AuditEvent).where(AuditEvent.notified == 2).order_by(AuditEvent.ts).limit(500)).all()
+            if not evs:
+                return
+            rules = {r.id: r for r in db.scalars(select(AuditRule))}
+            meta = stats.host_meta(db, {e.host for e in evs})
+        items = []
+        for e in evs:
+            r = rules.get(e.rule_id)
+            if r is None:
+                continue
+            items.append((e.id, r, e.host, json.loads(e.detail or "{}"), meta[e.host]))
+        self._dispatch(items, time.time(), title=f"ROS-DPI 免打扰期间的审计提醒（{len(items)} 条）")
 
     def _label(self, x: str) -> str:
         a = self.engine.classifier.apps.get(x)
@@ -267,12 +257,34 @@ def report(db, rng: str) -> dict:
         "total": stats.total(db, start, end),
         "identified_ratio": stats.identified_ratio(apps),
         "top_hosts": stats.top_hosts(db, start, end, limit=10),
+        "top_people": top_people(db, start, end),
         "top_apps": apps[:10],
         "groups": stats.top_groups(cats),
         "new_hosts": [meta[h.key] for h in new][:50],
         "events": [{"rule": r or "-", "count": int(n)} for r, n in ev],
         "events_total": sum(int(n) for _r, n in ev),
     }
+
+
+def top_people(db, start, end, limit=10) -> list[dict]:
+    """按人员汇总的流量排行（只算已经分给人的设备）"""
+    from sqlalchemy import func
+
+    from app.models import TrafficDay
+    c = people.load(db)
+    if not c["dev"]:
+        return []
+    t = TrafficDay
+    per: dict[int, list] = {}
+    for h, u, d in db.execute(select(t.host, func.sum(t.up), func.sum(t.down)).where(
+            t.ts >= start, t.ts < end, t.host.in_(list(c["dev"]))).group_by(t.host)):
+        pid = c["dev"].get(h)
+        x = per.setdefault(pid, [0, 0])
+        x[0] += int(u)
+        x[1] += int(d)
+    rows = [{"id": pid, "name": c["people"][pid]["name"], "dept": c["depts"].get(c["people"][pid]["dept_id"]),
+             "up": u, "down": d, "total": u + d} for pid, (u, d) in per.items() if pid in c["people"]]
+    return sorted(rows, key=lambda r: -r["total"])[:limit]
 
 
 def report_text(r: dict) -> tuple[str, str]:
@@ -282,6 +294,8 @@ def report_text(r: dict) -> tuple[str, str]:
     d1 = datetime.fromtimestamp(r["end"] - 1, _tz()).strftime("%m-%d")
     lines = [f"{d0}{'' if d0 == d1 else ' ~ ' + d1}  总流量 {_fmt_bytes(r['total']['total'])}"
              f"（↓{_fmt_bytes(r['total']['down'])} ↑{_fmt_bytes(r['total']['up'])}），识别率 {r['identified_ratio'] * 100:.0f}%"]
+    if r.get("top_people"):
+        lines.append("Top 人员：" + "，".join(f"{p['name']} {_fmt_bytes(p['total'])}" for p in r["top_people"][:5]))
     if r["top_hosts"]:
         lines.append("Top 终端：" + "，".join(f"{h['name']} {_fmt_bytes(h['total'])}" for h in r["top_hosts"][:5]))
     if r["top_apps"]:
@@ -304,7 +318,7 @@ def push_report(kind: str):
             return
         r = report(db, "yesterday" if kind == "daily" else "last7")
     title, text = report_text(r)
-    Notifier().send(title, text)
+    notify.send(title, text)
 
 
 def _make():

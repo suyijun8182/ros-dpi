@@ -143,6 +143,7 @@
     </div>
 
     <UsersPanel v-if="tab === 'users'" />
+    <CompliancePanel v-if="tab === 'compliance'" />
 
     <div class="grid g2 sys" v-if="tab === 'system'">
       <div class="panel" v-if="s">
@@ -197,6 +198,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import http, { auth, isAdmin } from '../api.js'
 import UsersPanel from '../components/UsersPanel.vue'
+import CompliancePanel from '../components/CompliancePanel.vue'
 import { ago, bytes, datetime, pct } from '../format.js'
 
 const { t } = useI18n()
@@ -215,7 +217,7 @@ const copied = ref(false)
 const hostIp = ref(location.hostname)
 
 // 子标签写在地址栏 ?tab=；旧链接 /settings#guide 打开“接入与自检”
-const TABS = computed(() => (isAdmin.value ? ['status', 'access', 'sources', 'system', 'users'] : ['status', 'system']))
+const TABS = computed(() => (isAdmin.value ? ['status', 'access', 'sources', 'system', 'compliance', 'users'] : ['status', 'system']))
 const tab = computed(() => {
   const k = TABS.value.includes(route.query.tab) ? route.query.tab
     : route.hash === '#guide' || route.hash === '#check' ? 'access' : route.hash === '#sources' ? 'sources' : 'status'

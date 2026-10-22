@@ -2,7 +2,7 @@
 // 风格对齐维盟 WayOS 4.0（debug5）：
 // - 折线：上行钢蓝、下行青绿，两条都在零线以上；细直线，图例居中（线 + 空心圆），纵轴单位紧凑（"114.44 M"）；
 // - 构成：实心饼图 + 右侧竖排可翻页图例；提示框白底、边框跟随数据颜色、数值加粗。
-import { bytes, groupHex, groupName, pct, rate } from './format.js'
+import { bytes, countryName, groupHex, groupName, pct, rate } from './format.js'
 import { i18n } from './i18n/index.js'
 
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim()
@@ -107,7 +107,7 @@ export function groupsOption(tg) {
 
 /** 在线终端数随时间（历史用户）。compact 时是没有坐标轴的小曲线 */
 export function onlineOption(points, gran = 'minute', compact = false) {
-  return lineChart([{ name: t('overview.online'), color: downColor(), data: points.map(p => p.n) }],
+  return lineChart([{ name: t('overview.online'), color: css('--accent'), data: points.map(p => p.n) }],
     points.map(p => fmtTime(p.ts, gran)), 'count', { area: compact, compact })
 }
 
@@ -116,6 +116,87 @@ export function onlineOption(points, gran = 'minute', compact = false) {
  * 图例显示名称和占比；数值在提示框里。
  */
 // narrow：窄屏把图例放到饼图下方横排，避免竖排图例压住饼图
+// 两个 #rrggbb 按比例混色（canvas 不认 CSS color-mix）
+function hexMix(a, b, p) {
+  const rgb = h => { const n = parseInt(h.replace('#', '').slice(0, 6), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255] }
+  if (!/^#[0-9a-f]{6}/i.test(a) || !/^#[0-9a-f]{6}/i.test(b)) return a
+  const x = rgb(a), y = rgb(b)
+  return '#' + x.map((v, i) => Math.round(v * p + y[i] * (1 - p)).toString(16).padStart(2, '0')).join('')
+}
+
+/** 世界地图：按国家的流量，单一色相由浅到深（对数刻度，流量差几个数量级也看得出层次） */
+export function mapOption(rows, active) {
+  const sum = rows.reduce((a, x) => a + x.bytes, 0) || 1
+  const vals = rows.map(r => Math.log10(r.bytes + 1))
+  const panel = css('--panel'), accent = css('--accent')
+  return {
+    textStyle: { fontFamily: FONT },
+    tooltip: tooltip({
+      trigger: 'item',
+      formatter: p => {
+        const r = rows.find(x => x.cc === p.name)
+        const n = countryName(p.name) || p.name
+        return r ? `<b>${n}</b><div style="margin-top:4px"><b>${bytes(r.bytes)}</b> <span style="color:${css('--muted')}">${pct(r.bytes / sum)}</span></div>` : n
+      },
+    }),
+    visualMap: {
+      show: false, min: vals.length ? Math.min(...vals) : 0, max: vals.length ? Math.max(...vals) : 1,
+      inRange: { color: [hexMix(accent, panel, 0.18), accent] },
+    },
+    series: [{
+      type: 'map', map: 'world', roam: false, top: 6, bottom: 6, left: 6, right: 6, selectedMode: false,
+      itemStyle: { areaColor: css('--sunk'), borderColor: panel, borderWidth: 0.6 },
+      emphasis: { label: { show: false }, itemStyle: { areaColor: css('--warn') } },
+      label: { show: false },
+      data: rows.map((r, i) => ({ name: r.cc, value: vals[i],
+        itemStyle: active && active === r.cc ? { borderColor: css('--ink'), borderWidth: 1.5 } : undefined })),
+    }],
+  }
+}
+
+/** 矩形树图：大类 → 小类，面积 = 流量。items: [{id, name, value, color, children: [...]}] */
+export function treemapOption(items) {
+  const sum = items.reduce((a, x) => a + x.value, 0) || 1
+  const ink = css('--ink'), panel = css('--panel')
+  // 文字颜色按方块深浅选：深色块白字，浅色块用正文色
+  const lum = h => { const n = parseInt(String(h).replace('#', '').slice(0, 6), 16); return ((n >> 16 & 255) * 0.299 + (n >> 8 & 255) * 0.587 + (n & 255) * 0.114) / 255 }
+  const fg = c => (/^#[0-9a-f]{6}/i.test(c) && lum(c) < 0.62 ? '#ffffff' : ink)
+  // 大类：外框和标题条用大类本身的颜色（父节点露出来的部分画的是边框色）
+  const node = x => ({ ...x, itemStyle: x.children ? { color: x.color, borderColor: x.color } : { color: x.color },
+    label: { color: fg(x.color) }, upperLabel: { color: fg(x.color) },
+    children: x.children && x.children.map(node) })
+  return {
+    textStyle: { fontFamily: FONT },
+    tooltip: tooltip({
+      formatter: p => {
+        const v = p.data && p.data.value
+        if (!v) return ''
+        const path = (p.treePathInfo || []).slice(1).map(x => x.name).join(' / ')
+        return `<div style="display:flex;align-items:center;gap:10px">${p.marker}<span>${path}</span>`
+          + `<b style="margin-left:14px">${bytes(v)}</b><span style="color:${css('--muted')}">${pct(v / sum)}</span></div>`
+      },
+    }),
+    series: [{
+      type: 'treemap', roam: false, nodeClick: false, breadcrumb: { show: false }, top: 0, left: 0, right: 0, bottom: 0,
+      sort: 'desc', squareRatio: 1.4, visibleMin: 300,
+      upperLabel: { show: true, height: 24 },
+      levels: [
+        // 第 0 层是虚拟的根节点：不显示标题
+        { itemStyle: { borderWidth: 0, gapWidth: 4 }, upperLabel: { show: false } },
+        // 第 1 层：大类（顶部一条标题栏）
+        { itemStyle: { borderColor: panel, borderWidth: 3, gapWidth: 2, borderRadius: 6 },
+          upperLabel: { show: true, height: 24, fontWeight: 600, fontSize: 13, padding: [0, 8],
+            formatter: p => `${p.name}  ${pct(p.value / sum, 0)}` } },
+        // 第 2 层：小类
+        { itemStyle: { borderColor: panel, borderWidth: 1, gapWidth: 1, borderRadius: 4 }, upperLabel: { show: false },
+          label: { show: true, fontSize: 12, lineHeight: 16, padding: [6, 8], overflow: 'truncate',
+            formatter: p => `${p.name}\n{s|${bytes(p.value)}}`, rich: { s: { fontSize: 11, opacity: 0.85 } } } },
+      ],
+      data: items.map(node),
+    }],
+  }
+}
+
 export function pieOption(items, { legend = true, narrow = false } = {}) {
   const sum = items.reduce((a, x) => a + x.value, 0) || 1
   const share = new Map(items.map(x => [x.name, pct(x.value / sum, 1)]))

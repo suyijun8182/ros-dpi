@@ -7,6 +7,10 @@
         <option value="">{{ t('audit.log.allGroups') }}</option>
         <option v-for="g in groups" :key="g.id" :value="g.id">{{ groupName(g) }}</option>
       </select>
+      <select v-if="!host && !person && scene.people.length" id="al-person" class="input sel" v-model="who" :aria-label="L('person')" @change="load(1)">
+        <option value="">{{ L('allPeople') }}</option>
+        <option v-for="p in scene.people" :key="p.id" :value="p.id">{{ p.name }}</option>
+      </select>
       <span class="sp" />
       <span class="faint small" v-if="d">{{ t('audit.log.count', { n: d.total.toLocaleString() }) }}</span>
       <button class="btn sm" @click="exportCsv" :disabled="!d || !d.total || exporting"><Icon name="download" :size="15" />{{ t('common.export') }}</button>
@@ -52,8 +56,9 @@ import { downloadBlob, duration } from '../csv.js'
 import { appName, bytes, catColor, groupName } from '../format.js'
 import { ui } from '../state.js'
 import Icon from './Icon.vue'
+import { L, loadScene, scene } from '../scenario.js'
 
-const props = defineProps({ host: String })
+const props = defineProps({ host: String, person: [Number, String] })
 const { t, locale } = useI18n()
 const d = ref(null)
 const q = ref('')
@@ -72,7 +77,8 @@ function clock(ts, ref0) {
   return x.toDateString() === base.toDateString() || ref0 ? s : `${x.getMonth() + 1}/${x.getDate()} ${s}`
 }
 
-const params = () => ({ range: ui.range, host: props.host || undefined, q: q.value.trim() || undefined, group: group.value || undefined })
+const who = ref('')
+const params = () => ({ range: ui.range, host: props.host || undefined, person: props.person || who.value || undefined, q: q.value.trim() || undefined, group: group.value || undefined })
 async function load(p = page.value) {
   page.value = p
   d.value = await http.get('/audit/logs', { params: { ...params(), page: p, size: 50 } })
@@ -85,9 +91,10 @@ async function exportCsv() {
   } finally { exporting.value = false }
 }
 onMounted(async () => {
+  loadScene()
   try { groups.value = (await http.get('/meta')).groups.filter(g => g.id !== 'unknown') } catch (e) { /* 只影响筛选 */ }
 })
-watch([() => ui.range, () => props.host], () => load(1), { immediate: true })
+watch([() => ui.range, () => props.host, () => props.person], () => load(1), { immediate: true })
 </script>
 
 <style scoped>

@@ -49,7 +49,7 @@ def make_token(username: str) -> str:
 
 # 普通用户（role=user）只读：除了改自己的密码，所有写操作都要管理员；这些读接口也只给管理员
 USER_WRITABLE = {"/api/auth/password"}
-ADMIN_ONLY_GET = ("/api/settings", "/api/audit/notify", "/api/audit/oplog", "/api/auth/users")
+ADMIN_ONLY_GET = ("/api/settings", "/api/audit/notify", "/api/audit/oplog", "/api/auth/users", "/api/compliance")
 _roles: dict[str, tuple[str | None, float]] = {}   # username -> (role，账号不存在时为 None, 缓存时间)
 
 

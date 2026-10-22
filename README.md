@@ -19,6 +19,8 @@
 - **识别规则**：按域名后缀、IP 段、端口自定义识别规则；列出“未识别域名 Top”，一键归类。
 - **审计日志**：访问日志（每台终端什么时候访问了什么、多久、多少流量，可筛选、导出 CSV，默认保留 30 天）；终端的上网时间线；审计规则（按应用、域名、时段、流量、新设备）命中时推送到企业微信 / 钉钉 / 飞书 / Bark / Telegram / Webhook；日报和周报；操作日志。
 - **管理员与普通用户**：普通用户只能查看，不能修改设置和规则；在 系统设置 → 用户管理 添加。
+- **人员与使用场景**：把一个人的多台设备归到一起，按人看流量、在线时长和行为标签。**家用**场景关注孩子的上网健康（屏幕时间、游戏和短视频上限、熬夜、不良内容）；**企业**场景关注效率与合规（工作时间娱乐占比、求职倾向、上班炒股、大流量外发、私接路由）。终端类型（手机、电脑、电视、摄像头……）自动识别。
+- **合规与管控**：Syslog 外发访问日志和审计事件；留存天数可在网页设置；按人员 / 设备生成 RouterOS 管控命令（封禁应用、定时断网、限速，附撤销命令，ROS-DPI 不直接改路由器）。通知支持企业微信、钉钉、飞书、Bark、Telegram、邮件、PushPlus、Server酱、ntfy、Gotify、Discord、Slack、Webhook，可设免打扰。
 - 顶栏功能搜索（终端、IP、MAC、应用、页面），按 / 键聚焦。
 - 中英双语，深浅色主题，手机可用。
 
@@ -194,6 +196,7 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 | `MOSDNS_URL` | 空 | MosDNS 审计 API 地址（也可在网页填写） |
 | `FAKEIP_CIDRS` | `198.18.0.0/15,fc00::/18` | FakeIP 地址段 |
 | `ASN_DB` | `true` | 自动下载 IP→ASN 库；没有外网时设为 `false` |
+| `OUI_DB` | `true` | 自动下载 IEEE MAC 厂商库（识别终端类型，每 30 天更新）；没有外网时设为 `false` |
 | `WAN_INTERFACE` | 自动 | WAN 接口名，默认按默认路由识别 |
 | `TZ` | `Asia/Shanghai` | 统计用时区，每周从周一开始 |
 | `HTTP_PORT` / `IPFIX_PORT` / `TZSP_PORT` | 8080 / 2055 / 37008 | 端口 |
@@ -234,6 +237,8 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
 - **Rules**: custom domain / CIDR / port rules, and a list of top unidentified domains to classify.
 - **Audit**: an access log of every visit (who reached what, when, for how long and how much; filterable, CSV export, kept 30 days), a per-host daily timeline, audit rules (by app, domain, time window, traffic or new device) that push alerts to WeCom / DingTalk / Feishu / Bark / Telegram / webhooks, daily and weekly reports, and an operation log.
 - **Admins and users**: regular users are read-only; add them under Settings → Users.
+- **People and scenarios**: group a person's devices and see their traffic, online time and behaviour tags. The **home** scenario focuses on children's online health (screen time, gaming and short-video limits, late nights, adult content); the **business** scenario on productivity and compliance (leisure at work, job hunting, trading at work, large uploads, rogue routers). Device types are detected automatically.
+- **Compliance and control**: Syslog forwarding of the access log and audit events, retention set in the web UI, and generated RouterOS control commands (block apps, scheduled blocks, rate limits, with undo; ROS-DPI never writes to the router). Notifications via WeCom, DingTalk, Feishu, Bark, Telegram, email, PushPlus, ServerChan, ntfy, Gotify, Discord, Slack and webhooks, with quiet hours.
 - Chinese and English UI, light and dark themes, works on phones.
 
 **How it works.** RouterOS exports IPFIX (`/ip traffic-flow`) for byte counts, and mirrors DNS answers plus the first packets of each HTTPS/QUIC connection via `sniff-tzsp`. The TLS / QUIC handshake carries the target domain (SNI) per connection; DNS answers map remote IPs back to the domain the client looked up. A rule library maps domains to apps. An optional read-only REST user provides hostnames, IP-to-MAC, WAN rate and LAN prefixes. Data is aggregated per minute, hour and day into MySQL.

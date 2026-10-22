@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import httpx
 from fastapi.testclient import TestClient
 
-from app import audit, database, timeutil
+from app import audit, database, notify, timeutil
 from app.engine import engine
 from app.main import app
 from app.models import AccessLog, AuditEvent
@@ -82,9 +82,9 @@ def test_rules_events_notify_and_oplog(monkeypatch):
             return False
 
         def post(self, url, json=None, **kw):
-            sent.append((url, json))
+            sent.append((url, json if json is not None else kw.get("content")))
             return httpx.Response(200, json={"errcode": 0}, request=httpx.Request("POST", url))
-    monkeypatch.setattr(audit.httpx, "Client", FakeClient)
+    monkeypatch.setattr(notify.httpx, "Client", FakeClient)
 
     with TestClient(app) as c:
         h = _h(c)
@@ -94,11 +94,18 @@ def test_rules_events_notify_and_oplog(monkeypatch):
         c.post("/api/audit/rules", json={"name": "大流量", "kind": "traffic", "min_bytes": 5000}, headers=h)
         c.post("/api/audit/rules", json={"name": "访问 B 站", "kind": "domain", "value": "bilibili.com", "notify": False}, headers=h)
         c.post("/api/audit/rules", json={"name": "新设备", "kind": "new_host"}, headers=h)
-        r = c.put("/api/audit/notify", json={"channels": [{"type": "wecom", "name": "家庭群", "url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=SECRET-KEY-123456789"}]}, headers=h).json()
-        assert r["channels"][0]["url"].endswith("…") and "SECRET-KEY-123456789" not in json.dumps(r)
-        # 保存时 url 以 … 结尾表示不修改
-        c.put("/api/audit/notify", json={"channels": r["channels"]}, headers=h)
-        assert audit.Notifier.channels()[0]["url"].endswith("123456789")
+        key = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=SECRET-KEY-123456789"
+        bad = c.put("/api/audit/notify", json={"config": {"dingtalk": {"enabled": True, "url": ""}}}, headers=h)
+        assert bad.status_code == 400  # 启用了但没填地址
+        r = c.put("/api/audit/notify", json={"config": {"wecom": {"enabled": True, "url": key}}}, headers=h).json()
+        assert r["config"]["wecom"]["url"].endswith("…") and "SECRET-KEY-123456789" not in json.dumps(r)
+        assert r["enabled"] == ["wecom"]
+        # 保存时以 … 结尾表示不修改
+        c.put("/api/audit/notify", json={"config": r["config"]}, headers=h)
+        assert notify.load_config()["wecom"]["url"] == key
+        # 未保存的配置也能测试；掩码过的密钥沿用已保存的值
+        assert c.post("/api/audit/notify/test", json={"channel": "wecom", "config": r["config"]["wecom"]}, headers=h).json()["ok"]
+        assert sent[-1][0] == key and "测试消息" in sent[-1][1]["text"]["content"]
 
         audit.auditor.reload()
         now = time.time()

@@ -17,6 +17,9 @@ from app.ros_poller import poller
 from app import audit  # noqa: F401  挂上审计（engine.audit）
 from app.routers import admin, auth, setup, stats
 from app.routers import audit as audit_router
+from app.routers import compliance as compliance_router
+from app.routers import people as people_router
+from app import devtype
 from app.security import ensure_admin
 
 FRONTEND_DIR = os.environ.get("FRONTEND_DIR", os.path.join(os.path.dirname(__file__), "..", "frontend_dist"))
@@ -73,6 +76,7 @@ async def lifespan(app: FastAPI):
     transports = await start_listeners(engine, s.ipfix_port, s.tzsp_port)
     sched = BackgroundScheduler(timezone=s.tz)
     sched.add_job(_safe(engine.flush, "flush"), "cron", second=0, max_instances=1, coalesce=True)
+    sched.add_job(_safe(audit.auditor.flush_deferred, "notify-deferred"), "cron", second=30, max_instances=1, coalesce=True)
     sched.add_job(_safe(engine.cleanup, "cleanup"), "cron", minute=17, max_instances=1)
     sched.add_job(_safe(_reconnect, "db-reconnect"), "interval", seconds=30, max_instances=1, coalesce=True)
     # 外部数据源：没配置时 poll() 直接返回
@@ -81,6 +85,11 @@ async def lifespan(app: FastAPI):
     sched.add_job(_safe(_auto_update_rules, "rules-update"), "interval", hours=6, max_instances=1, coalesce=True)
     # 审计报表：日报每天 08:00 推送昨天的，周报每周一 08:30 推送近 7 天的（在审计 → 报表里开启）
     sched.add_job(_safe(lambda: audit.push_report("daily"), "report-daily"), "cron", hour=8, minute=0)
+    # 终端类型：每小时按主机名、MAC 厂商、最近用过的应用重新识别；MAC 厂商库每 30 天更新
+    sched.add_job(_safe(devtype.refresh_all, "devtype"), "cron", minute=7, max_instances=1, coalesce=True)
+    sched.add_job(_safe(devtype.oui.update if s.oui_db else devtype.oui.load, "oui-db"), "interval", hours=24,
+                  max_instances=1, coalesce=True)
+    asyncio.get_running_loop().run_in_executor(None, _safe(devtype.startup, "devtype-startup"))
     sched.add_job(_safe(lambda: audit.push_report("weekly"), "report-weekly"), "cron", day_of_week="mon", hour=8, minute=30)
     asyncio.get_running_loop().call_later(120, lambda: asyncio.get_running_loop().run_in_executor(
         None, _safe(_auto_update_rules, "rules-update")))
@@ -114,7 +123,8 @@ async def _unhandled(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": f"服务器内部错误：{type(exc).__name__}: {msg}"})
 
 
-for r in (setup.router, auth.router, stats.router, admin.router, audit_router.router):
+for r in (setup.router, auth.router, stats.router, admin.router, audit_router.router, people_router.router,
+          compliance_router.router):
     app.include_router(r)
 
 

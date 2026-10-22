@@ -24,7 +24,7 @@
     <aside class="side" :aria-label="t('shell.menu')">
       <nav class="nav">
         <router-link v-for="n in nav" :key="n.to" :to="n.to" :class="{ on: isOn(n) }" :title="ui.side === 'mini' ? t(n.label) : null" @click="drawer = false">
-          <Icon :name="n.icon" :size="19" /><span>{{ t(n.label) }}</span>
+          <Icon :name="n.icon" :size="19" /><span>{{ navLabel(n) }}</span>
         </router-link>
       </nav>
       <div class="side-foot"><span class="dot" :class="status" /><span>v{{ version }}</span></div>
@@ -48,6 +48,7 @@ import Logo from './components/Logo.vue'
 import SearchBox from './components/SearchBox.vue'
 import { setLang } from './i18n/index.js'
 import { toggleTheme, ui } from './state.js'
+import { L, loadScene } from './scenario.js'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -61,20 +62,24 @@ const nav = [
   { to: '/hosts', label: 'nav.hosts', icon: 'hosts' },
   { to: '/apps', label: 'nav.apps', icon: 'apps' },
   { to: '/flow', label: 'nav.flow', icon: 'flow' },
+  { to: '/people', label: 'nav.people', icon: 'people' },
   { to: '/audit', label: 'nav.audit', icon: 'audit' },
   { to: '/rules', label: 'nav.rules', icon: 'rules' },
   { to: '/settings', label: 'nav.settings', icon: 'settings' },
 ]
-const pages = computed(() => nav.map(n => ({ to: n.to, label: t(n.label) })))
+// 人员页的称呼跟场景走（家庭成员 / 人员）
+const navLabel = n => (n.to === '/people' ? L('nav') : t(n.label))
+const pages = computed(() => nav.map(n => ({ to: n.to, label: navLabel(n) })))
 const isOn = n => (n.to === '/' ? route.path === '/' : route.path.startsWith(n.to))
 
 // 面包屑：一级页面 + 详情页
 const crumbs = computed(() => {
   const top = nav.find(isOn)
   if (!top) return []
-  const out = [{ label: t(top.label), to: route.path === top.to ? null : top.to }]
+  const out = [{ label: navLabel(top), to: route.path === top.to ? null : top.to }]
   if (route.name === 'host') out.push({ label: t('shell.hostDetail') })
   if (route.name === 'app') out.push({ label: t('shell.appDetail') })
+  if (route.name === 'person') out.push({ label: L('person') })
   return out
 })
 
@@ -90,6 +95,7 @@ async function loadInfo() {
   try {
     version.value = (await http.get('/health')).version
     auth.role = (await http.get('/auth/me')).role || ''  // 管理员可能改了你的角色
+    loadScene()
     try { localStorage.setItem('rosdpi.role', auth.role) } catch (e) { /* ignore */ }
     status.value = (await http.get('/system')).collector.flow_ok ? 'on' : 'warn'
   } catch (e) { /* 只影响侧边栏底部的小字 */ }

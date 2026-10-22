@@ -11,7 +11,7 @@
       <div class="panel">
         <div class="panel-h"><h2>{{ t('apps.byGroup') }}</h2><span class="faint small">{{ t('apps.byGroupHint') }}</span><span class="sp" />
           <button v-if="group" class="more" @click="pick({})">{{ t('apps.showAll') }}</button></div>
-        <div class="panel-b"><Composition :groups="d.groups" clickable drill :active="group" height="340px" @pick="pick" /></div>
+        <div class="panel-b"><Treemap :groups="d.groups" :group="group" height="320px" @pick="pick" /></div>
       </div>
 
       <!-- DPI 协议：大类 → 小类 → 应用 三级下钻，版式同维盟「DPI 协议详情」（debug9） -->
@@ -45,7 +45,7 @@
         <div class="tbl-wrap">
           <table class="tbl dpi">
             <thead><tr>
-              <th class="rk m-hide">#</th>
+              <th class="rk m-hide"><button class="th-b" :title="t('apps.dpi.fixedOrder')" @click="sortBy('')">#<span class="arr" :class="{ on: !sortK }">▲</span></button></th>
               <th v-for="c in COLS" :key="c.k" :class="[c.cls, { sortable: true }]" :aria-sort="sortK === c.k ? (sortDesc ? 'descending' : 'ascending') : 'none'">
                 <button class="th-b" @click="sortBy(c.k)">{{ t(c.label) }}<span class="arr" :class="{ on: sortK === c.k }">{{ sortK === c.k && !sortDesc ? '▲' : '▼' }}</span></button></th>
               <th class="r">{{ t('common.details') }}</th>
@@ -77,7 +77,7 @@ import { computed, ref, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import http, { enc } from '../api.js'
-import Composition from '../components/Composition.vue'
+import Treemap from '../components/Treemap.vue'
 import Icon from '../components/Icon.vue'
 import { exportCsv } from '../csv.js'
 import RangeTabs from '../components/RangeTabs.vue'
@@ -96,8 +96,11 @@ const group = computed(() => route.query.group || CAT_GROUP[cat.value] || '')
 const s = computed(() => q.value.trim().toLowerCase())
 const every = ref(10)      // 刷新间隔（秒）；按应用拆分的速率来自 RouterOS 每分钟的 IPFIX，刷得再快也不会变
 const paused = ref(false)
-const { loading, error, reload } = usePoll(async () => { d.value = await http.get('/apps', { params: { range: ui.range } }) },
-  0, () => ui.range)
+const meta = ref({ groups: [], categories: [] })
+const { loading, error, reload } = usePoll(async () => {
+  if (!meta.value.groups.length) meta.value = await http.get('/meta')
+  d.value = await http.get('/apps', { params: { range: ui.range } })
+}, 0, () => ui.range)
 let timer = null
 watchEffect(onCleanup => {
   if (paused.value) return
@@ -118,15 +121,18 @@ const COLS = [
   { k: 'up', label: 'apps.dpi.upBytesCol', cls: 'r m-hide' },
   { k: 'down', label: 'apps.dpi.downBytesCol', cls: 'r' },
 ]
-const sortK = ref('down')
+// 默认按识别库里的固定顺序（序号）；点列头按该列排序，再点序号回到固定顺序
+const sortK = ref('')
 const sortDesc = ref(true)
 function sortBy(k) {
+  if (!k) { sortK.value = ''; return }
   if (sortK.value === k) sortDesc.value = !sortDesc.value
   else { sortK.value = k; sortDesc.value = k !== 'label' }
 }
 
-const gObj = computed(() => d.value.groups.find(x => x.id === group.value))
-const cObj = computed(() => cat.value && gObj.value && gObj.value.children.find(x => x.id === cat.value))
+const gObj = computed(() => meta.value.groups.find(x => x.id === group.value))
+const cObj = computed(() => cat.value && meta.value.categories.find(x => x.id === cat.value))
+const ZERO = { up: 0, down: 0 }
 const sumRates = list => list.reduce((o, a) => { o.rate_up += a.rate_up; o.rate_down += a.rate_down; return o }, { rate_up: 0, rate_down: 0 })
 const appRow = a => ({ kind: 'app', id: a.id, label: appName(a), sub: s.value ? `${groupName(a)} · ${catName(a)}` : '', color: catColor(a.category),
   up: a.up, down: a.down, rate_up: a.rate_up, rate_down: a.rate_down, hosts: a.hosts })
@@ -139,18 +145,25 @@ const rows = computed(() => {
   } else if (cat.value) {
     list = apps.filter(a => a.category === cat.value).map(appRow)
   } else if (group.value) {
-    list = (gObj.value ? gObj.value.children : []).map(c => {
+    // 大类下的小类：全部列出（没有数据也列），和维盟一样固定
+    const have = Object.fromEntries(((d.value.groups.find(x => x.id === group.value) || {}).children || []).map(c => [c.id, c]))
+    list = meta.value.categories.filter(c => c.group === group.value).map((c, i) => {
       const in_ = apps.filter(a => a.category === c.id)
-      return { kind: 'cat', id: c.id, label: catName(c), color: catColor(c.id), up: c.up, down: c.down, n: in_.length, ...sumRates(in_) }
+      const x = have[c.id] || ZERO
+      return { kind: 'cat', idx: i, id: c.id, label: catName(c), color: catColor(c.id), up: x.up, down: x.down, n: in_.length, ...sumRates(in_) }
     })
   } else {
-    list = d.value.groups.map(g => {
+    const have = Object.fromEntries(d.value.groups.map(g => [g.id, g]))
+    list = meta.value.groups.map((g, i) => {
       const in_ = apps.filter(a => a.group === g.id)
-      return { kind: 'group', id: g.id, label: groupName(g), color: catColor((g.children[0] || {}).id), up: g.up, down: g.down,
-        n: g.children.length, ...sumRates(in_) }
+      const x = have[g.id] || ZERO
+      const first = meta.value.categories.find(c => c.group === g.id)
+      return { kind: 'group', idx: i, id: g.id, label: groupName(g), color: catColor(first ? first.id : 'unknown'), up: x.up, down: x.down,
+        n: meta.value.categories.filter(c => c.group === g.id).length, ...sumRates(in_) }
     })
   }
   const k = sortK.value, dir = sortDesc.value ? -1 : 1
+  if (!k) return list.map((r, i) => ({ ...r, idx: r.idx ?? i }))
   return [...list].sort((a, b) => (k === 'label' ? a.label.localeCompare(b.label, 'zh') : a[k] - b[k]) * dir)
 })
 const lvlSum = computed(() => rows.value.reduce((o, r) => {

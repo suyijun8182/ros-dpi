@@ -4,6 +4,7 @@
       <router-link to="/hosts" class="btn sm">← {{ t('common.back') }}</router-link>
       <h1 v-if="d"><span class="dot" :class="{ on: d.online }" /> {{ d.name }}</h1>
       <span class="sp" />
+      <button v-if="d && isAdmin" class="btn sm" @click="ctl = true"><Icon name="shield" :size="15" />{{ t('ctl.button') }}</button>
       <RangeTabs v-if="tab !== 'timeline'" />
     </div>
     <div v-if="error" class="err">{{ error }}</div>
@@ -22,7 +23,19 @@
         <div><span class="k">{{ t('hosts.hostname') }}</span>{{ d.hostname || '-' }}</div>
         <div><span class="k">{{ t('hosts.firstSeen') }}</span>{{ datetime(d.first_seen) }}</div>
         <div><span class="k">{{ t('hosts.lastSeen') }}</span>{{ ago(d.last_seen) }}</div>
-        <div><span class="k">{{ t('common.rate') }}</span><span class="num"><span class="down">↓{{ rate(d.rate_down) }}</span> <span class="up">↑{{ rate(d.rate_up) }}</span></span></div>
+        <div><span class="k">{{ t('common.rate') }}</span><span class="num"><span class="up">↑{{ rate(d.rate_up) }}</span> <span class="down">↓{{ rate(d.rate_down) }}</span></span></div>
+        <div><span class="k">{{ t('people.dtype') }}</span>
+          <select v-if="isAdmin" class="input sel" :value="d.dtype_manual || ''" :aria-label="t('people.dtype')" @change="setDtype($event.target.value)">
+            <option value="">{{ t('people.dtypeAuto', { t: t('dev.' + (d.dtype_auto || 'unknown')) }) }}</option>
+            <option v-for="x in DTYPES" :key="x" :value="x">{{ t('dev.' + x) }}</option></select>
+          <span v-else><Icon :name="'dev-' + (d.dtype || 'unknown')" :size="15" /> {{ t('dev.' + (d.dtype || 'unknown')) }}</span>
+          <span class="faint small" v-if="d.vendor"> {{ d.vendor }}</span></div>
+        <div><span class="k">{{ L('person') }}</span>
+          <select v-if="isAdmin" class="input sel" :value="d.person ? d.person.id : ''" :aria-label="L('person')" @change="setPerson($event.target.value)">
+            <option value="">—</option>
+            <option v-for="p in scene.people" :key="p.id" :value="p.id">{{ p.name }}</option></select>
+          <router-link v-else-if="d.person" :to="`/people/${d.person.id}`" class="link">{{ d.person.name }}</router-link><span v-else>-</span>
+          <router-link v-if="isAdmin && d.person" :to="`/people/${d.person.id}`" class="link small"> {{ t('common.details') }} ›</router-link></div>
         <div class="alias" v-if="isAdmin">
           <span class="k">{{ t('hosts.alias') }}</span>
           <input class="input" v-model="alias" :placeholder="t('hosts.aliasPlaceholder')" @keyup.enter="saveAlias" />
@@ -92,6 +105,7 @@
       </div>
     </template>
     <div v-else-if="loading" class="empty">{{ t('common.loading') }}</div>
+    <ControlModal :open="ctl" target="host" :target-id="hostKey" :name="d ? d.name : ''" @close="ctl = false" />
   </div>
 </template>
 
@@ -100,6 +114,9 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AccessLog from '../components/AccessLog.vue'
+import ControlModal from '../components/ControlModal.vue'
+import Icon from '../components/Icon.vue'
+import { L, loadScene, scene } from '../scenario.js'
 import Timeline from '../components/Timeline.vue'
 import http, { enc, isAdmin } from '../api.js'
 import Composition from '../components/Composition.vue'
@@ -119,6 +136,17 @@ const by = ref('mac')
 const saved = ref(false)
 const aliasErr = ref('')
 const openGroup = ref('')
+const ctl = ref(false)
+const DTYPES = ['phone', 'tablet', 'computer', 'tv', 'console', 'camera', 'iot', 'nas', 'network', 'unknown']
+loadScene()
+async function setDtype(v) {
+  const r = await http.put(`/hosts/${enc(props.hostKey)}/dtype`, { dtype: v || null })
+  Object.assign(d.value, { dtype: r.dtype, dtype_manual: r.dtype_manual })
+}
+async function setPerson(v) {
+  const r = await http.put('/devices/bind', { host: props.hostKey, person_id: v ? +v : null })
+  d.value.person = r.person
+}
 const HTABS = ['overview', 'log', 'timeline']
 const route = useRoute()
 const router = useRouter()

@@ -3,14 +3,14 @@ import ipaddress
 import struct
 import threading
 import time
-from collections import OrderedDict, defaultdict
+from collections import Counter, OrderedDict, defaultdict
 
 from sqlalchemy import bindparam, delete, insert, select, update
 
 from app import timeutil
 from app.classify import GENERIC_APPS, Classifier
 from app.collector.ipfix import FlowDecoder
-from app.collector.tls import SniExtractor, ethernet_ip
+from app.collector.tls import SniExtractor, ethernet_ip, ip_ttl
 from app.collector.tzsp import parse_dns_response, tzsp_payload
 from app.config import get_settings
 from app import database, hostnames
@@ -69,6 +69,9 @@ class Engine:
         # 进行中的访问每分钟也写库（首次插入、之后按行 ID 更新），访问日志和时间线只慢一分钟
         self.visits: OrderedDict[tuple, list] = OrderedDict()
         self._vid = 0
+        # 私接路由检测：终端 -> {TTL: 包数}，镜像的 TLS / QUIC 首包里取，每天清零（sharing.py）
+        self.ttl: dict[str, Counter] = {}
+        self.ttl_day = 0
         # 代理分流（sing-box）：(策略组, 出口节点) -> [上行, 下行, 连接数, {app: bytes}, 最近]，只留今天
         self.proxy_routes: dict[tuple[str, str], list] = {}
         self.proxy_day = 0
@@ -167,6 +170,8 @@ class Engine:
         if proto == 17 and len(l4) >= 8 and struct.unpack_from("!H", l4, 0)[0] == 53:
             self._on_dns(src, dst, l4[8:])
             return
+        if proto in (6, 17) and self.is_lan(src) and not self.is_lan(dst):
+            self._note_ttl(src, ip_ttl(frame))
         hit = self.sni.feed(src, dst, proto, l4)
         if hit:
             client, cport, server, _sport, name, kind = hit
@@ -176,6 +181,26 @@ class Engine:
             with self.lock:
                 self.names.add_conn(client, cport, server, name, now)
             self.dns.add(name, [(server, 0)], [], now)
+
+    def _note_ttl(self, src: str, ttl: int | None):
+        if not ttl or src in self.proxy_ips:
+            return
+        day = timeutil.day_bucket(time.time())
+        with self.lock:
+            if day != self.ttl_day:
+                self.ttl, self.ttl_day = {}, day
+            key, _mac = self.host_key(src, None)
+            c = self.ttl.get(key)
+            if c is None:
+                if len(self.ttl) >= 20_000:
+                    return
+                c = self.ttl[key] = Counter()
+            if sum(c.values()) < 5000:
+                c[ttl] += 1
+
+    def ttl_snapshot(self) -> dict[str, Counter]:
+        with self.lock:
+            return {k: Counter(v) for k, v in self.ttl.items()}
 
     def _on_dns(self, server: str, client: str, payload: bytes):
         try:
@@ -383,18 +408,22 @@ class Engine:
         """调用方持有 self.lock。返回 (要插入的行, 要更新的行)：有变化的进行中访问也写；
         5 分钟没有新流量的访问结束后移出内存；持续超过 1 小时的封口，后面另起一行。final：全部写完移出"""
         out = [(k, v) for k, v in self._closed_visits]
+        finished = [self._visit_row(k, v) for k, v in self._closed_visits]
         self._closed_visits = []
         for k in list(self.visits):
             v = self.visits[k]
             if final or now - v[5] > VISIT_GAP:
                 out.append((k, v))
+                finished.append(self._visit_row(k, v))
                 del self.visits[k]
             elif v[5] - v[4] > VISIT_SPLIT:
                 out.append((k, list(v)))
+                finished.append(self._visit_row(k, v))
                 v[4], v[6], v[7], v[8], v[10], v[11], v[12] = v[5], 0, 0, 0, self._next_vid(), False, False
             elif v[12] and (v[7] or v[8]):
                 out.append((k, list(v)))
                 v[11], v[12] = True, False
+        self.finished_visits = [r for r in finished if r["up"] or r["down"]]
         ins, upd = [], []
         for k, v in out:
             if not v[12] or not (v[7] or v[8]):
@@ -492,6 +521,10 @@ class Engine:
                 for chunk in _chunks(drs, 500):
                     upsert_add(db, DnsCache.__table__, chunk, ["ip"], [], ["name", "cname", "expires"])
             db.commit()
+        finished, self.finished_visits = getattr(self, "finished_visits", []), []
+        if finished:
+            from app import compliance
+            compliance.send_visits(finished)
         if self.audit:
             # 审计规则：按这一分钟的流量和新出现的终端检查
             self.audit.evaluate(buf, dom, new_hosts, now)
@@ -538,17 +571,18 @@ class Engine:
     def cleanup(self):
         if not database.is_configured():
             return
-        s = get_settings()
+        from app import compliance
+        r = compliance.retention()  # 网页里设置的留存天数优先于环境变量
         now = int(time.time())
         with database.session() as db:
-            db.execute(delete(TrafficMinute).where(TrafficMinute.ts < now - s.retention_minute_days * 86400))
-            db.execute(delete(TrafficHour).where(TrafficHour.ts < now - s.retention_hour_days * 86400))
-            db.execute(delete(TrafficDay).where(TrafficDay.ts < now - s.retention_day_days * 86400))
-            db.execute(delete(HostDomainDay).where(HostDomainDay.ts < now - s.retention_domain_days * 86400))
+            db.execute(delete(TrafficMinute).where(TrafficMinute.ts < now - r["minute"] * 86400))
+            db.execute(delete(TrafficHour).where(TrafficHour.ts < now - r["hour"] * 86400))
+            db.execute(delete(TrafficDay).where(TrafficDay.ts < now - r["day"] * 86400))
+            db.execute(delete(HostDomainDay).where(HostDomainDay.ts < now - r["domain"] * 86400))
             db.execute(delete(DnsCache).where(DnsCache.expires < now))
-            db.execute(delete(AccessLog).where(AccessLog.ts_start < now - s.retention_log_days * 86400))
-            db.execute(delete(AuditEvent).where(AuditEvent.ts < now - s.retention_event_days * 86400))
-            db.execute(delete(OpLog).where(OpLog.ts < now - s.retention_event_days * 86400))
+            db.execute(delete(AccessLog).where(AccessLog.ts_start < now - r["log"] * 86400))
+            db.execute(delete(AuditEvent).where(AuditEvent.ts < now - r["event"] * 86400))
+            db.execute(delete(OpLog).where(OpLog.ts < now - r["event"] * 86400))
             db.commit()
         self.dns.purge()
         with self.lock:

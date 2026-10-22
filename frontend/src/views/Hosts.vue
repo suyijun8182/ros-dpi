@@ -38,7 +38,9 @@
           </thead>
           <tbody>
             <tr v-for="h in shown" :key="h.key" class="link" @click="$router.push(`/hosts/${enc(h.key)}`)">
-              <td><span class="nm"><span class="dot" :class="{ on: h.online }" />{{ h.name }}
+              <td><span class="nm"><span class="dot" :class="{ on: h.online }" />
+                <span class="dev" :title="t('dev.' + (h.dtype || 'unknown')) + (h.vendor ? ' · ' + h.vendor : '')"><Icon :name="'dev-' + (h.dtype || 'unknown')" :size="16" /></span>{{ h.name }}
+                <router-link v-if="h.person" :to="`/people/${h.person.id}`" class="pill per" @click.stop>{{ h.person.name }}</router-link>
                 <span v-if="h.alias_by" class="pill grey by" :title="t('hosts.byHint.' + h.alias_by)">{{ h.alias_by.toUpperCase() }}</span>
                 <span class="faint hn m-hide" v-if="h.alias && h.hostname && h.hostname !== h.alias">{{ h.hostname }}</span>
                 <button class="btn sm ghost ren" :title="t('hosts.rename')" :aria-label="t('hosts.rename')" @click.stop="rename(h)"><Icon name="edit" :size="14" /></button></span>
@@ -265,6 +267,8 @@ async function delName(n) {
 </script>
 
 <style scoped>
+.dev { color: var(--muted); display: inline-flex; margin-right: 6px; vertical-align: -3px; }
+.per { margin-left: 6px; height: 20px; font-size: 11px; }
 .tabs button { font-size: 15px; padding: 8px 14px 11px; }
 .cnt { margin-left: 6px; font-size: 13px; }
 .search { width: 260px; }

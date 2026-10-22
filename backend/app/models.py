@@ -57,6 +57,9 @@ class Host(Base):
     first_seen = Column(BigInteger)
     last_seen = Column(BigInteger)
     online_since = Column(BigInteger)  # 本次上线时间（离线超过 5 分钟后再出现算新的一次）
+    dtype = Column(String(16))         # 手动指定的终端类型（优先）
+    dtype_auto = Column(String(16))    # 自动识别的终端类型（devtype.py，每小时刷新）
+    vendor = Column(String(64))        # MAC 厂商（IEEE OUI）
 
 
 class HostName(Base):
@@ -146,6 +149,7 @@ class AuditRule(Base):
     time_to = Column(String(5), default="24:00")
     min_bytes = Column(BigInteger, default=0)        # 时段内累计超过这么多字节才算命中
     notify = Column(Integer, nullable=False, default=1)
+    channels = Column(String(255))                   # 推送到哪些渠道（逗号分隔）；空 = 所有已启用的渠道
     created = Column(BigInteger)
 
 
@@ -172,3 +176,29 @@ class OpLog(Base):
     detail = Column(Text)
     ok = Column(Integer, default=1)
     __table_args__ = (Index("ix_oplog_ts", "ts"),)
+
+
+# ---------------- 人员 ----------------
+
+class Department(Base):
+    """部门 / 分组（家里可以是“家长”“孩子”）"""
+    __tablename__ = "departments"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(64), unique=True, nullable=False)
+
+
+class Person(Base):
+    """人员：一个人可以有多台设备，统计、报表、审计规则都能按人"""
+    __tablename__ = "people"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(64), nullable=False)
+    dept_id = Column(Integer, index=True)
+    note = Column(String(255))
+    created = Column(Integer)
+
+
+class PersonDevice(Base):
+    """设备归属：终端 key（MAC 或 IP:x）→ 人员"""
+    __tablename__ = "person_devices"
+    host = Column(String(64), primary_key=True)
+    person_id = Column(Integer, nullable=False, index=True)

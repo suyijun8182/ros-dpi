@@ -71,13 +71,17 @@
         </div>
       </div>
       <div class="panel-b ctry" v-if="dest && countries.length">
-        <div class="sec">{{ t('flow.countries') }}<span class="faint small">{{ t('flow.countriesHint') }}</span></div>
-        <div class="cgrid">
-          <button v-for="c in countries" :key="c.cc" class="cc" :class="{ on: country === c.cc }" @click="country = country === c.cc ? '' : c.cc">
-            <span class="cn">{{ c.name }}</span><span class="num">{{ bytes(c.bytes) }}</span>
-            <span class="bar"><i :style="{ width: (c.bytes / countries[0].bytes * 100) + '%' }" /></span>
-            <span class="faint small num">{{ pct(c.bytes / countryTotal) }}</span>
-          </button>
+        <div class="sec">{{ t('flow.countries') }}<span class="faint small">{{ t('flow.countriesHint') }}</span>
+          <span class="sp" /><button v-if="country" class="btn sm" @click="country = ''">{{ t('apps.showAll') }}</button></div>
+        <div class="mapgrid">
+          <WorldMap :countries="dest.countries" :active="country" height="320px" @pick="cc => (country = country === cc ? '' : cc)" />
+          <div class="clist">
+            <button v-for="c in countries" :key="c.cc" class="cc" :class="{ on: country === c.cc }" @click="country = country === c.cc ? '' : c.cc">
+              <span class="cn">{{ c.name }}</span><span class="num">{{ bytes(c.bytes) }}</span>
+              <span class="bar"><i :style="{ width: (c.bytes / maxCountry * 100) + '%' }" /></span>
+              <span class="faint small num">{{ pct(c.bytes / countryTotal) }}</span>
+            </button>
+          </div>
         </div>
       </div>
       <div class="tbl-wrap" v-if="dest">
@@ -178,6 +182,7 @@ import { useRoute, useRouter } from 'vue-router'
 import http, { enc } from '../api.js'
 import Icon from '../components/Icon.vue'
 import RangeTabs from '../components/RangeTabs.vue'
+import WorldMap from '../components/WorldMap.vue'
 import { duration, exportCsv } from '../csv.js'
 import { appName, bytes, catColor, countryName, pct, rate } from '../format.js'
 import { ui } from '../state.js'
@@ -240,8 +245,11 @@ async function loadDest() {
 }
 // 国家 / 地区分布：按排行里的目标汇总，点一个只看该国家的目标
 const country = ref('')
+// “未知”（查不到 IP 的域名）放最后
 const countries = computed(() => (dest.value ? dest.value.countries : [])
-  .map(c => ({ ...c, name: countryName(c.cc) || t('flow.unknownCountry') })).slice(0, 12))
+  .map(c => ({ ...c, name: countryName(c.cc) || t('flow.unknownCountry') }))
+  .sort((a, b) => (a.cc === '-') - (b.cc === '-') || b.bytes - a.bytes).slice(0, 20))
+const maxCountry = computed(() => Math.max(1, ...countries.value.map(c => c.bytes)))
 const countryTotal = computed(() => (dest.value ? dest.value.countries.reduce((n, c) => n + c.bytes, 0) : 0) || 1)
 const destRows = computed(() => (dest.value ? dest.value.rows.filter(r => !country.value || (r.country || '-') === country.value) : []))
 
@@ -315,7 +323,9 @@ tr.sub td { background: var(--sunk); white-space: normal; }
 .route { color: var(--brand-ink); }
 .nowrap { white-space: nowrap; }
 .ctry { padding-top: 0; }
-.cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-top: 10px; }
+.mapgrid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 16px; margin-top: 10px; align-items: start; }
+.clist { display: grid; gap: 6px; max-height: 320px; overflow-y: auto; }
+@media (max-width: 900px) { .mapgrid { grid-template-columns: 1fr; } }
 .cc { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; text-align: left; background: var(--sunk);
   border: 1px solid transparent; border-radius: 10px; padding: 8px 12px; cursor: pointer; color: var(--ink); font: inherit; font-size: 13px; }
 .cc:hover, .cc.on { border-color: var(--brand-ink); }

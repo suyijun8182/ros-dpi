@@ -15,10 +15,10 @@
     </div>
     <div class="tp-b">
       <dl class="stats" v-if="tab !== 'online'">
-        <div><dt>{{ t('traffic.upTotal') }}:</dt><dd class="num">{{ bytes(total.up) }}</dd></div>
-        <div><dt>{{ t('traffic.downTotal') }}:</dt><dd class="num">{{ bytes(total.down) }}</dd></div>
-        <div v-if="live"><dt>{{ t('traffic.upRate') }}:</dt><dd class="num">{{ speed(live.up) }}</dd></div>
-        <div v-if="live"><dt>{{ t('traffic.downRate') }}:</dt><dd class="num">{{ speed(live.down) }}</dd></div>
+        <div><dt>{{ t('traffic.upTotal') }}:</dt><dd class="num up">{{ bytes(total.up) }}</dd></div>
+        <div><dt>{{ t('traffic.downTotal') }}:</dt><dd class="num down">{{ bytes(total.down) }}</dd></div>
+        <div v-if="live"><dt>{{ t('traffic.upRate') }}:</dt><dd class="num up">{{ speed(live.up) }}</dd></div>
+        <div v-if="live"><dt>{{ t('traffic.downRate') }}:</dt><dd class="num down">{{ speed(live.down) }}</dd></div>
       </dl>
       <dl class="stats" v-else>
         <div><dt>{{ t('traffic.onlineNow') }}:</dt><dd class="num">{{ onlineNow }}</dd></div>

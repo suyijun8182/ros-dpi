@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     proxy_ips: str = ""          # 旁路代理自身的 IP（逗号分隔）；留空时取 singbox_url 里的地址
     fakeip_cidrs: str = "198.18.0.0/15,fc00::/18"
     mosdns_url: str = ""         # MosDNS 审计 API 地址，如 http://192.168.1.3:9099
+    oui_db: bool = True          # 自动下载 IEEE 的 MAC 厂商库（OUI，识别终端类型用，每 30 天更新）
     asn_db: bool = True          # 自动下载 iptoasn 的 IP→ASN 库（公有领域，每天更新）
 
     tz: str = "Asia/Shanghai"
