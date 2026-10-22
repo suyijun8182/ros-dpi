@@ -21,7 +21,7 @@ class DeptIn(BaseModel):
 
 class PersonIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
-    dept_id: int | None = None
+    dept_id: int                             # 成员必须属于一个分组 / 部门（debug11）
     note: str | None = Field(None, max_length=255)
     hosts: list[str] | None = None          # 给了就整体替换这个人的设备
 
@@ -58,6 +58,18 @@ def _set_devices(db, pid: int, hosts: list[str]):
             old.person_id = pid
         else:
             db.add(PersonDevice(host=h, person_id=pid))
+
+
+def _check_person(db, req: PersonIn, pid: int | None = None):
+    """分组 / 部门必须存在；同一分组里不能重名"""
+    if not db.get(Department, req.dept_id):
+        raise HTTPException(400, "请选择分组 / 部门")
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(400, "请填写名称")
+    dup = db.scalar(select(Person).where(Person.dept_id == req.dept_id, Person.name == name, Person.id != (pid or 0)))
+    if dup:
+        raise HTTPException(400, f"这个分组 / 部门里已经有“{name}”了")
 
 
 def _person_dict(p: Person, c: dict) -> dict:
@@ -116,8 +128,7 @@ def people_list(range: str = Query("today", pattern=RANGES), db: Session = Depen
 
 @router.post("/people")
 def add_person(req: PersonIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
-    if req.dept_id is not None and not db.get(Department, req.dept_id):
-        raise HTTPException(400, "部门不存在")
+    _check_person(db, req)
     p = Person(name=req.name.strip(), dept_id=req.dept_id, note=req.note, created=int(time.time()))
     db.add(p)
     db.flush()
@@ -133,8 +144,7 @@ def edit_person(pid: int, req: PersonIn, request: Request, user: str = Depends(c
     p = db.get(Person, pid)
     if p is None:
         raise HTTPException(404, "人员不存在")
-    if req.dept_id is not None and not db.get(Department, req.dept_id):
-        raise HTTPException(400, "部门不存在")
+    _check_person(db, req, pid)
     p.name, p.dept_id, p.note = req.name.strip(), req.dept_id, req.note
     if req.hosts is not None:
         _set_devices(db, pid, req.hosts)
@@ -180,6 +190,8 @@ def bind(req: BindIn, request: Request, user: str = Depends(current_user), db: S
 def add_dept(req: DeptIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
     if db.scalar(select(Department).where(Department.name == req.name.strip())):
         raise HTTPException(400, "名称已存在")
+    if not req.name.strip():
+        raise HTTPException(400, "请填写名称")
     d = Department(name=req.name.strip())
     db.add(d)
     oplog.log(db, request, user, "dept_add", {"name": d.name})
@@ -192,6 +204,8 @@ def edit_dept(did: int, req: DeptIn, request: Request, user: str = Depends(curre
     d = db.get(Department, did)
     if d is None:
         raise HTTPException(404, "部门不存在")
+    if db.scalar(select(Department).where(Department.name == req.name.strip(), Department.id != did)):
+        raise HTTPException(400, "名称已存在")
     d.name = req.name.strip()
     oplog.log(db, request, user, "dept_edit", {"id": did, "name": d.name})
     people.forget()
@@ -203,8 +217,9 @@ def delete_dept(did: int, request: Request, user: str = Depends(current_user), d
     d = db.get(Department, did)
     if d is None:
         raise HTTPException(404, "部门不存在")
-    for p in db.scalars(select(Person).where(Person.dept_id == did)):
-        p.dept_id = None
+    n = db.scalar(select(func.count()).select_from(Person).where(Person.dept_id == did)) or 0
+    if n:
+        raise HTTPException(400, f"“{d.name}”下还有 {n} 个成员，先把他们移到别的分组或删除")
     name = d.name
     db.delete(d)
     oplog.log(db, request, user, "dept_delete", {"id": did, "name": name})

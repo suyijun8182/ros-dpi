@@ -18,6 +18,7 @@
             <div class="chips">
               <button class="chip-b" :class="{ on: !dept }" @click="dept = 0">{{ t('people.all') }}<span class="num">{{ d ? d.people.length : '' }}</span></button>
               <button v-for="g in depts" :key="g.id" class="chip-b" :class="{ on: dept === g.id }" @click="dept = g.id">{{ g.name }}<span class="num">{{ g.n }}</span></button>
+              <button v-if="noDept" class="chip-b warn" :class="{ on: dept === -1 }" @click="dept = -1">{{ L('noDept') }}<span class="num">{{ noDept }}</span></button>
             </div>
             <span class="sp" />
             <input class="input search" v-model="q" :placeholder="t('common.search')" :aria-label="t('common.search')" />
@@ -30,11 +31,11 @@
         <div class="tbl-wrap" v-if="d">
           <table class="tbl">
             <thead><tr><th>{{ L('person') }}</th><th class="m-hide">{{ t('people.devices') }}</th><th class="r">{{ t('flow.bytes') }}</th>
-              <th class="r m-hide">{{ t('people.online') }}</th><th class="m-hide">{{ L('leisureShare') }}</th><th>{{ t('people.tags') }}</th></tr></thead>
+              <th class="r m-hide">{{ t('people.online') }}</th><th class="m-hide">{{ L('leisureShare') }}</th><th>{{ t('people.tags') }}</th><th v-if="isAdmin" /></tr></thead>
             <tbody>
               <tr v-for="p in shown" :key="p.id" class="link" @click="$router.push(`/people/${p.id}`)">
                 <td><span class="nm"><span class="dot" :class="{ on: p.online }" /><b>{{ p.name }}</b></span>
-                  <span v-if="p.dept" class="pill grey dp">{{ p.dept }}</span>
+                  <span v-if="p.dept" class="pill grey dp">{{ p.dept }}</span><span v-else class="pill warn dp">{{ L('noDept') }}</span>
                   <div class="faint small m-only">{{ t('people.nDevices', { n: p.devices.length }) }} · {{ hours(p.online_seconds) }}</div></td>
                 <td class="m-hide"><span v-for="h in p.devices" :key="h.key" class="dv" :class="{ on: h.online }" :title="`${h.name} ${h.ip || ''}`">
                   <Icon :name="'dev-' + (h.dtype || 'unknown')" :size="16" /></span>
@@ -46,6 +47,7 @@
                     <span class="num small">{{ pct(p.leisure_work / p.work_online, 0) }}</span></template>
                   <span v-else class="faint small">-</span></td>
                 <td><Tags :tags="p.tags" :max="3" /></td>
+                <td v-if="isAdmin" class="r"><button class="btn sm ghost" :title="t('common.edit')" :aria-label="t('common.edit')" @click.stop="edit(p)"><Icon name="edit" :size="15" /></button></td>
               </tr>
             </tbody>
           </table>
@@ -175,11 +177,16 @@
       <form v-if="form" class="pf" @submit.prevent="save">
         <label for="pf-name">{{ t('common.name') }}</label>
         <input id="pf-name" class="input" v-model.trim="form.name" required maxlength="64" />
-        <label for="pf-dept">{{ L('dept') }}</label>
-        <select id="pf-dept" class="input" v-model="form.dept_id"><option :value="null">—</option>
-          <option v-for="g in d.departments" :key="g.id" :value="g.id">{{ g.name }}</option></select>
+        <label for="pf-dept">{{ L('dept') }} <span class="req">*</span></label>
+        <div class="row">
+          <select id="pf-dept" class="input grow" v-model="form.dept_id" required>
+            <option :value="null" disabled>{{ L('pickDept') }}</option>
+            <option v-for="g in d.departments" :key="g.id" :value="g.id">{{ g.name }}</option></select>
+          <input class="input grow" v-model.trim="quickDept" :placeholder="L('deptName')" :aria-label="L('deptName')" @keydown.enter.prevent="quickAddDept" />
+          <button type="button" class="btn sm" :disabled="!quickDept" @click="quickAddDept">{{ L('newDept') }}</button>
+        </div>
         <label for="pf-q">{{ t('people.devices') }}</label>
-        <input id="pf-q" class="input" v-model="hq" :placeholder="t('audit.rule.hostSearch')" />
+        <input id="pf-q" class="input" v-model="hq" :placeholder="t('people.deviceSearch')" />
         <div class="hostbox">
           <label v-for="h in hostChoices" :key="h.key" class="chk"><input type="checkbox" :checked="form.hosts.includes(h.key)" @change="toggleHost(h.key)" />
             <Icon :name="'dev-' + (h.dtype || 'unknown')" :size="15" /> {{ h.name }} <span class="faint addr small">{{ h.ip }}</span>
@@ -243,11 +250,19 @@ const q = ref('')
 const unLimit = ref(50)
 async function load() {
   try { d.value = await http.get('/people', { params: { range: ui.range } }); scene.id = d.value.scenario; err.value = '' } catch (e) { err.value = e.message }
+  const want = +route.query.edit
+  if (want && d.value && isAdmin.value && !form.value) {
+    const p = d.value.people.find(x => x.id === want)
+    router.replace({ query: {} })
+    if (p) edit(p)
+  }
 }
 const depts = computed(() => (d.value ? d.value.departments.map(g => ({ ...g, n: d.value.people.filter(p => p.dept_id === g.id).length })) : []))
+const noDept = computed(() => (d.value ? d.value.people.filter(p => !p.dept_id || !d.value.departments.some(g => g.id === p.dept_id)).length : 0))
 const shown = computed(() => {
   const s = q.value.trim().toLowerCase()
-  return (d.value ? d.value.people : []).filter(p => (!dept.value || p.dept_id === dept.value)
+  const known = id => d.value.departments.some(g => g.id === id)
+  return (d.value ? d.value.people : []).filter(p => (!dept.value || (dept.value === -1 ? !known(p.dept_id) : p.dept_id === dept.value))
     && (!s || p.name.toLowerCase().includes(s) || p.devices.some(h => (h.name + ' ' + (h.ip || '')).toLowerCase().includes(s))))
 })
 async function bind(host, pid) {
@@ -266,7 +281,8 @@ async function edit(p) {
   hq.value = ''
   if (!allHosts.value.length) allHosts.value = await http.get('/hosts')
   form.value = p ? { id: p.id, name: p.name, dept_id: p.dept_id, note: p.note || '', hosts: p.devices.map(h => h.key) }
-    : { id: null, name: '', dept_id: dept.value || null, note: '', hosts: [] }
+    : { id: null, name: '', dept_id: dept.value > 0 ? dept.value : (d.value.departments.length === 1 ? d.value.departments[0].id : null), note: '', hosts: [] }
+  quickDept.value = ''
 }
 const hostChoices = computed(() => {
   const s = hq.value.trim().toLowerCase()
@@ -281,9 +297,20 @@ function toggleHost(k) {
   const i = form.value.hosts.indexOf(k)
   i >= 0 ? form.value.hosts.splice(i, 1) : form.value.hosts.push(k)
 }
+const quickDept = ref('')
+async function quickAddDept() {
+  formErr.value = ''
+  try {
+    const g = await http.post('/departments', { name: quickDept.value })
+    await load()
+    form.value.dept_id = g.id
+    quickDept.value = ''
+  } catch (e) { formErr.value = e.message }
+}
 async function save() {
   formErr.value = ''
   const f = form.value
+  if (!f.dept_id) { formErr.value = L('pickDept'); return }
   try {
     const body = { name: f.name, dept_id: f.dept_id, note: f.note || null, hosts: f.hosts }
     if (f.id) await http.put(`/people/${f.id}`, body)
@@ -294,9 +321,11 @@ async function save() {
 }
 async function del() {
   if (!confirm(t('common.confirmDelete'))) return
-  await http.delete(`/people/${form.value.id}`)
-  form.value = null
-  await Promise.all([load(), loadScene(true)])
+  try {
+    await http.delete(`/people/${form.value.id}`)
+    form.value = null
+    await Promise.all([load(), loadScene(true)])
+  } catch (e) { formErr.value = e.message }
 }
 
 // ---------- 部门 ----------
@@ -312,10 +341,13 @@ async function renameDept(g) {
   try { await http.put(`/departments/${g.id}`, { name: g.name }); await load() } catch (e) { deptErr.value = e.message }
 }
 async function delDept(g) {
+  deptErr.value = ''
   if (!confirm(t('common.confirmDelete'))) return
-  await http.delete(`/departments/${g.id}`)
-  if (dept.value === g.id) dept.value = 0
-  await load()
+  try {
+    await http.delete(`/departments/${g.id}`)
+    if (dept.value === g.id) dept.value = 0
+    await load()
+  } catch (e) { deptErr.value = e.message }
 }
 
 // ---------- 洞察 ----------
@@ -391,6 +423,8 @@ watch([tab, () => ui.range], () => {
 .chip-b { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 16px; padding: 4px 12px; font: inherit; font-size: 13px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
 .chip-b .num { color: var(--faint); font-size: 12px; }
 .chip-b.on { border-color: var(--brand-ink); background: var(--brand-weak); color: var(--brand-ink); }
+.chip-b.warn { border-color: var(--warn); }
+.req { color: var(--bad); }
 .search { width: 200px; height: 32px; }
 .nm { display: inline-flex; align-items: center; gap: 8px; }
 .dp { margin-left: 8px; height: 20px; font-size: 11px; }

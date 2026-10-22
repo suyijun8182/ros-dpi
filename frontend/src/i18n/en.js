@@ -202,7 +202,7 @@ export default {
     delTitle: 'Delete user', delText: 'Delete user {name}? The account can no longer sign in.',
   },
   people: {
-    all: 'All', devices: 'Devices', nDevices: '{n} devices', noDevice: 'No devices yet', online: 'Online time', tags: 'Behaviour tags',
+    all: 'All', deviceSearch: 'Search devices by name, IP or MAC', confirmDel: 'Delete "{name}"? Their devices become unassigned; statistics are kept.', devices: 'Devices', nDevices: '{n} devices', noDevice: 'No devices yet', online: 'Online time', tags: 'Behaviour tags',
     unassigned: 'Unassigned devices', unassignedHint: '{n} devices; pick a person to assign', dtype: 'Device type', dtypeAuto: 'Auto ({t})', note: 'Note',
     addDevice: 'Add device…', unbind: 'Remove', last7: 'Last 7 days', days: '{n} days', nobody: 'Nobody', game: 'Gaming', shortVideo: 'Short video',
     night: 'Late night', nightShort: 'late night', appTime: 'Time per app', duration: 'Time', leisureTag: 'Leisure', noTags: 'Nothing unusual in the last 7 days',
@@ -214,7 +214,7 @@ export default {
     home: {
       name: 'Home', desc: 'Children\'s online health: screen time, gaming and short-video time, late nights, adult content, leisure during homework.',
       nav: 'Family', title: 'Family members', person: 'Member', dept: 'Group', add: 'Add member', edit: 'Edit member', manageDept: 'Manage groups',
-      deptName: 'Group name, e.g. Kids', allPeople: 'All members', assignTo: 'Assign to',
+      deptName: 'Group name, e.g. Kids', noDept: 'No group', pickDept: 'Pick a group', newDept: 'New group', allPeople: 'All members', assignTo: 'Assign to',
       empty: 'No family members yet. Add one and assign their phone, tablet and computer to see per-person screen time and health alerts.',
       info: 'Group each person\'s phone, tablet and computer, and see their online time, top apps, leisure share during homework time, and health alerts for the last 7 days.',
       insightInfo: 'Online health for each member over the last 7 days: days over the daily limits, late nights, adult content, leisure during homework time. Hover a tag for details.',
@@ -225,7 +225,7 @@ export default {
     enterprise: {
       name: 'Business', desc: 'Productivity and compliance: leisure at work, job hunting, trading at work, large uploads, rogue routers.',
       nav: 'People', title: 'People', person: 'Person', dept: 'Department', add: 'Add person', edit: 'Edit person', manageDept: 'Manage departments',
-      deptName: 'Department name, e.g. R&D', allPeople: 'Everyone', assignTo: 'Assign to',
+      deptName: 'Department name, e.g. R&D', noDept: 'No department', pickDept: 'Pick a department', newDept: 'New department', allPeople: 'Everyone', assignTo: 'Assign to',
       empty: 'No people yet. Add a person and assign their computer and phone to report and audit per person.',
       info: 'Group each person\'s devices to see traffic, online time, leisure share during working hours and behaviour tags for the last 7 days (modelled on Sangfor AC productivity and risk analysis).',
       insightInfo: 'Behaviour tags and productivity for each person over the last 7 days, based only on which apps were used and for how long. Hover a tag for details.',

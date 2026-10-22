@@ -5,7 +5,11 @@
       <h1 v-if="d"><span class="dot" :class="{ on: online }" /> {{ d.name }}</h1>
       <span v-if="d && d.dept" class="pill grey">{{ d.dept }}</span>
       <span class="sp" />
-      <button v-if="d && isAdmin" class="btn sm" @click="ctl = true"><Icon name="shield" :size="15" />{{ t('ctl.button') }}</button>
+      <template v-if="d && isAdmin">
+        <router-link :to="`/people?edit=${id}`" class="btn sm"><Icon name="edit" :size="15" />{{ t('common.edit') }}</router-link>
+        <button class="btn sm danger" @click="delPerson">{{ t('common.delete') }}</button>
+        <button class="btn sm" @click="ctl = true"><Icon name="shield" :size="15" />{{ t('ctl.button') }}</button>
+      </template>
       <RangeTabs v-if="tab !== 'timeline'" />
     </div>
     <div v-if="err" class="err">{{ err }}</div>
@@ -137,6 +141,13 @@ async function load() {
     d.value = await http.get(`/people/${props.id}/detail`, { params: { range: ui.range } })
     scene.id = d.value.scenario
     err.value = ''
+  } catch (e) { err.value = e.message }
+}
+async function delPerson() {
+  if (!confirm(t('people.confirmDel', { name: d.value.name }))) return
+  try {
+    await http.delete(`/people/${props.id}`)
+    router.push('/people')
   } catch (e) { err.value = e.message }
 }
 async function loadFree() {

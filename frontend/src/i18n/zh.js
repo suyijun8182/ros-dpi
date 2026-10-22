@@ -202,7 +202,7 @@ export default {
     delTitle: '删除用户', delText: '确定删除用户 {name}？删除后该账号立即无法登录。',
   },
   people: {
-    all: '全部', devices: '设备', nDevices: '{n} 台设备', noDevice: '还没有设备', online: '在线时长', tags: '行为标签',
+    all: '全部', deviceSearch: '搜索设备：名称、IP、MAC', confirmDel: '删除“{name}”？他的设备会变成未分配，统计数据不受影响。', devices: '设备', nDevices: '{n} 台设备', noDevice: '还没有设备', online: '在线时长', tags: '行为标签',
     unassigned: '未分配的设备', unassignedHint: '共 {n} 台，选一个人就归给他', dtype: '终端类型', dtypeAuto: '自动识别（{t}）', note: '备注',
     addDevice: '添加设备…', unbind: '移出', last7: '最近 7 天', days: '{n} 天', nobody: '没有人', game: '游戏', shortVideo: '短视频',
     night: '深夜', nightShort: '其中深夜', appTime: '应用使用时长', duration: '时长', leisureTag: '娱乐', noTags: '最近 7 天没有异常',
@@ -214,7 +214,7 @@ export default {
     home: {
       name: '家用', desc: '关注孩子的上网健康：屏幕时间、游戏和短视频时长、熬夜、不良内容、学习时间玩娱乐应用。',
       nav: '家庭成员', title: '家庭成员', person: '成员', dept: '分组', add: '添加成员', edit: '编辑成员', manageDept: '管理分组',
-      deptName: '分组名称，例如 孩子', allPeople: '全部成员', assignTo: '归属成员',
+      deptName: '分组名称，例如 孩子', noDept: '未分组', pickDept: '请选择分组', newDept: '新建分组', allPeople: '全部成员', assignTo: '归属成员',
       empty: '还没有家庭成员。添加成员并把手机、平板、电脑分给他，就能按人看上网时长和健康提醒。',
       info: '把每个人的手机、平板、电脑归到一起，按人统计上网时长、常用应用、学习时间里玩娱乐应用的占比，以及最近 7 天的健康提醒。',
       insightInfo: '最近 7 天每位成员的上网健康：超过每日上限的天数、熬夜、不良内容、学习时间玩娱乐应用。悬停标签可以看依据。',
@@ -225,7 +225,7 @@ export default {
     enterprise: {
       name: '企业', desc: '关注工作效率和合规：上班娱乐占比、求职倾向、上班炒股、大流量外发、私接路由。',
       nav: '人员', title: '人员', person: '人员', dept: '部门', add: '添加人员', edit: '编辑人员', manageDept: '管理部门',
-      deptName: '部门名称，例如 研发部', allPeople: '全部人员', assignTo: '归属人员',
+      deptName: '部门名称，例如 研发部', noDept: '未分部门', pickDept: '请选择部门', newDept: '新建部门', allPeople: '全部人员', assignTo: '归属人员',
       empty: '还没有人员。添加人员并把他的电脑、手机分给他，就能按人统计和审计。',
       info: '把每个人的设备归到一起，按人统计流量、在线时长、工作时间的娱乐占比，以及最近 7 天的行为标签（参照深信服 AC 的效率分析和风险洞察）。',
       insightInfo: '最近 7 天每个人的行为标签和工作效率。标签只依据访问了哪些应用、用了多久，悬停可以看依据。',

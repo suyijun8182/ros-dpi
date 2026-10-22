@@ -21,6 +21,11 @@ def test_people_usage_scenarios_and_scope(monkeypatch):
         d = c.post("/api/departments", json={"name": "孩子"}, headers=h).json()
         assert c.post("/api/departments", json={"name": "孩子"}, headers=h).status_code == 400
         p = c.post("/api/people", json={"name": "小明", "dept_id": d["id"], "hosts": [mac1]}, headers=h).json()
+        # debug11：成员必须属于分组；同一分组不重名；分组下有成员时不能删
+        assert c.post("/api/people", json={"name": "唐女士"}, headers=h).status_code == 422
+        assert c.post("/api/people", json={"name": "唐女士", "dept_id": 99999}, headers=h).status_code == 400
+        assert c.post("/api/people", json={"name": " 小明 ", "dept_id": d["id"]}, headers=h).status_code == 400
+        assert c.delete(f"/api/departments/{d['id']}", headers=h).status_code == 400
         assert p["dept"] == "孩子"
         assert c.put("/api/devices/bind", json={"host": mac2, "person_id": p["id"]}, headers=h).json()["person"]["name"] == "小明"
         assert people.hosts_of_person(p["id"]) == [mac1, mac2]
