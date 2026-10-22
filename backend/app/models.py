@@ -82,6 +82,15 @@ class DnsCache(Base):
     expires = Column(BigInteger, nullable=False)
 
 
+class DomainGeo(Base):
+    """域名的地理位置：记录流量时它连到的 IP 和国家（访问目标的国家 / 地区分布用，不随 DNS 缓存过期而丢失）"""
+    __tablename__ = "domain_geo"
+    domain = Column(String(255), primary_key=True)
+    ip = Column(String(45))
+    cc = Column(String(2))
+    updated = Column(BigInteger)
+
+
 class CustomRule(Base):
     __tablename__ = "custom_rules"
     id = Column(Integer, primary_key=True, autoincrement=True)

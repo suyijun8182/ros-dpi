@@ -87,7 +87,7 @@ export default {
       note: 'Shares are within the current level. Data covers the selected range; rates come from the per-minute IPFIX reports, so refreshing faster than 10s adds nothing.' } },
   flow: {
     tab: { live: 'Live connections', dest: 'Top destinations', proxy: 'Proxy routing' },
-    country: 'Country', mapFail: 'The map failed to load', countries: 'Countries / regions', countriesHint: 'Summed over the destinations below; domains use the IP they resolved to. Click one to filter', unknownCountry: 'Unknown',
+    country: 'Country', mapFail: 'The map failed to load', home: 'Local', unknownNote: 'Unlocated: these domains were not resolved through DNS seen here (proxied, resolved remotely or via encrypted DNS), so there is no IP to locate.', countries: 'Countries / regions', countriesHint: 'Summed over the destinations below; domains use the IP they resolved to. Click one to filter', unknownCountry: 'Unlocated',
     pxOff: 'sing-box is not connected, so proxy routing is unavailable.', pxGo: 'Configure its Clash API in Settings → Data sources',
     pxGroups: 'Policy groups', pxGroup: 'Policy group', pxNode: 'Outbound node', pxNodes: '{n} nodes', pxApps: 'Top apps', pxConns: 'Connections',
     pxEmpty: 'No traffic through sing-box yet today.',

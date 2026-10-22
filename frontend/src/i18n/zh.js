@@ -87,7 +87,7 @@ export default {
       note: '占比是在当前这一级里的占比。数据按所选时间范围统计；速率按 RouterOS 每分钟上报的流量计算，所以最快 10 秒刷新一次。' } },
   flow: {
     tab: { live: '实时连接', dest: '访问目标排行', proxy: '代理分流' },
-    country: '国家/地区', mapFail: '地图加载失败', countries: '国家 / 地区分布', countriesHint: '按下面排行里的目标汇总；域名按它解析到的 IP 查。点一项只看该国家', unknownCountry: '未知',
+    country: '国家/地区', mapFail: '地图加载失败', home: '本地', unknownNote: '无法定位：这些域名没有经过本机的 DNS 解析（例如走代理、远端解析或用加密 DNS），查不到 IP，也就查不到国家。', countries: '国家 / 地区分布', countriesHint: '按下面排行里的目标汇总；域名按它解析到的 IP 查。点一项只看该国家', unknownCountry: '无法定位',
     pxOff: '没有接入 sing-box，看不到代理分流。', pxGo: '去 系统设置 → 外部数据源 配置 Clash API',
     pxGroups: '策略组', pxGroup: '策略组', pxNode: '出口节点', pxNodes: '{n} 个节点', pxApps: '主要应用', pxConns: '连接数',
     pxEmpty: '今天还没有经过 sing-box 的流量。',

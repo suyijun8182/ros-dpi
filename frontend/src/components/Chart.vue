@@ -5,12 +5,12 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts/core'
-import { BarChart, GaugeChart, LineChart, MapChart, PieChart, TreemapChart } from 'echarts/charts'
+import { BarChart, EffectScatterChart, GaugeChart, LineChart, LinesChart, MapChart, PieChart, ScatterChart, TreemapChart } from 'echarts/charts'
 import { GeoComponent, GridComponent, LegendComponent, TooltipComponent, VisualMapComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { ui } from '../state.js'
 
-echarts.use([LineChart, PieChart, BarChart, GaugeChart, TreemapChart, MapChart, GridComponent, TooltipComponent, LegendComponent,
+echarts.use([LineChart, PieChart, BarChart, GaugeChart, TreemapChart, MapChart, LinesChart, ScatterChart, EffectScatterChart, GridComponent, TooltipComponent, LegendComponent,
   GeoComponent, VisualMapComponent, CanvasRenderer])
 
 // maps：要用的地图 GeoJSON（{名字: geojson}），在这里注册，保证和画图用的是同一个 echarts

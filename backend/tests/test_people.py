@@ -165,3 +165,29 @@ def test_oui_db_load(tmp_path, monkeypatch):
     assert db.lookup("28:EE:52:11:22:33") == "TP-LINK TECHNOLOGIES CO." and db.lookup("BC-6A-D1-00-00-01").startswith("Xiaomi")
     assert db.lookup("2A:EE:52:11:22:33") == ""  # 随机 MAC 不查
     assert devtype.classify("BC:6A:D1:00:00:01", None, vendor_full=db.lookup("BC:6A:D1:00:00:01"))[:2] == ("phone", "Xiaomi")
+
+
+def test_domain_country_survives_dns_expiry(tmp_path):
+    """debug11：域名的国家在记录流量时存下（DomainGeo），DNS 缓存过期或重启后仍能定位"""
+    import gzip
+    from app.asn import asndb
+    p = tmp_path / "ip2asn.tsv.gz"
+    with gzip.open(p, "wt") as f:
+        f.write("45.57.0.0\t45.57.127.255\t64500\tJP\tTEST-JP\n")
+    saved = (asndb._v4, asndb._v6, asndb.names, asndb.rows)
+    try:
+        asndb.load(str(p))
+        asndb._cache = {}
+        now = time.time()
+        engine.dns.add("cdn.geo-test.example", [("45.57.10.120", 600)], [])
+        flow("192.168.88.120", "45.57.10.120", 7301, 4000, "AA:00:00:00:0E:01", now)
+        engine.flush(now)
+        engine.dns._d.pop("45.57.10.120", None)  # 模拟 DNS 缓存过期 / 重启
+        with TestClient(app) as c:
+            h = _h(c)
+            r = c.get("/api/destinations?range=today&q=geo-test", headers=h).json()
+            row = next(x for x in r["rows"] if x["dest"] == "cdn.geo-test.example")
+            assert row["country"] == "JP" and any(x["cc"] == "JP" for x in r["countries"]) and r["home"]
+    finally:
+        asndb._v4, asndb._v6, asndb.names, asndb.rows = saved
+        asndb._cache = {}

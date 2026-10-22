@@ -16,7 +16,7 @@ from app.config import get_settings
 from app import database, hostnames
 from app.database import upsert_add
 from app.dnsmap import ConnNames, DnsMap
-from app.models import (AccessLog, AuditEvent, CustomRule, DnsCache, Host, HostDomainDay, OpLog, Setting, TrafficDay,
+from app.models import (AccessLog, AuditEvent, CustomRule, DnsCache, DomainGeo, Host, HostDomainDay, OpLog, Setting, TrafficDay,
                         TrafficHour,
                         TrafficMinute)
 
@@ -62,6 +62,7 @@ class Engine:
         self._dom: dict[tuple[str, str, str], int] = defaultdict(int)
         self._seen: dict[str, tuple[str, str | None, int]] = {}  # host_key -> (ip, mac, ts)
         self._ipdest: dict[tuple[str, str, str], int] = defaultdict(int)  # (host_key, 远端 IP, app) -> bytes
+        self._dom_ip: dict[str, str] = {}  # 域名 -> 这一分钟里它连到的 IP（DomainGeo）
         # 实时连接：(host_key, 远端 IP, 远端端口, 协议, 终端端口) ->
         #   [终端 IP, app, 域名, 域名来源, 累计上行, 累计下行, 开始, 最近, 本窗口上行, 本窗口下行, 上行速率, 下行速率]
         self.sessions: OrderedDict[tuple, list] = OrderedDict()
@@ -360,6 +361,8 @@ class Engine:
         b[2] += 1
         if qname:
             self._dom[(key, qname, app)] += nbytes
+            if len(self._dom_ip) < 50_000:
+                self._dom_ip[qname] = remote  # 域名实际连到的 IP，落库时查国家
         else:
             self._ipdest[(key, remote, app)] += nbytes
         self._track_session(key, host_ip, hport, remote, rport, proto, app, qname, src_kind, direction, nbytes, now)
@@ -462,6 +465,7 @@ class Engine:
             visits, visit_upd = self.take_visits(now, final)
             buf, self._buf = self._buf, defaultdict(lambda: [0, 0, 0])
             dom, self._dom = self._dom, defaultdict(int)
+            dom_ip, self._dom_ip = self._dom_ip, {}
             seen, self._seen = self._seen, {}
             ipdest, self._ipdest = self._ipdest, defaultdict(int)
             # 实时连接：本窗口的字节数换算成速率，然后清零；去掉 5 分钟没动静的
@@ -520,6 +524,9 @@ class Engine:
                        for ip, v in dirty_dns.items()]
                 for chunk in _chunks(drs, 500):
                     upsert_add(db, DnsCache.__table__, chunk, ["ip"], [], ["name", "cname", "expires"])
+            geo = _domain_geo(dom_ip, int(now))
+            for chunk in _chunks(geo, 500):
+                upsert_add(db, DomainGeo.__table__, chunk, ["domain"], [], ["ip", "cc", "updated"])
             db.commit()
         finished, self.finished_visits = getattr(self, "finished_visits", []), []
         if finished:
@@ -590,6 +597,23 @@ class Engine:
 
     def is_generic(self, app: str) -> bool:
         return app in GENERIC_APPS
+
+
+def _domain_geo(dom_ip: dict[str, str], now: int) -> list[dict]:
+    """域名 -> (IP, 国家)；只记公网 IP，查不到国家的不记"""
+    from app.asn import asndb
+    out = []
+    for name, ip in dom_ip.items():
+        try:
+            a = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if not a.is_global:
+            continue
+        hit = asndb.lookup(ip)
+        if hit and hit[1]:
+            out.append({"domain": name[:255], "ip": ip, "cc": hit[1][:2], "updated": now})
+    return out
 
 
 def _is_ip(x: str) -> bool:

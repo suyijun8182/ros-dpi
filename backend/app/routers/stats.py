@@ -2,13 +2,14 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import health, hostnames, oplog, stats, timeutil
 from app.asn import asndb
 from app.database import get_db
 from app.engine import engine
-from app.models import Host, HostName
+from app.models import DomainGeo, Host, HostName
 from app.ros_poller import poller
 from app.security import current_user
 
@@ -268,21 +269,42 @@ def destinations(range: str = Query("today", pattern=RANGES), q: str = "", merge
     start, end = _bounds(range)
     rows = stats.destinations(db, start, end, q, merge, kind)
     idx = engine.dns.name_index()
+    names = {n for r in rows if not r["ip"] for n in [r["dest"], *r["name_list"]]}
+    geo = {}
+    for chunk in _chunks500(sorted(names)):  # 参数名 range 遮住了内置 range，分块放到模块级
+        geo.update(dict(db.execute(select(DomainGeo.domain, DomainGeo.cc).where(DomainGeo.domain.in_(chunk))).all()))
     countries: dict[str, int] = {}
     for r in rows:
         r["asn"] = _asn(r["dest"]) if r["ip"] else None
         if not r["ip"]:
-            # 域名：用 DNS 缓存里它最近解析到的 IP 查国家（合并主域名时看它的子域名）
-            ip = idx.get(r["dest"]) or next((idx[n] for n in r["name_list"] if n in idx), None)
-            hit = asndb.lookup(ip) if ip else None
-            r["country"] = hit[1] if hit else None
+            # 域名：记录流量时存下的国家（DomainGeo）；没有时再用 DNS 缓存里最近解析到的 IP 查
+            cc = geo.get(r["dest"]) or next((geo[n] for n in r["name_list"] if n in geo), None)
+            if not cc:
+                ip = idx.get(r["dest"]) or next((idx[n] for n in r["name_list"] if n in idx), None)
+                hit = asndb.lookup(ip) if ip else None
+                cc = hit[1] if hit else None
+            r["country"] = cc
         else:
             r["country"] = r["asn"]["country"] if r["asn"] else None
         r.pop("name_list", None)
         cc = r["country"] or "-"
         countries[cc] = countries.get(cc, 0) + r["bytes"]
     return {"range_total": stats.total(db, start, end), "rows": rows,
-            "countries": [{"cc": k, "bytes": v} for k, v in sorted(countries.items(), key=lambda x: x[1], reverse=True)]}
+            "countries": [{"cc": k, "bytes": v} for k, v in sorted(countries.items(), key=lambda x: x[1], reverse=True)],
+            "home": _home_country()}
+
+
+def _chunks500(xs: list) -> list[list]:
+    return [xs[i:i + 500] for i in range(0, len(xs), 500)]
+
+
+def _home_country() -> str:
+    """本地所在国家（流向图的起点）：WAN 口公网 IP 的归属；拿不到时按中国"""
+    for w in poller.wans:
+        hit = asndb.lookup(w.get("ip") or "") if w.get("ip") else None
+        if hit and hit[1]:
+            return hit[1]
+    return "CN"
 
 
 @router.get("/proxy/routes")

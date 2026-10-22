@@ -74,13 +74,17 @@
         <div class="sec">{{ t('flow.countries') }}<span class="faint small">{{ t('flow.countriesHint') }}</span>
           <span class="sp" /><button v-if="country" class="btn sm" @click="country = ''">{{ t('apps.showAll') }}</button></div>
         <div class="mapgrid">
-          <WorldMap :countries="dest.countries" :active="country" height="320px" @pick="cc => (country = country === cc ? '' : cc)" />
+          <WorldMap :countries="dest.countries" :home="dest.home" :active="country" height="340px" @pick="cc => (country = country === cc ? '' : cc)" />
           <div class="clist">
-            <button v-for="c in countries" :key="c.cc" class="cc" :class="{ on: country === c.cc }" @click="country = country === c.cc ? '' : c.cc">
-              <span class="cn">{{ c.name }}</span><span class="num">{{ bytes(c.bytes) }}</span>
+            <button v-for="(c, i) in countries" :key="c.cc" class="cr" :class="{ on: country === c.cc, unk: c.cc === '-' }"
+                    @click="country = country === c.cc ? '' : c.cc">
+              <span class="rk num">{{ c.cc === '-' ? '' : i + 1 }}</span>
+              <span class="cn">{{ c.name }}<span v-if="c.cc === dest.home" class="pill grey home">{{ t('flow.home') }}</span></span>
+              <span class="num v">{{ bytes(c.bytes) }}</span>
               <span class="bar"><i :style="{ width: (c.bytes / maxCountry * 100) + '%' }" /></span>
-              <span class="faint small num">{{ pct(c.bytes / countryTotal) }}</span>
+              <span class="num faint p">{{ pct(c.bytes / countryTotal) }}</span>
             </button>
+            <div class="faint small unk-note" v-if="countries.some(c => c.cc === '-')">{{ t('flow.unknownNote') }}</div>
           </div>
         </div>
       </div>
@@ -323,9 +327,24 @@ tr.sub td { background: var(--sunk); white-space: normal; }
 .route { color: var(--brand-ink); }
 .nowrap { white-space: nowrap; }
 .ctry { padding-top: 0; }
-.mapgrid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr); gap: 16px; margin-top: 10px; align-items: start; }
-.clist { display: grid; gap: 6px; max-height: 320px; overflow-y: auto; }
-@media (max-width: 900px) { .mapgrid { grid-template-columns: 1fr; } }
+.mapgrid { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(240px, 1fr); gap: 18px; margin-top: 10px; align-items: start; }
+.clist { display: grid; gap: 2px; max-height: 340px; overflow-y: auto; align-content: start; }
+.cr { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 46px; grid-template-rows: auto 4px; column-gap: 8px; row-gap: 4px;
+  align-items: center; background: none; border: 0; border-radius: 8px; padding: 7px 8px; font: inherit; font-size: 13px; color: var(--ink);
+  cursor: pointer; text-align: left; }
+.cr:hover, .cr.on { background: var(--sunk); }
+.cr.on .cn { color: var(--brand-ink); }
+.cr .rk { grid-column: 1; grid-row: 1 / 3; color: var(--faint); font-size: 12px; }
+.cr .cn { grid-column: 2; grid-row: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.cr .v { grid-column: 3; grid-row: 1; font-weight: 600; }
+.cr .p { grid-column: 4; grid-row: 1; text-align: right; font-size: 12px; }
+.cr .bar { grid-column: 2 / 5; grid-row: 2; height: 4px; margin: 0; width: auto; border-radius: 2px; background: var(--sunk); }
+.cr .bar i { background: var(--accent); }
+.cr.unk { color: var(--muted); margin-top: 6px; border-top: 1px dashed var(--line); border-radius: 0; }
+.cr.unk .bar i { background: var(--line-strong); }
+.home { height: 18px; font-size: 10px; }
+.unk-note { padding: 2px 8px 0 38px; line-height: 1.5; }
+@media (max-width: 900px) { .mapgrid { grid-template-columns: 1fr; } .clist { max-height: none; } }
 .cc { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; text-align: left; background: var(--sunk);
   border: 1px solid transparent; border-radius: 10px; padding: 8px 12px; cursor: pointer; color: var(--ink); font: inherit; font-size: 13px; }
 .cc:hover, .cc.on { border-color: var(--brand-ink); }

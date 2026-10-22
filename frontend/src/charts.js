@@ -124,33 +124,70 @@ function hexMix(a, b, p) {
   return '#' + x.map((v, i) => Math.round(v * p + y[i] * (1 - p)).toString(16).padStart(2, '0')).join('')
 }
 
-/** 世界地图：按国家的流量，单一色相由浅到深（对数刻度，流量差几个数量级也看得出层次） */
-export function mapOption(rows, active) {
+/** 流向图：从本地（home）飞向各国，线宽、气泡大小随流量（平方根刻度）；流量最大的 5 个国家标名字和流量 */
+export function flowMapOption(rows, home, centers, active, homeName, narrow = false) {
   const sum = rows.reduce((a, x) => a + x.bytes, 0) || 1
-  const vals = rows.map(r => Math.log10(r.bytes + 1))
-  const panel = css('--panel'), accent = css('--accent')
+  const panel = css('--panel'), ink = css('--ink'), muted = css('--muted'), accent = css('--accent')
+  const brand = css('--brand-ink'), sunk = css('--sunk'), warn = css('--warn')
+  const land = hexMix(sunk, ink, 0.92)
+  const from = centers[home] || [104, 34.5]
+  const dests = rows.filter(r => r.cc !== home && centers[r.cc]).sort((a, b) => b.bytes - a.bytes)
+  const local = rows.find(r => r.cc === home)
+  const max = Math.max(1, ...dests.map(r => r.bytes))
+  const k = b => Math.sqrt(b / max)
+  const tip = r => `<b>${r.name}</b><div style="margin-top:4px"><b>${bytes(r.bytes)}</b> <span style="color:${muted}">${pct(r.bytes / sum)}</span></div>`
+  const point = (r, i) => ({ name: r.name, cc: r.cc, bytes: r.bytes, value: [...centers[r.cc], r.bytes], rank: i,
+    symbolSize: 7 + 20 * k(r.bytes), itemStyle: active === r.cc ? { color: warn, borderColor: ink, borderWidth: 1.5 } : undefined })
   return {
     textStyle: { fontFamily: FONT },
     tooltip: tooltip({
       trigger: 'item',
       formatter: p => {
-        const r = rows.find(x => x.cc === p.name)
-        const n = countryName(p.name) || p.name
-        return r ? `<b>${n}</b><div style="margin-top:4px"><b>${bytes(r.bytes)}</b> <span style="color:${css('--muted')}">${pct(r.bytes / sum)}</span></div>` : n
+        const d = p.data || {}
+        if (d.cc && d.bytes != null) return tip(d)
+        if (p.componentType === 'geo') {
+          const r = rows.find(x => x.cc === p.name)
+          return r ? tip(r) : ''
+        }
+        return d.home ? `<b>${d.name}</b>` + (local ? tip({ ...local, name: '' }).replace('<b></b>', '') : '') : ''
       },
     }),
-    visualMap: {
-      show: false, min: vals.length ? Math.min(...vals) : 0, max: vals.length ? Math.max(...vals) : 1,
-      inRange: { color: [hexMix(accent, panel, 0.18), accent] },
+    geo: {
+      map: 'world', roam: false, silent: false, boundingCoords: [[-168, 78], [190, -56]], top: 8, bottom: 8, left: 8, right: 8,
+      itemStyle: { areaColor: land, borderColor: panel, borderWidth: 0.6 },
+      emphasis: { label: { show: false }, itemStyle: { areaColor: hexMix(accent, land, 0.35) } },
+      select: { disabled: true },
+      regions: [
+        { name: home, itemStyle: { areaColor: hexMix(brand, land, 0.28) } },
+        ...dests.map(r => ({ name: r.cc, itemStyle: { areaColor: hexMix(accent, land, 0.12 + 0.3 * k(r.bytes)) } })),
+      ],
     },
-    series: [{
-      type: 'map', map: 'world', roam: false, top: 6, bottom: 6, left: 6, right: 6, selectedMode: false,
-      itemStyle: { areaColor: css('--sunk'), borderColor: panel, borderWidth: 0.6 },
-      emphasis: { label: { show: false }, itemStyle: { areaColor: css('--warn') } },
-      label: { show: false },
-      data: rows.map((r, i) => ({ name: r.cc, value: vals[i],
-        itemStyle: active && active === r.cc ? { borderColor: css('--ink'), borderWidth: 1.5 } : undefined })),
-    }],
+    series: [
+      { // 飞线
+        type: 'lines', coordinateSystem: 'geo', zlevel: 1, silent: true,
+        effect: { show: true, period: 5, trailLength: 0.2, symbol: 'arrow', symbolSize: 5, color: accent },
+        lineStyle: { color: accent, opacity: 0.45, curveness: 0.28 },
+        data: dests.map(r => ({ coords: [from, centers[r.cc]], lineStyle: { width: 0.8 + 3.5 * k(r.bytes) } })),
+      },
+      { // 流量最大的 5 个：带涟漪、标名字
+        type: 'effectScatter', coordinateSystem: 'geo', zlevel: 2, rippleEffect: { brushType: 'stroke', scale: 2.6, period: 4 },
+        itemStyle: { color: accent, shadowBlur: 6, shadowColor: hexMix(accent, panel, 0.4) },
+        label: { show: true, position: narrow ? 'top' : 'right', color: ink, fontSize: narrow ? 11 : 12, fontWeight: 600, distance: 6,
+          formatter: p => (narrow ? p.data.name : `${p.data.name}  {s|${bytes(p.data.bytes)}}`), rich: { s: { color: muted, fontWeight: 400, fontSize: 11 } },
+          textBorderColor: panel, textBorderWidth: 3 },
+        data: dests.slice(0, 5).map(point),
+      },
+      { // 其余国家
+        type: 'scatter', coordinateSystem: 'geo', zlevel: 2,
+        itemStyle: { color: hexMix(accent, panel, 0.75) }, data: dests.slice(5).map(point),
+      },
+      { // 本地
+        type: 'scatter', coordinateSystem: 'geo', zlevel: 3, symbol: 'pin', symbolSize: 30,
+        itemStyle: { color: brand }, label: { show: true, position: 'bottom', color: ink, fontSize: 12, fontWeight: 600,
+          textBorderColor: panel, textBorderWidth: 3, formatter: () => homeName },
+        data: [{ name: homeName, home: true, value: from }],
+      },
+    ],
   }
 }
 
