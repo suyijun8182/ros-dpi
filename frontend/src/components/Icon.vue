@@ -16,6 +16,7 @@ const PATHS = {
   flow: '<path d="M3 6h4c5 0 5 12 10 12h4"/><path d="M3 12h18"/><path d="M3 18h4c5 0 5-12 10-12h4"/>',
   rules: '<path d="M4 6h10M4 12h7M4 18h10"/><path d="m15 15 2 2 4-4"/><circle cx="18" cy="6" r="2.5"/>',
   settings: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/>',
+  audit: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5"/><path d="M14 3v5h5M8 9h3M8 13h6M8 17h2"/><circle cx="16.5" cy="16.5" r="3"/><path d="m21 21-2.4-2.4"/>',
   menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',

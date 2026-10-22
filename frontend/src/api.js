@@ -1,19 +1,22 @@
 import axios from 'axios'
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import router from './router.js'
 
-export const auth = reactive({ token: read('rosdpi.token'), username: read('rosdpi.user') })
+export const auth = reactive({ token: read('rosdpi.token'), username: read('rosdpi.user'), role: read('rosdpi.role') })
+// 普通用户（role=user）只读；没有角色信息时按管理员显示，真正的权限由后端判断
+export const isAdmin = computed(() => auth.role !== 'user')
 
 function read(k) {
   try { return localStorage.getItem(k) || '' } catch (e) { return '' }
 }
 
-export function setAuth(token, username) {
+export function setAuth(token, username, role) {
   auth.token = token || ''
   auth.username = username || ''
+  auth.role = role || ''
   try {
-    if (token) { localStorage.setItem('rosdpi.token', token); localStorage.setItem('rosdpi.user', username) }
-    else { localStorage.removeItem('rosdpi.token'); localStorage.removeItem('rosdpi.user') }
+    if (token) { localStorage.setItem('rosdpi.token', token); localStorage.setItem('rosdpi.user', username); localStorage.setItem('rosdpi.role', role || '') }
+    else { ['rosdpi.token', 'rosdpi.user', 'rosdpi.role'].forEach(k => localStorage.removeItem(k)) }
   } catch (e) { /* ignore */ }
 }
 

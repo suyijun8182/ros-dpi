@@ -14,7 +14,9 @@ from app.config import get_settings
 from app.engine import engine
 from app.models import Setting
 from app.ros_poller import poller
+from app import audit  # noqa: F401  挂上审计（engine.audit）
 from app.routers import admin, auth, setup, stats
+from app.routers import audit as audit_router
 from app.security import ensure_admin
 
 FRONTEND_DIR = os.environ.get("FRONTEND_DIR", os.path.join(os.path.dirname(__file__), "..", "frontend_dist"))
@@ -77,6 +79,9 @@ async def lifespan(app: FastAPI):
     sched.add_job(_safe(integrations.singbox.poll, "singbox"), "interval", seconds=5, max_instances=1, coalesce=True)
     sched.add_job(_safe(integrations.mosdns.poll, "mosdns"), "interval", seconds=5, max_instances=1, coalesce=True)
     sched.add_job(_safe(_auto_update_rules, "rules-update"), "interval", hours=6, max_instances=1, coalesce=True)
+    # 审计报表：日报每天 08:00 推送昨天的，周报每周一 08:30 推送近 7 天的（在审计 → 报表里开启）
+    sched.add_job(_safe(lambda: audit.push_report("daily"), "report-daily"), "cron", hour=8, minute=0)
+    sched.add_job(_safe(lambda: audit.push_report("weekly"), "report-weekly"), "cron", day_of_week="mon", hour=8, minute=30)
     asyncio.get_running_loop().call_later(120, lambda: asyncio.get_running_loop().run_in_executor(
         None, _safe(_auto_update_rules, "rules-update")))
     if s.asn_db:
@@ -96,7 +101,7 @@ async def lifespan(app: FastAPI):
         sched.shutdown(wait=False)
     for t in transports:
         t.close()
-    _safe(engine.flush, "flush")()
+    _safe(lambda: engine.flush(final=True), "flush")()  # 关闭前把还没结束的访问也写进访问日志
 
 
 app = FastAPI(title="ROS-DPI", version=__version__, lifespan=lifespan)
@@ -109,7 +114,7 @@ async def _unhandled(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": f"服务器内部错误：{type(exc).__name__}: {msg}"})
 
 
-for r in (setup.router, auth.router, stats.router, admin.router):
+for r in (setup.router, auth.router, stats.router, admin.router, audit_router.router):
     app.include_router(r)
 
 

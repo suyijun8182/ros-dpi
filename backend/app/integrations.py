@@ -8,6 +8,7 @@
 地址、密钥每个人都不一样：在网页 系统设置 → 外部数据源 里填写（存在数据库 settings 表），环境变量作为默认值。都不填就不启用。
 """
 import ipaddress
+import re
 import time
 from urllib.parse import urlparse
 
@@ -55,6 +56,20 @@ class SingboxPoller:
     @property
     def enabled(self) -> bool:
         return bool(self.url)
+
+    @staticmethod
+    def route_info(c: dict) -> tuple[str, str, str, list[str]]:
+        """(出口节点, 策略组, 规则, 可用来认应用的名字)。chains 是 [节点, …, 策略组]；
+        rule 形如 "rule_set=Telegram0 => route(✈️ Telegram)"、"rule_set=[A0 B0] => route(X)"、final"""
+        chains = [x for x in (c.get("chains") or []) if x]
+        node, group = (chains[0], chains[-1]) if chains else ("", "")
+        rule = (c.get("rule") or "").strip()
+        names = []
+        m = re.match(r"^\s*rule_set=\[?([^\]=]*?)\]?\s*=>", rule)
+        if m:
+            names += m.group(1).split()
+        names += chains[1:]
+        return node, group, rule[:120], names
 
     def configure(self, url: str, secret: str):
         url = (url or "").strip().rstrip("/")
@@ -105,7 +120,8 @@ class SingboxPoller:
                     src=m.get("sourceIP") or "", sport=int(m.get("sourcePort") or 0),
                     host=(m.get("host") or m.get("sniffHost") or "").strip().lower().rstrip("."),
                     dst=m.get("destinationIP") or "", dport=int(m.get("destinationPort") or 0),
-                    network=m.get("network") or "tcp", up=du, down=dd, chain=(c.get("chains") or [""])[0], now=now)
+                    network=m.get("network") or "tcp", up=du, down=dd, route=self.route_info(c), new=cid not in self._prev,
+                    now=now)
                 self.bytes += du + dd
         self._prev = seen
         self.conns = len(seen)

@@ -5,7 +5,7 @@ import threading
 import time
 from collections import OrderedDict, defaultdict
 
-from sqlalchemy import delete, select
+from sqlalchemy import bindparam, delete, insert, select, update
 
 from app import timeutil
 from app.classify import GENERIC_APPS, Classifier
@@ -16,13 +16,17 @@ from app.config import get_settings
 from app import database, hostnames
 from app.database import upsert_add
 from app.dnsmap import ConnNames, DnsMap
-from app.models import (CustomRule, DnsCache, Host, HostDomainDay, Setting, TrafficDay, TrafficHour,
+from app.models import (AccessLog, AuditEvent, CustomRule, DnsCache, Host, HostDomainDay, OpLog, Setting, TrafficDay,
+                        TrafficHour,
                         TrafficMinute)
 
 _ZERO = {"0.0.0.0", "::"}
 ONLINE_SECONDS = 300  # 最近 5 分钟有流量算在线
 SESSION_IDLE = 300    # 实时连接：5 分钟没有新流量就从列表里去掉
 MAX_SESSIONS = 50_000
+VISIT_GAP = 300        # 访问日志：同一目标间隔不超过 5 分钟的连接合成一次访问
+VISIT_SPLIT = 3600     # 持续超过 1 小时的访问分段写入
+MAX_VISITS = 100_000
 IP_DEST_PER_HOST = 30  # 没有域名的访问目标（只有 IP），每台终端每分钟只记流量最大的 30 个，防止 P2P 撑爆表
 
 
@@ -61,6 +65,15 @@ class Engine:
         # 实时连接：(host_key, 远端 IP, 远端端口, 协议, 终端端口) ->
         #   [终端 IP, app, 域名, 域名来源, 累计上行, 累计下行, 开始, 最近, 本窗口上行, 本窗口下行, 上行速率, 下行速率]
         self.sessions: OrderedDict[tuple, list] = OrderedDict()
+        # 访问日志：(host_key, 目标, app) -> [终端 IP, 远端 IP, 端口, 协议, 开始, 最近, 连接数, 上行, 下行, 来源, 行 ID, 已入库, 有变化]
+        # 进行中的访问每分钟也写库（首次插入、之后按行 ID 更新），访问日志和时间线只慢一分钟
+        self.visits: OrderedDict[tuple, list] = OrderedDict()
+        self._vid = 0
+        # 代理分流（sing-box）：(策略组, 出口节点) -> [上行, 下行, 连接数, {app: bytes}, 最近]，只留今天
+        self.proxy_routes: dict[tuple[str, str], list] = {}
+        self.proxy_day = 0
+        self.audit = None  # app.audit.Auditor，启动时挂上
+        self._closed_visits: list = []
 
         # 最近一个分钟窗口的统计，用于实时速率
         self.last_flush = time.time()
@@ -196,16 +209,21 @@ class Engine:
                 for ip, _ttl in ips:
                     self.names.add_pair(client, ip, qname, cname, now)
 
-    def add_proxy_conn(self, src, sport, host, dst, dport, network, up, down, chain, now):
-        """sing-box Clash API 的一条连接在这次轮询里新增的字节：按来源终端 + 域名记账"""
+    def add_proxy_conn(self, src, sport, host, dst, dport, network, up, down, now, route=("", "", "", []), new=False):
+        """sing-box Clash API 的一条连接在这次轮询里新增的字节：按来源终端 + 域名记账。
+        route：(出口节点, 策略组, 规则, 规则集/策略组名)。域名只认出 HTTPS 这类通用协议时，按规则集或策略组名再认一次"""
         host_ip = src if self.is_lan(src) else next(iter(sorted(self.proxy_ips)), src)
         if not host_ip:
             return
         proto = 17 if network == "udp" else 6
         qname = host if host and not _is_ip(host) else None
         remote = dst or host or "0.0.0.0"
+        node, group, rule, names = route
         with self.lock:
             app = self.classifier.classify(dst or "0.0.0.0", proto, dport, qname, None)
+            if app in GENERIC_APPS:
+                app = next((a for a in map(self.classifier.app_by_label, names) if a), app)
+            self._proxy_stat(node, group, app, up, down, new, now)
             key, mac = self.host_key(host_ip, None)
             b = self._buf[(key, app)]
             b[0] += up
@@ -219,9 +237,34 @@ class Engine:
                 self._track_session(key, host_ip, sport, remote, dport, proto, app, qname, "proxy", "up", up, now)
             if down:
                 self._track_session(key, host_ip, sport, remote, dport, proto, app, qname, "proxy", "down", down, now)
+            s = self.sessions.get((key, remote, dport, proto, sport))
+            if s is not None:
+                s[12] = (node, group, rule)
             self._seen[key] = (host_ip, mac, int(now))
             self.stats["match"]["proxy"] += up + down
             self.stats["bytes_seen"] += up + down
+
+    def _proxy_stat(self, node, group, app, up, down, new, now):
+        """调用方持有 self.lock。代理分流：今天按 策略组 + 出口节点 累计的流量、连接数和应用"""
+        day = timeutil.day_bucket(now)
+        if self.proxy_day != day:
+            self.proxy_day, self.proxy_routes = day, {}
+        r = self.proxy_routes.setdefault((group or "-", node or "-"), [0, 0, 0, defaultdict(int), 0])
+        r[0] += up
+        r[1] += down
+        r[2] += 1 if new else 0
+        r[3][app] += up + down
+        r[4] = int(now)
+
+    def proxy_route_list(self) -> list[dict]:
+        with self.lock:
+            items = [(k, list(v[:3]), dict(v[3]), v[4]) for k, v in self.proxy_routes.items()]
+        out = []
+        for (group, node), (up, down, conns), apps, last in items:
+            top = sorted(apps.items(), key=lambda x: x[1], reverse=True)
+            out.append({"group": group, "node": node, "up": up, "down": down, "total": up + down, "conns": conns,
+                        "last": last, "apps": [{"id": a, "bytes": b} for a, b in top[:6]], "apps_count": len(top)})
+        return sorted(out, key=lambda r: r["total"], reverse=True)
 
     def host_key(self, ip: str, mac: str | None) -> tuple[str, str | None]:
         m = self.ip2mac.get(ip)
@@ -304,10 +347,11 @@ class Engine:
     def _track_session(self, key, host_ip, hport, remote, rport, proto, app, qname, src_kind, direction, nbytes, now):
         sk = (key, remote, rport, proto, hport)
         s = self.sessions.get(sk)
+        new_conn = s is None
         if s is None:
             if len(self.sessions) >= MAX_SESSIONS:
                 self.sessions.popitem(last=False)
-            s = self.sessions[sk] = [host_ip, app, qname, src_kind, 0, 0, now, now, 0, 0, 0.0, 0.0]
+            s = self.sessions[sk] = [host_ip, app, qname, src_kind, 0, 0, now, now, 0, 0, 0.0, 0.0, None]
         else:
             self.sessions.move_to_end(sk)
             if qname and not s[2]:
@@ -316,6 +360,54 @@ class Engine:
         s[i] += nbytes
         s[i + 4] += nbytes
         s[7] = now
+        # 访问日志
+        vk = (key, s[2] or remote, s[1])
+        v = self.visits.get(vk)
+        if v is None:
+            if len(self.visits) >= MAX_VISITS:
+                self._closed_visits.append((self.visits.popitem(last=False)))
+            v = self.visits[vk] = [host_ip, remote, rport, proto, now, now, 0, 0, 0, src_kind, self._next_vid(), False, True]
+        else:
+            self.visits.move_to_end(vk)
+        v[1], v[5], v[12] = remote, now, True
+        if new_conn:
+            v[6] += 1
+        v[7 if direction == "up" else 8] += nbytes
+
+    def _next_vid(self) -> int:
+        """访问日志的行 ID：毫秒时间左移 10 位再递增（到 2039 年都在 JS 安全整数内），重启后也比之前的大，不会撞号"""
+        self._vid = max(self._vid + 1, int(time.time() * 1000) << 10)
+        return self._vid
+
+    def take_visits(self, now: float, final: bool = False) -> tuple[list[dict], list[dict]]:
+        """调用方持有 self.lock。返回 (要插入的行, 要更新的行)：有变化的进行中访问也写；
+        5 分钟没有新流量的访问结束后移出内存；持续超过 1 小时的封口，后面另起一行。final：全部写完移出"""
+        out = [(k, v) for k, v in self._closed_visits]
+        self._closed_visits = []
+        for k in list(self.visits):
+            v = self.visits[k]
+            if final or now - v[5] > VISIT_GAP:
+                out.append((k, v))
+                del self.visits[k]
+            elif v[5] - v[4] > VISIT_SPLIT:
+                out.append((k, list(v)))
+                v[4], v[6], v[7], v[8], v[10], v[11], v[12] = v[5], 0, 0, 0, self._next_vid(), False, False
+            elif v[12] and (v[7] or v[8]):
+                out.append((k, list(v)))
+                v[11], v[12] = True, False
+        ins, upd = [], []
+        for k, v in out:
+            if not v[12] or not (v[7] or v[8]):
+                continue  # 上次写库后没变化，或者还没有流量
+            (upd if v[11] else ins).append(self._visit_row(k, v))
+        return ins, upd
+
+    @staticmethod
+    def _visit_row(k, v) -> dict:
+        key, dest, app = k
+        return {"id": v[10], "host": key, "host_ip": v[0], "dest": str(dest)[:255], "remote": v[1], "port": v[2],
+                "proto": v[3], "ts_start": int(v[4]), "ts_end": int(v[5]), "conns": v[6], "up": v[7], "down": v[8],
+                "source": v[9], "app": app}
 
     def session_list(self, now: float | None = None) -> list[dict]:
         now = now or time.time()
@@ -328,15 +420,17 @@ class Engine:
             out.append({"host": key, "host_ip": s[0], "host_port": hport if hport >= 0 else None, "remote": remote,
                         "port": rport, "proto": proto, "app": s[1], "domain": s[2], "source": s[3],
                         "up": s[4], "down": s[5], "start": int(s[6]), "last": int(s[7]),
-                        "rate_up": s[10], "rate_down": s[11]})
+                        "rate_up": s[10], "rate_down": s[11],
+                        "route": {"node": s[12][0], "group": s[12][1], "rule": s[12][2]} if s[12] else None})
         return out
 
     # ---------- 落库 ----------
-    def flush(self, now: float | None = None):
+    def flush(self, now: float | None = None, final: bool = False):
         if not database.is_configured():
             return  # 安装向导完成前先留在内存里，配置好后的第一次落库一起写入
         now = now or time.time()
         with self.lock:
+            visits, visit_upd = self.take_visits(now, final)
             buf, self._buf = self._buf, defaultdict(lambda: [0, 0, 0])
             dom, self._dom = self._dom, defaultdict(int)
             seen, self._seen = self._seen, {}
@@ -381,17 +475,32 @@ class Engine:
                     drows.append({"ts": d, "host": host, "domain": ip, "app": app, "bytes": n})
             for chunk in _chunks(drows, 500):
                 upsert_add(db, HostDomainDay.__table__, chunk, ["ts", "host", "domain"], ["bytes"], ["app"])
-            self._save_hosts(db, seen)
+            new_hosts = self._save_hosts(db, seen)
+            for chunk in _chunks(visits, 500):
+                db.execute(insert(AccessLog.__table__), chunk)
+            if visit_upd:
+                t = AccessLog.__table__
+                stmt = update(t).where(t.c.id == bindparam("_id")).values(
+                    remote=bindparam("remote"), ts_end=bindparam("ts_end"), conns=bindparam("conns"),
+                    up=bindparam("up"), down=bindparam("down"))
+                for chunk in _chunks(visit_upd, 500):
+                    db.execute(stmt, [{"_id": r["id"], "remote": r["remote"], "ts_end": r["ts_end"], "conns": r["conns"],
+                                       "up": r["up"], "down": r["down"]} for r in chunk])
             if dirty_dns:
                 drs = [{"ip": ip, "name": v[0][:255], "cname": (v[1] or "")[:255] or None, "expires": v[2]}
                        for ip, v in dirty_dns.items()]
                 for chunk in _chunks(drs, 500):
                     upsert_add(db, DnsCache.__table__, chunk, ["ip"], [], ["name", "cname", "expires"])
             db.commit()
+        if self.audit:
+            # 审计规则：按这一分钟的流量和新出现的终端检查
+            self.audit.evaluate(buf, dom, new_hosts, now)
 
-    def _save_hosts(self, db, seen: dict):
+    def _save_hosts(self, db, seen: dict) -> list:
+        """返回新出现的终端 [(key, ip, mac)]"""
         if not seen:
-            return
+            return []
+        new = []
         rows = []
         for key, (ip, mac, ts) in seen.items():
             rows.append({"key": key, "mac": mac, "ip": ip, "hostname": self.mac2name.get(mac) if mac else None,
@@ -402,6 +511,7 @@ class Engine:
             h = existing.get(r["key"])
             if h is None:
                 db.add(Host(**r))
+                new.append((r["key"], r["ip"], r["mac"]))
                 continue
             if not h.last_seen or not h.online_since or r["last_seen"] - h.last_seen > ONLINE_SECONDS:
                 h.online_since = r["last_seen"]  # 离线后重新上线，开始新的一次
@@ -410,6 +520,7 @@ class Engine:
             h.mac = h.mac or r["mac"]
             if r["hostname"]:
                 h.hostname = r["hostname"]
+        return new
 
     def load_state(self):
         """启动时恢复 DNS 映射、自定义规则和界面设置。"""
@@ -435,6 +546,9 @@ class Engine:
             db.execute(delete(TrafficDay).where(TrafficDay.ts < now - s.retention_day_days * 86400))
             db.execute(delete(HostDomainDay).where(HostDomainDay.ts < now - s.retention_domain_days * 86400))
             db.execute(delete(DnsCache).where(DnsCache.expires < now))
+            db.execute(delete(AccessLog).where(AccessLog.ts_start < now - s.retention_log_days * 86400))
+            db.execute(delete(AuditEvent).where(AuditEvent.ts < now - s.retention_event_days * 86400))
+            db.execute(delete(OpLog).where(OpLog.ts < now - s.retention_event_days * 86400))
             db.commit()
         self.dns.purge()
         with self.lock:

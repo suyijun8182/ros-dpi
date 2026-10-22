@@ -19,7 +19,10 @@ ROS = {
     "/rest/ip/address": [{"address": "192.168.88.1/24", "interface": "bridge"},
                          {"address": "100.64.1.2/24", "interface": "ether1"}],
     "/rest/ip/route": [{"dst-address": "0.0.0.0/0", "gateway": "100.64.1.1", "immediate-gw": "100.64.1.1%ether1",
-                        "active": "true"}],
+                        "active": "true"},
+                       # 策略路由：把部分流量导给旁路由 sing-box，出口是 LAN 网桥，不能算 WAN（debug9）
+                       {"dst-address": "0.0.0.0/0", "gateway": "192.168.88.249", "immediate-gw": "192.168.88.249%bridge",
+                        "routing-table": "sing-box-v4", "active": "true"}],
     "/rest/ipv6/neighbor": [{"address": "2408:8000:aa:bb::30", "mac-address": "AA:BB:CC:DD:EE:30"}],
     "/rest/ipv6/address": [{"address": "2408:8000:aa:bb::1/64", "interface": "bridge"},
                            {"address": "fe80::1/64", "interface": "bridge"}],
@@ -62,6 +65,7 @@ def test_poll_success_populates_router_state(monkeypatch):
     assert "2408:8000:aa:bb::/64" in nets and "100.64.1.0/24" not in nets  # WAN 口的地址段不算 LAN
     assert engine.is_lan("2408:8000:aa:bb::30")
     # 全网状态：WAN 线路；DHCP 地址池容量 = 10 + 4，已用 = 1 条租约
+    assert [w["name"] for w in poller.wans] == ["ether1"]
     assert poller.wans[0]["name"] == "ether1" and poller.wans[0]["type"] == "dhcp" and poller.wans[0]["ip"] == "100.64.1.2"
     assert poller.pools == [{"server": "defconf", "interface": "bridge", "pool": "dhcp_pool0", "size": 14, "used": 1}]
     # 实时流量采样：两次采样之间 WAN 口计数增加，得到速率点

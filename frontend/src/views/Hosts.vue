@@ -102,8 +102,8 @@
     <div class="panel" v-if="tab === 'names'">
       <div class="panel-b head">
         <div class="info-bar"><span class="ic">i</span><div><b>{{ t('hosts.names') }}</b><span>{{ t('hosts.namesHint') }}</span></div></div>
-        <div class="sec">{{ t('common.add') }}</div>
-        <form class="nf" @submit.prevent="addName">
+        <div class="sec" v-if="isAdmin">{{ t('common.add') }}</div>
+        <form class="nf" v-if="isAdmin" @submit.prevent="addName">
           <div class="seg" role="radiogroup" :aria-label="t('hosts.nameBy')">
             <button v-for="k in ['mac', 'ip']" :key="k" type="button" role="radio" :aria-checked="nf.kind === k" :class="{ on: nf.kind === k }" @click="nf.kind = k">{{ t('hosts.by.' + k) }}</button>
           </div>
@@ -127,7 +127,7 @@
                 <router-link v-if="n.host" :to="`/hosts/${enc(n.host.key)}`" class="link">{{ n.kind === 'mac' ? n.host.ip : (n.host.mac || n.host.ip) }}<span v-if="n.host.hostname"> · {{ n.host.hostname }}</span></router-link>
                 <span v-else>{{ t('hosts.notSeen') }}</span>
               </td>
-              <td class="r">
+              <td class="r" v-if="isAdmin">
                 <button class="btn sm ghost" @click="editName(n)">{{ t('common.edit') }}</button>
                 <button class="btn sm danger" @click="delName(n)">{{ t('common.delete') }}</button>
               </td>
@@ -144,7 +144,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import http, { enc } from '../api.js'
+import http, { enc, isAdmin } from '../api.js'
 import Icon from '../components/Icon.vue'
 import { duration, exportCsv } from '../csv.js'
 import { ago, appName, bytes, catColor, rate } from '../format.js'

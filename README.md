@@ -14,9 +14,11 @@
 
 - **全网概览**：一屏看全的仪表盘：路由器状态、**网络健康指数**（逐项扣分和改进建议）、在线终端、**DHCP 地址池**、每条 **WAN 线路**的状态和速率；流量构成环图（应用大类 → 小类）；实时流量、流量趋势、历史在线终端数；Top 应用与 Top 终端排行。
 - **主机监控**：在线终端 / 全部终端 / DHCP 租约 / 命名管理四个标签。每台终端的 IP、MAC、主机名、在线时长、连接数、当前速率、今日 / 本周 / 本月流量，可导出 CSV；可以按 MAC 或按 IP 给设备命名（也能提前给还没上线的设备命名）；详情页可看该终端的应用排行、应用构成、按大类的趋势和访问过的域名。
-- **应用统计**：参照 Panabit 分三级（应用大类 → 小类 → 应用）：10 个大类、43 个小类、2800 多个内置应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……，其中约 2500 个来自 v2fly 开源域名库）。识别不出具体应用的流量，会按 CDN 的 CNAME 归到阿里云 / 腾讯云 / Akamai 等厂商。可以查看每个应用被哪些终端使用。
-- **流量流向**：**实时连接**（此刻哪台终端连到哪个域名 / IP、什么应用、多快）和**访问目标排行**（流量最大的远端域名和 IP，可按主域名合并，看是哪些终端在访问）。
+- **应用统计**：参照 Panabit / 维盟分三级（应用大类 → 小类 → 应用，逐级「查看详情」下钻，每级显示上传 / 下载速度和数据及占比）：10 个大类、43 个小类、2800 多个内置应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……，其中约 2500 个来自 v2fly 开源域名库）。识别不出具体应用的流量，会按 CDN 的 CNAME 归到阿里云 / 腾讯云 / Akamai 等厂商。可以查看每个应用被哪些终端使用。
+- **流量流向**：**实时连接**（此刻哪台终端连到哪个域名 / IP、什么应用、多快；走 sing-box 的连接显示策略组和出口节点）、**访问目标排行**（流量最大的远端域名和 IP，显示国家 / 地区及分布，可按主域名合并，看是哪些终端在访问）和**代理分流**（sing-box 各策略组、各节点的流量与主要应用）。
 - **识别规则**：按域名后缀、IP 段、端口自定义识别规则；列出“未识别域名 Top”，一键归类。
+- **审计日志**：访问日志（每台终端什么时候访问了什么、多久、多少流量，可筛选、导出 CSV，默认保留 30 天）；终端的上网时间线；审计规则（按应用、域名、时段、流量、新设备）命中时推送到企业微信 / 钉钉 / 飞书 / Bark / Telegram / Webhook；日报和周报；操作日志。
+- **管理员与普通用户**：普通用户只能查看，不能修改设置和规则；在 系统设置 → 用户管理 添加。
 - 顶栏功能搜索（终端、IP、MAC、应用、页面），按 / 键聚焦。
 - 中英双语，深浅色主题，手机可用。
 
@@ -169,7 +171,7 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 
 家里用旁路代理（sing-box 做旁路由）或内网 DNS（MosDNS）时，路由器看到的多是代理的加密隧道，识别率会很低。在 **系统设置 → 外部数据源** 填写：
 
-- **sing-box Clash API**（`experimental.clash_api.external_controller` 和 `secret`）：按“哪台终端、哪个域名、多少字节”统计走代理的流量，代理自身的隧道流量不再重复计算。
+- **sing-box Clash API**（`experimental.clash_api.external_controller` 和 `secret`）：按“哪台终端、哪个域名、多少字节”统计走代理的流量，代理自身的隧道流量不再重复计算；域名认不出具体应用时按命中的规则集 / 策略组名识别；流量流向 → 代理分流 按策略组和出口节点统计。
 - **MosDNS 审计 API**：知道每台终端查了哪个域名、解析出哪些 IP。
 
 地址每个人都不一样，都不填就不启用。
@@ -196,6 +198,7 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 | `TZ` | `Asia/Shanghai` | 统计用时区，每周从周一开始 |
 | `HTTP_PORT` / `IPFIX_PORT` / `TZSP_PORT` | 8080 / 2055 / 37008 | 端口 |
 | `RETENTION_*_DAYS` | 2 / 45 / 730 / 31 | 分钟 / 小时 / 每日 / 域名明细的保留天数 |
+| `RETENTION_LOG_DAYS` / `RETENTION_EVENT_DAYS` | 30 / 180 | 访问日志 / 审计事件和操作日志的保留天数 |
 | `SECRET_KEY` | 自动生成 | 登录令牌签名密钥 |
 
 ### 开发
@@ -227,8 +230,10 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
 - **Overview**: a dashboard with router status, a network health score with fixes, DHCP pool usage, WAN line status, online-host history, live rate, and a two-ring traffic-mix donut (app group → category), trends stacked by app group, ranked top apps and hosts.
 - **Hosts**: every device with IP, MAC, hostname, online state, live rate and daily / weekly / monthly totals; name devices by MAC or by IP (even before they appear); per-host app breakdown and visited domains.
 - **Applications**: a Panabit-style three-level library: 10 app groups, 43 categories, 2800+ built-in apps (about 2500 converted from v2fly/domain-list-community). Traffic that can't be tied to an app is attributed to its CDN (Alibaba Cloud, Tencent Cloud, Akamai, Cloudflare…) via CNAME.
-- **Flows**: live connections (which host talks to which domain or IP, which app, how fast) and top destinations (remote domains and IPs by traffic, mergeable by base domain, with the hosts behind each).
+- **Flows**: live connections (which host talks to which domain or IP, which app, how fast; sing-box connections show their policy group and outbound node), top destinations (remote domains and IPs by traffic with country, mergeable by base domain, with the hosts behind each) and proxy routing (traffic and top apps per sing-box policy group and node).
 - **Rules**: custom domain / CIDR / port rules, and a list of top unidentified domains to classify.
+- **Audit**: an access log of every visit (who reached what, when, for how long and how much; filterable, CSV export, kept 30 days), a per-host daily timeline, audit rules (by app, domain, time window, traffic or new device) that push alerts to WeCom / DingTalk / Feishu / Bark / Telegram / webhooks, daily and weekly reports, and an operation log.
+- **Admins and users**: regular users are read-only; add them under Settings → Users.
 - Chinese and English UI, light and dark themes, works on phones.
 
 **How it works.** RouterOS exports IPFIX (`/ip traffic-flow`) for byte counts, and mirrors DNS answers plus the first packets of each HTTPS/QUIC connection via `sniff-tzsp`. The TLS / QUIC handshake carries the target domain (SNI) per connection; DNS answers map remote IPs back to the domain the client looked up. A rule library maps domains to apps. An optional read-only REST user provides hostnames, IP-to-MAC, WAN rate and LAN prefixes. Data is aggregated per minute, hour and day into MySQL.

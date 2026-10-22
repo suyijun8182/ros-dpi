@@ -2,11 +2,11 @@ import ipaddress
 import re
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import __version__, integrations, stats, timeutil
+from app import __version__, integrations, oplog, stats, timeutil
 from app.asn import asndb
 from app.classify import GENERIC_APPS
 from app.config import get_settings
@@ -55,7 +55,7 @@ def list_rules(db: Session = Depends(get_db)):
 
 
 @router.post("/rules")
-def add_rule(req: RuleIn, db: Session = Depends(get_db)):
+def add_rule(req: RuleIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
     p = req.pattern.strip().lower()
     if req.kind == "domain":
         p = p.strip(".")
@@ -79,18 +79,19 @@ def add_rule(req: RuleIn, db: Session = Depends(get_db)):
     r = CustomRule(kind=req.kind, pattern=p, app_id=req.app_id, app_name=req.app_name,
                    category=req.category, created=int(time.time()))
     db.add(r)
-    db.commit()
+    oplog.log(db, request, user, "rule_add", req.model_dump())
     engine.reload_rules()
     return _rule_dict(r)
 
 
 @router.delete("/rules/{rule_id}")
-def delete_rule(rule_id: int, db: Session = Depends(get_db)):
+def delete_rule(rule_id: int, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
     r = db.get(CustomRule, rule_id)
     if r is None:
         raise HTTPException(404, "规则不存在")
+    detail = {"id": rule_id, "kind": r.kind, "pattern": r.pattern, "app_id": r.app_id}
     db.delete(r)
-    db.commit()
+    oplog.log(db, request, user, "rule_delete", detail)
     engine.reload_rules()
     return {"ok": True}
 
@@ -170,7 +171,7 @@ def _db_info():
 
 
 @router.put("/settings")
-def put_settings(req: SettingsIn, db: Session = Depends(get_db)):
+def put_settings(req: SettingsIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
     if req.lan_cidrs is not None:
         text = ",".join(x.strip() for x in req.lan_cidrs.replace("\n", ",").split(",") if x.strip())
         bad = [x for x in text.split(",") if x and not parse_cidrs(x)]
@@ -197,7 +198,7 @@ def put_settings(req: SettingsIn, db: Session = Depends(get_db)):
         _put(db, "wan_interface", req.wan_interface.strip())
         poller.wan_override = req.wan_interface.strip()
         poller._wan_prev = None
-    db.commit()
+    oplog.log(db, request, user, "settings", req.model_dump(exclude_none=True))
     return get_settings_api(db)
 
 
@@ -260,12 +261,13 @@ def library(db: Session = Depends(get_db)):
 
 
 @router.post("/library/update")
-def library_update(db: Session = Depends(get_db)):
+def library_update(request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
     """立即检查识别库更新（v2fly 规则 + ASN 库），返回最新状态"""
     from app.classify.updater import updater
     updater.check(force=True, reload=engine.reload_classifier)
     if get_settings().asn_db:
         asndb.update()
+    oplog.log(db, request, user, "library_update", {"result": updater.state.get("result")})
     return _library(db)
 
 

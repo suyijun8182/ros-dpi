@@ -4,11 +4,18 @@
       <router-link to="/hosts" class="btn sm">← {{ t('common.back') }}</router-link>
       <h1 v-if="d"><span class="dot" :class="{ on: d.online }" /> {{ d.name }}</h1>
       <span class="sp" />
-      <RangeTabs />
+      <RangeTabs v-if="tab !== 'timeline'" />
     </div>
     <div v-if="error" class="err">{{ error }}</div>
 
-    <template v-if="d">
+    <div class="seg tabs host-tabs" role="tablist" v-if="d">
+      <button v-for="k in HTABS" :key="k" role="tab" :aria-selected="tab === k" :class="{ on: tab === k }" @click="setTab(k)">{{ t('audit.htab.' + k) }}</button>
+    </div>
+
+    <div class="panel" v-if="d && tab === 'log'"><div class="panel-b head-pad" /><AccessLog :host="hostKey" /></div>
+    <div class="panel" v-if="d && tab === 'timeline'"><div class="panel-b head-pad" /><Timeline :host="hostKey" /></div>
+
+    <template v-if="d && tab === 'overview'">
       <div class="panel info">
         <div><span class="k">{{ t('hosts.ip') }}</span><span class="addr">{{ d.ip || '-' }}</span></div>
         <div><span class="k">{{ t('hosts.mac') }}</span><span class="addr">{{ d.mac || '-' }}</span></div>
@@ -16,7 +23,7 @@
         <div><span class="k">{{ t('hosts.firstSeen') }}</span>{{ datetime(d.first_seen) }}</div>
         <div><span class="k">{{ t('hosts.lastSeen') }}</span>{{ ago(d.last_seen) }}</div>
         <div><span class="k">{{ t('common.rate') }}</span><span class="num"><span class="down">↓{{ rate(d.rate_down) }}</span> <span class="up">↑{{ rate(d.rate_up) }}</span></span></div>
-        <div class="alias">
+        <div class="alias" v-if="isAdmin">
           <span class="k">{{ t('hosts.alias') }}</span>
           <input class="input" v-model="alias" :placeholder="t('hosts.aliasPlaceholder')" @keyup.enter="saveAlias" />
           <div class="seg by" role="radiogroup" :aria-label="t('hosts.nameBy')">
@@ -91,7 +98,10 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import http, { enc } from '../api.js'
+import { useRoute, useRouter } from 'vue-router'
+import AccessLog from '../components/AccessLog.vue'
+import Timeline from '../components/Timeline.vue'
+import http, { enc, isAdmin } from '../api.js'
 import Composition from '../components/Composition.vue'
 import RangeTabs from '../components/RangeTabs.vue'
 import Stat from '../components/Stat.vue'
@@ -109,6 +119,11 @@ const by = ref('mac')
 const saved = ref(false)
 const aliasErr = ref('')
 const openGroup = ref('')
+const HTABS = ['overview', 'log', 'timeline']
+const route = useRoute()
+const router = useRouter()
+const tab = computed(() => (HTABS.includes(route.query.tab) ? route.query.tab : 'overview'))
+const setTab = k => router.replace({ query: k === 'overview' ? {} : { tab: k } })
 
 const defBy = computed(() => (d.value && d.value.mac ? 'mac' : 'ip'))
 const { loading, error } = usePoll(async () => {
@@ -138,6 +153,9 @@ async function saveAlias() {
 
 <style scoped>
 .mt { margin-top: 14px; }
+.host-tabs { margin-bottom: 14px; }
+.host-tabs button { font-size: 15px; padding: 8px 14px 11px; }
+.head-pad { padding-bottom: 0; }
 h1 { display: flex; align-items: center; gap: 10px; }
 .info { padding: 14px 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 20px; font-size: 13px; }
 .info > div { display: flex; gap: 10px; align-items: center; min-width: 0; }

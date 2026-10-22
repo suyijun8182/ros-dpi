@@ -3,7 +3,7 @@
     <div class="page-h">
       <div class="seg tabs" role="tablist">
         <button v-for="k in TABS" :key="k" role="tab" :aria-selected="tab === k" :class="{ on: tab === k }" @click="setTab(k)">
-          {{ t('settings.tab.' + k) }}<span v-if="badge[k]" class="dot bad tdot" /></button>
+          {{ t('settings.tab.' + (k === 'system' && !isAdmin ? 'account' : k)) }}<span v-if="badge[k]" class="dot bad tdot" /></button>
       </div>
       <span class="sp" /><span class="faint small" v-if="sys">{{ t('settings.version') }} {{ sys.version }}</span>
     </div>
@@ -142,8 +142,10 @@
       </div>
     </div>
 
-    <div class="grid g2 sys" v-if="s && tab === 'system'">
-      <div class="panel">
+    <UsersPanel v-if="tab === 'users'" />
+
+    <div class="grid g2 sys" v-if="tab === 'system'">
+      <div class="panel" v-if="s">
         <div class="panel-h">{{ t('settings.network') }}</div>
         <div class="panel-b form">
           <label>{{ t('settings.lan') }}</label>
@@ -193,7 +195,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import http, { auth } from '../api.js'
+import http, { auth, isAdmin } from '../api.js'
+import UsersPanel from '../components/UsersPanel.vue'
 import { ago, bytes, datetime, pct } from '../format.js'
 
 const { t } = useI18n()
@@ -212,8 +215,12 @@ const copied = ref(false)
 const hostIp = ref(location.hostname)
 
 // 子标签写在地址栏 ?tab=；旧链接 /settings#guide 打开“接入与自检”
-const TABS = ['status', 'access', 'sources', 'system']
-const tab = computed(() => (TABS.includes(route.query.tab) ? route.query.tab : route.hash === '#guide' || route.hash === '#check' ? 'access' : route.hash === '#sources' ? 'sources' : 'status'))
+const TABS = computed(() => (isAdmin.value ? ['status', 'access', 'sources', 'system', 'users'] : ['status', 'system']))
+const tab = computed(() => {
+  const k = TABS.value.includes(route.query.tab) ? route.query.tab
+    : route.hash === '#guide' || route.hash === '#check' ? 'access' : route.hash === '#sources' ? 'sources' : 'status'
+  return TABS.value.includes(k) ? k : 'status'
+})
 const setTab = k => router.replace({ query: k === 'status' ? {} : { tab: k } })
 // 有问题的标签页上标一个红点
 const badge = computed(() => ({
@@ -230,11 +237,12 @@ async function loadSys() {
 const matchParts = computed(() => (sys.value ? ['proxy', 'conn', 'pair', 'ip', 'none'].map(k => ({ k, v: sys.value.match[k] || 0 })) : []))
 const matchTotal = computed(() => matchParts.value.reduce((n, m) => n + m.v, 0))
 onMounted(async () => {
+  loadSys()
+  if (!isAdmin.value) return  // 普通用户看不到系统配置
   s.value = await http.get('/settings')
   lan.value = s.value.lan_cidrs.split(',').join('\n')
   wan.value = s.value.wan_interface
   fillSources()
-  loadSys()
 })
 
 // ---------- 外部数据源 ----------

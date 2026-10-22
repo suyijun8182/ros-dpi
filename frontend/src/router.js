@@ -10,6 +10,7 @@ const routes = [
   { path: '/apps', name: 'apps', component: () => import('./views/Apps.vue') },
   { path: '/apps/:id', name: 'app', component: () => import('./views/AppDetail.vue'), props: true },
   { path: '/flow', name: 'flow', component: () => import('./views/Flow.vue') },
+  { path: '/audit', name: 'audit', component: () => import('./views/Audit.vue') },
   { path: '/rules', name: 'rules', component: () => import('./views/Rules.vue') },
   { path: '/settings', name: 'settings', component: () => import('./views/Settings.vue') },
   { path: '/:pathMatch(.*)*', redirect: '/' },

@@ -7,8 +7,8 @@
       <div class="panel-h"><h2>{{ t('lib.title') }}</h2>
         <span class="faint small">{{ t('lib.total', { apps: lib.total_apps.toLocaleString(), domains: lib.total_domains.toLocaleString() }) }}</span>
         <span class="sp" />
-        <label class="chk"><input id="lib-auto" type="checkbox" :checked="lib.auto" @change="setAuto($event.target.checked)" /> {{ t('lib.auto') }}</label>
-        <button class="btn sm" @click="updateNow" :disabled="updating"><Icon name="refresh" :size="15" />{{ updating ? t('lib.checking') : t('lib.checkNow') }}</button>
+        <label class="chk" v-if="isAdmin"><input id="lib-auto" type="checkbox" :checked="lib.auto" @change="setAuto($event.target.checked)" /> {{ t('lib.auto') }}</label>
+        <button class="btn sm" v-if="isAdmin" @click="updateNow" :disabled="updating"><Icon name="refresh" :size="15" />{{ updating ? t('lib.checking') : t('lib.checkNow') }}</button>
       </div>
       <div class="tbl-wrap">
         <table class="tbl">
@@ -49,7 +49,7 @@
     </div>
 
     <div class="grid g2-wide">
-      <div class="panel">
+      <div class="panel" v-if="isAdmin">
         <div class="panel-h"><h2>{{ t('rules.addTitle') }}</h2></div>
         <div class="panel-b intro"><div class="info-bar"><span class="ic">i</span><div><b>{{ t('rules.title') }}</b><span>{{ t('rules.intro') }}</span></div></div></div>
         <form class="panel-b form" @submit.prevent="add">
@@ -93,7 +93,7 @@
                 <td><span class="tag">{{ t('rules.kinds.' + r.kind) }}</span></td>
                 <td class="addr">{{ r.pattern }}</td>
                 <td>{{ appLabel(r.app_id) }}</td>
-                <td class="r"><button class="btn sm danger" @click="del(r)">{{ t('common.delete') }}</button></td>
+                <td class="r"><button class="btn sm danger" v-if="isAdmin" @click="del(r)">{{ t('common.delete') }}</button></td>
               </tr>
             </tbody>
           </table>
@@ -126,7 +126,7 @@
 <script setup>
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import http from '../api.js'
+import http, { isAdmin } from '../api.js'
 import Icon from '../components/Icon.vue'
 import RangeTabs from '../components/RangeTabs.vue'
 import { ago, appName, bytes, catName, datetime, groupName } from '../format.js'

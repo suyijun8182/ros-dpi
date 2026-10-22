@@ -5,6 +5,10 @@ from datetime import datetime, timedelta
 from app.config import get_settings
 
 
+def tz():
+    return get_settings().zone
+
+
 def minute_bucket(ts: float) -> int:
     return int(ts) // 60 * 60
 

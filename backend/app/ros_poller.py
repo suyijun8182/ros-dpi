@@ -70,7 +70,10 @@ class RosPoller:
                 arp = self._get(c, "/ip/arp")
                 leases = self._get(c, "/ip/dhcp-server/lease")
                 addrs = self._get(c, "/ip/address")
-                routes = self._get(c, "/ip/route?dst-address=0.0.0.0/0")
+                # 只看主路由表：策略路由表（例如把流量导给旁路由的 sing-box 表）里的默认路由出口常是 LAN 网桥，
+                # 算进 WAN 会把网桥的收发和 WAN 叠加，上下行就变得几乎一样
+                routes = [r for r in self._get(c, "/ip/route?dst-address=0.0.0.0/0")
+                          if (r.get("routing-table") or "main") == "main"]
                 try:
                     nb6 = self._get(c, "/ipv6/neighbor")
                     addrs6 = self._get(c, "/ipv6/address")
@@ -162,9 +165,10 @@ class RosPoller:
 
         # WAN 线路：所有默认路由的出接口（多 WAN 时有多条），没有时用识别到的 WAN 口
         names = []
+        lan = {sv.get("interface") for sv in extra["servers"] or [] if sv.get("disabled") != "true"}
         for r in routes or []:
             n = _default_route_iface([r])
-            if n and n not in names:
+            if n and n not in names and n not in lan:  # 开着 DHCP 服务的是 LAN 口，不当 WAN 线路
                 names.append(n)
         if self.wan_name and self.wan_name not in names:
             names.insert(0, self.wan_name)

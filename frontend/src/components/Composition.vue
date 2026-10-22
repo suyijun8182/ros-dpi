@@ -11,7 +11,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { pieOption } from '../charts.js'
 import { bytes, catHex, catName, groupColor, groupHex, groupName, pct } from '../format.js'
@@ -33,7 +33,12 @@ const group = computed(() => (props.drill && props.active ? gs.value.find(g => g
 const items = computed(() => (group.value
   ? group.value.children.filter(c => c.total > 0).map(c => ({ id: c.id, kind: 'cat', name: catName(c), value: c.total, color: catHex(c.id) }))
   : gs.value.map(g => ({ id: g.id, kind: 'group', name: groupName(g), value: g.total, color: groupHex(g.id) }))))
-const opt = computed(() => (ui.theme, locale.value, pieOption(items.value)))
+const mq = window.matchMedia('(max-width: 640px)')
+const narrow = ref(mq.matches)
+const onMq = e => (narrow.value = e.matches)
+onMounted(() => mq.addEventListener('change', onMq))
+onUnmounted(() => mq.removeEventListener('change', onMq))
+const opt = computed(() => (ui.theme, locale.value, pieOption(items.value, { narrow: narrow.value })))
 
 function onChart(p) {
   if (!props.clickable || !p.data) return

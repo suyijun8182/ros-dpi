@@ -101,3 +101,74 @@ class User(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     username = Column(String(64), unique=True, nullable=False)
     password_hash = Column(String(128), nullable=False)
+    role = Column(String(16), nullable=True)          # admin | user；空 = admin（升级前建的账号都是管理员）
+    created = Column(Integer, nullable=True)
+    last_login = Column(Integer, nullable=True)
+
+
+# ---------------- 审计 ----------------
+
+class AccessLog(Base):
+    """访问日志：同一终端、同一目标（域名或 IP）、同一应用，间隔不超过 5 分钟的连接合成一条“访问”。
+
+    持续超过 1 小时的访问分段写入（每段一行）。保留天数见 RETENTION_LOG_DAYS。
+    """
+    __tablename__ = "access_log"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    ts_start = Column(BigInteger, nullable=False)
+    ts_end = Column(BigInteger, nullable=False)
+    host = Column(String(64), nullable=False)
+    host_ip = Column(String(45))
+    dest = Column(String(255), nullable=False)   # 域名；没有域名时是远端 IP
+    remote = Column(String(45))                  # 最近一次的远端 IP
+    app = Column(String(48), nullable=False)
+    port = Column(Integer)
+    proto = Column(Integer)
+    conns = Column(Integer, nullable=False, default=0)
+    up = Column(BigInteger, nullable=False, default=0)
+    down = Column(BigInteger, nullable=False, default=0)
+    source = Column(String(8))                   # 域名来源：proxy / conn / pair / ip / none
+    __table_args__ = (Index("ix_alog_host_ts", "host", "ts_start"), Index("ix_alog_ts", "ts_start"),
+                      Index("ix_alog_app_ts", "app", "ts_start"), Index("ix_alog_dest", "dest"))
+
+
+class AuditRule(Base):
+    """审计规则：命中（终端访问了某类应用 / 域名，或流量超过阈值）时记一条审计事件，可推送通知"""
+    __tablename__ = "audit_rules"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(64), nullable=False)
+    enabled = Column(Integer, nullable=False, default=1)
+    kind = Column(String(16), nullable=False)        # group | category | app | domain | traffic | new_host
+    value = Column(String(255))                      # 大类 / 小类 / 应用 ID / 域名后缀；traffic 时为空
+    hosts = Column(Text)                             # 只针对这些终端（逗号分隔的 key）；空 = 全部
+    days = Column(String(16), default="1234567")     # 生效的星期（1=周一）
+    time_from = Column(String(5), default="00:00")   # 生效时段（可跨午夜，如 22:00-06:00）
+    time_to = Column(String(5), default="24:00")
+    min_bytes = Column(BigInteger, default=0)        # 时段内累计超过这么多字节才算命中
+    notify = Column(Integer, nullable=False, default=1)
+    created = Column(BigInteger)
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    ts = Column(BigInteger, nullable=False)
+    rule_id = Column(Integer)
+    rule_name = Column(String(64))
+    host = Column(String(64))
+    detail = Column(Text)                            # JSON：命中的应用 / 域名 / 字节数
+    notified = Column(Integer, default=0)
+    __table_args__ = (Index("ix_aevent_ts", "ts"), Index("ix_aevent_host_ts", "host", "ts"))
+
+
+class OpLog(Base):
+    """操作日志：登录、修改设置 / 规则 / 命名等（审计系统本身也要可追溯）"""
+    __tablename__ = "op_log"
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    ts = Column(BigInteger, nullable=False)
+    user = Column(String(64))
+    ip = Column(String(45))
+    action = Column(String(32), nullable=False)
+    detail = Column(Text)
+    ok = Column(Integer, default=1)
+    __table_args__ = (Index("ix_oplog_ts", "ts"),)

@@ -17,6 +17,18 @@ export function exportCsv(name, columns, rows) {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove() }, 0)
 }
 
+/** 下载后端生成的文件（Blob），文件名带上日期时间 */
+export function downloadBlob(blob, name) {
+  const d = new Date()
+  const p = n => String(n).padStart(2, '0')
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = name.replace(/(\.\w+)$/, `-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}$1`)
+  document.body.appendChild(a)
+  a.click()
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove() }, 0)
+}
+
 /** 时长：秒 → "3 天 2 小时" / "45 分钟" */
 export function duration(sec, zh = true) {
   sec = Math.max(0, Math.floor(sec || 0))

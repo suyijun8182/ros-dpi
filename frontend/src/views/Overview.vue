@@ -73,8 +73,19 @@
       <!-- 第二行：全网状态 -->
       <div class="panel mt">
         <div class="panel-h"><h2>{{ t('overview.status') }}</h2><span class="faint small">{{ t('overview.statusHint') }}</span></div>
-        <div class="panel-b tiles" :style="{ '--cols': Math.min(wanTiles.length + 3, 4) }">
-          <div v-for="w in wanTiles" :key="w.name" class="tile">
+        <!-- 始终一排：单条 WAN 一张卡；多条 WAN 合成一张卡逐行列出，避免卡片多出来折成两排（debug9） -->
+        <div class="panel-b tiles" :style="{ '--cols': wanTiles.length ? 4 : 3 }">
+          <div v-if="wanTiles.length > 1" class="tile">
+            <div class="t-h"><Icon name="wan" /><b>{{ t('overview.wanLines', { n: wanTiles.length }) }}</b>
+              <span class="pill" :class="wanTiles.every(w => w.running) ? 'ok' : 'bad'">{{ wanTiles.filter(w => w.running).length }} / {{ wanTiles.length }}</span></div>
+            <ul class="wl">
+              <li v-for="w in wanTiles" :key="w.name" :title="`${w.name} ${t('overview.wanType.' + w.type)} ${w.ip || ''}`">
+                <span class="dot" :class="w.running ? 'on' : 'bad'" /><b>{{ w.comment || w.name }}</b>
+                <span class="faint addr">{{ w.ip || '-' }}</span>
+                <span class="num up">↑{{ rate(w.rate_up) }}</span><span class="num down">↓{{ rate(w.rate_down) }}</span></li>
+            </ul>
+          </div>
+          <div v-else v-for="w in wanTiles" :key="w.name" class="tile">
             <div class="t-h"><Icon name="wan" /><b>{{ w.comment || w.name }}</b>
               <span class="pill" :class="w.running ? 'ok' : 'bad'">{{ w.running ? t('overview.wanUp') : t('overview.wanDown') }}</span></div>
             <div class="t-v num">{{ w.ip || '-' }}</div>
@@ -241,6 +252,13 @@ const hostItems = computed(() => d.value.top_hosts.map(h => ({
 .t-v { font-size: 26px; font-weight: 600; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; }
 .t-s { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 13px; }
 .t-rate { display: grid; gap: 2px; font-size: 22px; font-weight: 600; }
+.wl { list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+.wl li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 8px; }
+.wl b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wl .addr { grid-column: 3; text-align: right; }
+.wl .up, .wl .down { grid-row: 2; font-size: 12px; }
+.wl .up { grid-column: 2; }
+.wl .down { grid-column: 3; text-align: right; }
 
 .g-2-3 { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
 @media (max-width: 1180px) { .g-2-3 { grid-template-columns: 1fr; } }

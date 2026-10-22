@@ -45,7 +45,7 @@ async function submit() {
   busy.value = true
   try {
     const r = await http.post(setup.value ? '/auth/setup' : '/auth/login', { username: username.value, password: password.value })
-    setAuth(r.token, r.username)
+    setAuth(r.token, r.username, r.role)
     router.replace(route.query.next || '/')
   } catch (e) {
     error.value = e.message

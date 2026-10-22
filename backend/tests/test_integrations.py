@@ -81,6 +81,30 @@ def test_mosdns_logs_give_per_client_domains(monkeypatch):
     assert r[1] == "netease_music" and e.stats["dns_mosdns"] == 2
 
 
+def test_singbox_rule_names_identify_app_and_route_stats(monkeypatch):
+    """debug9：域名认不出具体应用时，用 sing-box 的规则集 / 策略组名认；实时连接带出口节点和策略组；按策略组统计"""
+    e = _engine()
+    sb = integrations.SingboxPoller(e)
+    sb.configure("http://192.168.8.249:9090", "")
+    e.set_proxy({"192.168.8.249"}, True)
+    tg = {**conn("t", "192.168.8.21", "149.154.167.51", 300, 900, dst="149.154.167.51"),
+          "chains": ["HKG-DMIT(Reality)", "✈️ Telegram"], "rule": "rule_set=Telegram0 => route(✈️ Telegram)"}
+    other = {**conn("o", "192.168.8.21", "api.example-unknown.net", 10, 20),
+             "chains": ["US(Hy2)", "♻️ 节点优选", "🌍 漏网之鱼"], "rule": "final"}
+    monkeypatch.setattr(integrations.httpx, "get", _fake_get({"/version": {}, "/connections": {"connections": [tg, other]}}))
+    sb.poll()
+    key = "IP:192.168.8.21"
+    assert e._buf[(key, "telegram")][:2] == [300, 900]
+    assert e._buf[(key, "https")][:2] == [10, 20]  # 规则名里没有应用名：保持原样，不乱认
+    by_app = {s["app"]: s for s in e.session_list()}
+    assert by_app["telegram"]["route"] == {"node": "HKG-DMIT(Reality)", "group": "✈️ Telegram",
+                                          "rule": "rule_set=Telegram0 => route(✈️ Telegram)"}
+    routes = {(r["group"], r["node"]): r for r in e.proxy_route_list()}
+    assert routes[("✈️ Telegram", "HKG-DMIT(Reality)")]["total"] == 1200
+    assert routes[("✈️ Telegram", "HKG-DMIT(Reality)")]["conns"] == 1
+    assert routes[("🌍 漏网之鱼", "US(Hy2)")]["apps"] == [{"id": "https", "bytes": 30}]
+
+
 def test_asn_identifies_domainless_traffic(tmp_path):
     p = tmp_path / "ip2asn.tsv.gz"
     with gzip.open(p, "wt") as f:

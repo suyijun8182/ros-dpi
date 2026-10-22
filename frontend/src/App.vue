@@ -15,7 +15,7 @@
       <div class="tools">
         <button class="btn ghost icon" @click="toggleTheme" :aria-label="t('common.theme')" :title="t('common.theme')"><Icon :name="ui.theme === 'dark' ? 'sun' : 'moon'" /></button>
         <button class="btn ghost icon" @click="setLang(locale === 'zh' ? 'en' : 'zh')" :title="t('common.lang')" :aria-label="t('common.lang')"><Icon name="lang" /></button>
-        <span class="user">{{ auth.username || 'admin' }}</span>
+        <span class="user">{{ auth.username || 'admin' }}<span v-if="auth.role === 'user'" class="pill grey role">{{ t('users.roles.user') }}</span></span>
         <button class="btn ghost icon" @click="logout" :aria-label="t('nav.logout')" :title="t('nav.logout')"><Icon name="logout" /></button>
       </div>
     </header>
@@ -61,6 +61,7 @@ const nav = [
   { to: '/hosts', label: 'nav.hosts', icon: 'hosts' },
   { to: '/apps', label: 'nav.apps', icon: 'apps' },
   { to: '/flow', label: 'nav.flow', icon: 'flow' },
+  { to: '/audit', label: 'nav.audit', icon: 'audit' },
   { to: '/rules', label: 'nav.rules', icon: 'rules' },
   { to: '/settings', label: 'nav.settings', icon: 'settings' },
 ]
@@ -88,6 +89,8 @@ watch(() => route.fullPath, () => (drawer.value = false))
 async function loadInfo() {
   try {
     version.value = (await http.get('/health')).version
+    auth.role = (await http.get('/auth/me')).role || ''  // 管理员可能改了你的角色
+    try { localStorage.setItem('rosdpi.role', auth.role) } catch (e) { /* ignore */ }
     status.value = (await http.get('/system')).collector.flow_ok ? 'on' : 'warn'
   } catch (e) { /* 只影响侧边栏底部的小字 */ }
 }
@@ -100,6 +103,7 @@ function logout() {
 </script>
 
 <style scoped>
+.user .role { margin-left: 6px; height: 20px; font-size: 11px; }
 .shell { min-height: 100vh; }
 .top {
   position: sticky; top: 0; z-index: 30; height: var(--top); display: flex; align-items: center; gap: 10px;

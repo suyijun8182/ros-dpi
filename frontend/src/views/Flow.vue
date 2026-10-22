@@ -1,6 +1,6 @@
 <template>
   <div>
-    <!-- 子标签：实时连接 / 访问目标排行 -->
+    <!-- 子标签：实时连接 / 访问目标排行 / 代理分流 -->
     <div class="page-h">
       <div class="seg tabs" role="tablist">
         <button v-for="k in TABS" :key="k" role="tab" :aria-selected="tab === k" :class="{ on: tab === k }" @click="setTab(k)">{{ t('flow.tab.' + k) }}</button>
@@ -38,14 +38,15 @@
                 <div class="faint addr small">{{ s.host_ip }}<span v-if="s.host_port">:{{ s.host_port }}</span></div></td>
               <td class="rm"><div class="dn" :title="s.domain || s.remote">{{ s.domain || s.remote }}</div>
                 <div class="faint addr small" v-if="s.domain && s.remote !== s.domain">{{ s.remote }}</div>
-                <div class="faint small dn" v-else-if="s.asn">{{ s.asn.name }} · {{ s.asn.country }}</div>
+                <div class="faint small dn" v-else-if="s.asn">{{ countryName(s.asn.country) || s.asn.country }} · {{ s.asn.name }}</div>
+                <div class="small dn route" v-if="s.route" :title="s.route.rule">{{ s.route.group }} · {{ s.route.node }}</div>
                 <div class="m-only faint small">{{ appName(s.app) }} · {{ proto(s.proto) }} {{ s.port || '' }}</div></td>
               <td class="num m-hide"><span class="pill grey">{{ proto(s.proto) }}</span> {{ s.port || '' }}</td>
               <td class="m-hide"><router-link :to="`/apps/${enc(s.app.id)}`" class="tag"><span class="chip" :style="{ background: catColor(s.app.category) }" />{{ appName(s.app) }}</router-link></td>
               <td class="r num small"><span class="up">↑{{ rate(s.rate_up) }}</span><br /><span class="down">↓{{ rate(s.rate_down) }}</span></td>
               <td class="r num small m-hide"><span class="up">↑{{ bytes(s.up) }}</span><br /><span class="down">↓{{ bytes(s.down) }}</span></td>
               <td class="r num muted m-hide">{{ duration(s.last - s.start, locale === 'zh') }}</td>
-              <td class="m-hide"><span class="pill" :class="SRC_CLASS[s.source]" :title="t('settings.matchKind.' + s.source)">{{ t('flow.src.' + s.source) }}</span></td>
+              <td class="m-hide"><span class="pill" :class="SRC_CLASS[s.source]" :title="s.route ? s.route.rule : t('settings.matchKind.' + s.source)">{{ t('flow.src.' + s.source) }}</span></td>
             </tr>
           </tbody>
         </table>
@@ -69,21 +70,32 @@
           <button class="btn sm" @click="exportDest" :disabled="!dest || !dest.rows.length"><Icon name="download" :size="15" />{{ t('common.export') }}</button>
         </div>
       </div>
+      <div class="panel-b ctry" v-if="dest && countries.length">
+        <div class="sec">{{ t('flow.countries') }}<span class="faint small">{{ t('flow.countriesHint') }}</span></div>
+        <div class="cgrid">
+          <button v-for="c in countries" :key="c.cc" class="cc" :class="{ on: country === c.cc }" @click="country = country === c.cc ? '' : c.cc">
+            <span class="cn">{{ c.name }}</span><span class="num">{{ bytes(c.bytes) }}</span>
+            <span class="bar"><i :style="{ width: (c.bytes / countries[0].bytes * 100) + '%' }" /></span>
+            <span class="faint small num">{{ pct(c.bytes / countryTotal) }}</span>
+          </button>
+        </div>
+      </div>
       <div class="tbl-wrap" v-if="dest">
         <table class="tbl">
           <thead><tr>
-            <th class="rk m-hide">#</th><th>{{ t('flow.dest') }}</th><th class="m-hide">{{ t('flow.mainApp') }}</th><th class="r">{{ t('flow.bytes') }}</th>
+            <th class="rk m-hide">#</th><th>{{ t('flow.dest') }}</th><th class="m-hide">{{ t('flow.country') }}</th><th class="m-hide">{{ t('flow.mainApp') }}</th><th class="r">{{ t('flow.bytes') }}</th>
             <th class="r m-hide">{{ t('common.share') }}</th><th class="r">{{ t('common.hosts') }}</th><th class="m-hide" />
           </tr></thead>
           <tbody>
-            <template v-for="(r, i) in dest.rows" :key="r.dest">
+            <template v-for="(r, i) in destRows" :key="r.dest">
               <tr class="link" @click="toggle(r)">
                 <td class="rk num faint m-hide">{{ i + 1 }}</td>
                 <td class="rm"><div class="dn"><span :class="{ addr: r.ip }">{{ r.dest }}</span>
                   <span v-if="merge && r.names > 1" class="faint small"> · {{ t('flow.subdomains', { n: r.names }) }}</span>
                   <span v-if="r.ip" class="pill grey ipt">IP</span></div>
-                  <div class="faint small dn" v-if="r.asn">AS{{ r.asn.asn }} {{ r.asn.name }} · {{ r.asn.country }}</div>
-                  <div class="m-only faint small">{{ appName(r.app) }}</div></td>
+                  <div class="faint small dn" v-if="r.asn">AS{{ r.asn.asn }} {{ r.asn.name }}</div>
+                  <div class="m-only faint small">{{ appName(r.app) }}<template v-if="r.country"> · {{ countryName(r.country) }}</template></div></td>
+                <td class="m-hide nowrap">{{ countryName(r.country) || '-' }}</td>
                 <td class="m-hide"><span class="tag"><span class="chip" :style="{ background: catColor(r.app.category) }" />{{ appName(r.app) }}</span></td>
                 <td class="r num"><b>{{ bytes(r.bytes) }}</b></td>
                 <td class="r share m-hide"><span class="num muted">{{ pct(r.bytes / (dest.range_total.total || 1)) }}</span>
@@ -94,7 +106,7 @@
               <!-- 展开：访问这个目标的终端 -->
               <tr v-if="open === r.dest" class="sub">
                 <td />
-                <td colspan="6">
+                <td colspan="7">
                   <div v-if="!who" class="muted small">{{ t('common.loading') }}</div>
                   <ul v-else class="who">
                     <li v-for="h in who" :key="h.key">
@@ -109,9 +121,52 @@
             </template>
           </tbody>
         </table>
-        <div v-if="!dest.rows.length" class="empty">{{ t('common.empty') }}</div>
+        <div v-if="!destRows.length" class="empty">{{ t('common.empty') }}</div>
       </div>
       <div v-else class="empty">{{ t('common.loading') }}</div>
+    </div>
+
+    <!-- 代理分流：sing-box 按 策略组 → 出口节点 的流量（debug9） -->
+    <div class="panel" v-if="tab === 'proxy'">
+      <div class="panel-b head">
+        <div class="info-bar"><span class="ic">i</span><div><b>{{ t('flow.tab.proxy') }}</b><span>{{ t('flow.info.proxy') }}</span></div></div>
+        <div v-if="px && !px.enabled" class="empty">{{ t('flow.pxOff') }} <router-link to="/settings?tab=sources" class="link">{{ t('flow.pxGo') }}</router-link></div>
+        <div v-else-if="px && !px.ok && px.error" class="err">{{ px.error }}</div>
+        <div class="sum" v-if="px && px.enabled">
+          <div><span class="muted small">{{ t('flow.pxGroups') }}</span><b class="num accent">{{ pxGroups.length }}</b></div>
+          <div><span class="muted small">{{ t('common.up') }}</span><b class="num up">{{ bytes(px.up) }}</b></div>
+          <div><span class="muted small">{{ t('common.down') }}</span><b class="num down">{{ bytes(px.down) }}</b></div>
+        </div>
+      </div>
+      <div class="tbl-wrap" v-if="px && px.enabled">
+        <table class="tbl">
+          <thead><tr><th>{{ t('flow.pxGroup') }} / {{ t('flow.pxNode') }}</th><th class="m-hide">{{ t('flow.pxApps') }}</th>
+            <th class="r">{{ t('flow.bytes') }}</th><th class="r m-hide">{{ t('common.share') }}</th><th class="r m-hide">{{ t('flow.pxConns') }}</th></tr></thead>
+          <tbody>
+            <template v-for="g in pxGroups" :key="g.group">
+              <tr class="grp">
+                <td><b>{{ g.group }}</b><span class="faint small"> · {{ t('flow.pxNodes', { n: g.nodes.length }) }}</span></td>
+                <td class="m-hide" /><td class="r num"><b>{{ bytes(g.total) }}</b></td>
+                <td class="r share m-hide"><span class="num muted">{{ pct(g.total / pxTotal) }}</span>
+                  <span class="bar"><i :style="{ width: (g.total / pxGroups[0].total * 100) + '%' }" /></span></td>
+                <td class="r num m-hide">{{ g.conns }}</td>
+              </tr>
+              <tr v-for="n in g.nodes" :key="g.group + n.node">
+                <td class="node"><span class="addr">{{ n.node }}</span>
+                  <div class="m-only faint small">{{ n.apps.slice(0, 3).map(a => appName(a)).join('、') }}</div></td>
+                <td class="m-hide"><span v-for="a in n.apps.slice(0, 4)" :key="a.id" class="tag ap"><span class="chip" :style="{ background: catColor(a.category) }" />{{ appName(a) }}
+                  <span class="faint small num">{{ bytes(a.bytes) }}</span></span>
+                  <span v-if="n.apps_count > 4" class="faint small">+{{ n.apps_count - 4 }}</span></td>
+                <td class="r num small"><span class="up">↑{{ bytes(n.up) }}</span><br /><span class="down">↓{{ bytes(n.down) }}</span></td>
+                <td class="r num muted m-hide">{{ pct(n.total / pxTotal) }}</td>
+                <td class="r num muted m-hide">{{ n.conns }}</td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <div v-if="!px.rows.length" class="empty">{{ t('flow.pxEmpty') }}</div>
+      </div>
+      <div v-else-if="!px" class="empty">{{ t('common.loading') }}</div>
     </div>
   </div>
 </template>
@@ -124,10 +179,10 @@ import http, { enc } from '../api.js'
 import Icon from '../components/Icon.vue'
 import RangeTabs from '../components/RangeTabs.vue'
 import { duration, exportCsv } from '../csv.js'
-import { appName, bytes, catColor, pct, rate } from '../format.js'
+import { appName, bytes, catColor, countryName, pct, rate } from '../format.js'
 import { ui } from '../state.js'
 
-const TABS = ['live', 'dest']
+const TABS = ['live', 'dest', 'proxy']
 const SRC_CLASS = { conn: 'ok', proxy: 'ok', pair: '', ip: 'grey', none: 'warn' }
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -150,7 +205,11 @@ async function loadLive() {
     err.value = ''
   } catch (e) { err.value = e.message }
 }
-function tick() { if (tab.value === 'live' && !paused.value && !document.hidden) loadLive() }
+function tick() {
+  if (document.hidden) return
+  if (tab.value === 'live' && !paused.value) loadLive()
+  else if (tab.value === 'proxy') loadPx()
+}
 onMounted(() => { timer = setInterval(tick, 10000) })
 onBeforeUnmount(() => clearInterval(timer))
 watch(liveQ, () => { clearTimeout(qTimer); qTimer = setTimeout(loadLive, 300) })
@@ -179,6 +238,31 @@ async function loadDest() {
     err.value = ''
   } catch (e) { err.value = e.message }
 }
+// 国家 / 地区分布：按排行里的目标汇总，点一个只看该国家的目标
+const country = ref('')
+const countries = computed(() => (dest.value ? dest.value.countries : [])
+  .map(c => ({ ...c, name: countryName(c.cc) || t('flow.unknownCountry') })).slice(0, 12))
+const countryTotal = computed(() => (dest.value ? dest.value.countries.reduce((n, c) => n + c.bytes, 0) : 0) || 1)
+const destRows = computed(() => (dest.value ? dest.value.rows.filter(r => !country.value || (r.country || '-') === country.value) : []))
+
+// ---------- 代理分流 ----------
+const px = ref(null)
+async function loadPx() {
+  try { px.value = await http.get('/proxy/routes'); err.value = '' } catch (e) { err.value = e.message }
+}
+const pxTotal = computed(() => (px.value ? px.value.up + px.value.down : 0) || 1)
+const pxGroups = computed(() => {
+  const m = new Map()
+  for (const r of px.value ? px.value.rows : []) {
+    const g = m.get(r.group) || { group: r.group, total: 0, conns: 0, nodes: [] }
+    g.total += r.total
+    g.conns += r.conns
+    g.nodes.push(r)
+    m.set(r.group, g)
+  }
+  return [...m.values()].sort((a, b) => b.total - a.total)
+})
+
 async function toggle(r) {
   if (open.value === r.dest) { open.value = ''; return }
   open.value = r.dest
@@ -187,13 +271,19 @@ async function toggle(r) {
 }
 function exportDest() {
   exportCsv('rosdpi-destinations', [
-    { label: t('flow.dest'), value: r => r.dest }, { label: t('flow.mainApp'), value: r => appName(r.app) },
+    { label: t('flow.dest'), value: r => r.dest }, { label: t('flow.country'), value: r => countryName(r.country) },
+    { label: t('flow.mainApp'), value: r => appName(r.app) },
     { label: t('flow.bytes') + ' (B)', value: r => r.bytes }, { label: t('common.share'), value: r => pct(r.bytes / (dest.value.range_total.total || 1)) },
     { label: t('common.hosts'), value: r => r.hosts },
-  ], dest.value.rows)
+  ], destRows.value)
 }
 
-watch([tab, () => ui.range, merge, kind], () => { if (tab.value === 'dest') loadDest(); else loadLive() }, { immediate: true })
+watch([tab, () => ui.range, merge, kind], () => {
+  country.value = ''
+  if (tab.value === 'dest') loadDest()
+  else if (tab.value === 'proxy') loadPx()
+  else loadLive()
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -222,5 +312,17 @@ tr.sub td { background: var(--sunk); white-space: normal; }
 .who li { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .who .sp { flex: 1; }
 .names { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 640px) { .search { width: 100%; } }
+.route { color: var(--brand-ink); }
+.nowrap { white-space: nowrap; }
+.ctry { padding-top: 0; }
+.cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-top: 10px; }
+.cc { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; text-align: left; background: var(--sunk);
+  border: 1px solid transparent; border-radius: 10px; padding: 8px 12px; cursor: pointer; color: var(--ink); font: inherit; font-size: 13px; }
+.cc:hover, .cc.on { border-color: var(--brand-ink); }
+.cc .cn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.cc .bar { margin: 0; width: 100%; background: var(--panel); }
+.grp td { background: var(--sunk); }
+.node { padding-left: 28px !important; }
+.ap { margin-right: 10px; }
+@media (max-width: 640px) { .search { width: 100%; } .node { padding-left: 14px !important; } }
 </style>

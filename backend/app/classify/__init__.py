@@ -6,6 +6,7 @@
 """
 import ipaddress
 import os
+import re
 from dataclasses import dataclass
 
 import yaml
@@ -26,6 +27,12 @@ def active_v2fly_file() -> str:
     a, b = read_source(data) or {}, read_source(V2FLY_FILE) or {}
     return data if a.get("date", "") > b.get("date", "") else V2FLY_FILE
 UNKNOWN_APP = "other"
+
+
+def _norm_label(s: str) -> str:
+    s = re.sub(r"^(geosite|geoip|rule[-_]?set|category)[-_:]", "", str(s or "").strip().lower())
+    s = re.sub(r"[\W_]+", "", s)          # 表情符号、空格、标点
+    return re.sub(r"\d+$", "", s)          # sing-box 给规则集名加的序号：Telegram0
 GENERIC_APPS = {"https", "quic", "http", UNKNOWN_APP}  # 这些应用下的域名算"未识别"
 # 只能说明协议或 CDN 厂商、说明不了具体应用的分类，不计入"应用识别率"
 UNIDENTIFIED_CATEGORIES = {"unknown", "web", "network", "cdn"}
@@ -181,6 +188,22 @@ class Classifier:
             self._cache.clear()
         self._cache[key] = app
         return app
+
+    def app_by_label(self, label: str) -> str | None:
+        """按名字找应用：sing-box 的规则集名（Telegram0、geosite-netflix）或策略组名（✈️ Telegram）。
+        去掉表情符号、前缀和末尾序号后，与应用的 id / 中英文名精确比较"""
+        idx = getattr(self, "_label_idx", None)
+        if idx is None or idx[0] is not self.apps:
+            m = {}
+            for a in self.apps.values():
+                if a.id in GENERIC_APPS or a.category == "unknown":
+                    continue
+                for v in (a.id, a.name, a.name_en):
+                    k = _norm_label(v)
+                    if len(k) >= 2:
+                        m.setdefault(k, a.id)
+            idx = self._label_idx = (self.apps, m)
+        return idx[1].get(_norm_label(label))
 
     def app_info(self, app_id: str) -> App:
         return self.apps.get(app_id) or App(app_id, app_id, app_id, "unknown")

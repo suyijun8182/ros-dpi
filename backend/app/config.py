@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     retention_hour_days: int = 45
     retention_day_days: int = 730
     retention_domain_days: int = 31
+    retention_log_days: int = 30      # 访问日志（审计）
+    retention_event_days: int = 180   # 审计事件、操作日志
 
     # JWT 密钥；留空则首次启动随机生成并保存到数据库
     secret_key: str = ""

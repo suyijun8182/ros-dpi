@@ -115,7 +115,8 @@ export function onlineOption(points, gran = 'minute', compact = false) {
  * 维盟式实心饼图 + 右侧竖排可翻页图例。items: [{ id, name, value, color }]。
  * 图例显示名称和占比；数值在提示框里。
  */
-export function pieOption(items, { legend = true } = {}) {
+// narrow：窄屏把图例放到饼图下方横排，避免竖排图例压住饼图
+export function pieOption(items, { legend = true, narrow = false } = {}) {
   const sum = items.reduce((a, x) => a + x.value, 0) || 1
   const share = new Map(items.map(x => [x.name, pct(x.value / sum, 1)]))
   return {
@@ -127,14 +128,17 @@ export function pieOption(items, { legend = true } = {}) {
       },
     }),
     legend: legend ? {
-      type: 'scroll', orient: 'vertical', right: 0, top: 'middle', itemWidth: 22, itemHeight: 12, itemGap: 12,
+      ...(narrow ? { type: 'plain', orient: 'horizontal', left: 'center', bottom: 0, itemGap: 10 }
+        : { type: 'scroll', orient: 'vertical', right: 0, top: 'middle', itemGap: 12 }),
+      itemWidth: 22, itemHeight: 12,
       icon: 'roundRect', textStyle: { color: css('--ink'), fontFamily: FONT, fontSize: 13, rich: { p: { color: css('--muted'), fontSize: 12, padding: [0, 0, 0, 6] } } },
       formatter: n => `${n}{p|${share.get(n) || ''}}`,
       pageIconColor: css('--brand-ink'), pageIconInactiveColor: css('--line-strong'), pageIconSize: 11,
       pageTextStyle: { color: css('--muted'), fontFamily: FONT }, pageButtonItemGap: 8,
     } : undefined,
     series: [{
-      type: 'pie', radius: legend ? '72%' : '82%', center: legend ? ['36%', '52%'] : ['50%', '50%'], startAngle: 90,
+      type: 'pie', radius: !legend ? '82%' : narrow ? '58%' : '72%',
+      center: !legend ? ['50%', '50%'] : narrow ? ['50%', '36%'] : ['36%', '52%'], startAngle: 90,
       label: { show: false }, labelLine: { show: false },
       itemStyle: { borderColor: css('--panel'), borderWidth: 1 },
       emphasis: { scale: true, scaleSize: 6 },

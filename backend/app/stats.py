@@ -285,7 +285,7 @@ def destinations(db, start, end, q: str = "", merge: bool = False, kind: str = "
     for a in sorted(agg.values(), key=lambda x: x["bytes"], reverse=True)[:limit]:
         top_app = max(a["apps"], key=a["apps"].get)
         out.append({"dest": a["dest"], "ip": a["ip"], "bytes": a["bytes"], "hosts": len(a["hosts"]),
-                    "names": len(a["names"]), "app": app_meta(top_app)})
+                    "names": len(a["names"]), "app": app_meta(top_app), "name_list": sorted(a["names"])[:20]})
     return out
 
 

@@ -36,6 +36,10 @@ class DnsMap:
         v = self._d.get(ip)
         return (v[0], v[1]) if v else None
 
+    def name_index(self) -> dict[str, str]:
+        """域名 -> 最近解析到的一个 IP（访问目标排行给域名查国家用）"""
+        return {v[0]: ip for ip, v in self._d.items()}
+
     def load(self, rows):
         for ip, name, cname, exp in rows:
             self._d[ip] = (name, cname, exp)

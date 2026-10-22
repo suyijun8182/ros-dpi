@@ -37,6 +37,17 @@ export function datetime(ts) {
   return new Date(ts * 1000).toLocaleString(i18n.global.locale.value === 'zh' ? 'zh-CN' : 'en', { hour12: false })
 }
 
+/** 国家代码 → 当前语言的国家 / 地区名（US → 美国）；"-" 或查不到时返回空串 */
+const regionNames = {}
+export function countryName(cc) {
+  if (!cc || cc === '-' || cc === 'ZZ') return ''
+  const lang = i18n.global.locale.value === 'zh' ? 'zh-CN' : 'en'
+  try {
+    regionNames[lang] = regionNames[lang] || new Intl.DisplayNames([lang], { type: 'region' })
+    return regionNames[lang].of(cc.toUpperCase()) || cc
+  } catch (e) { return cc }
+}
+
 export function appName(a) {
   if (!a) return '-'
   return i18n.global.locale.value === 'zh' ? a.name : (a.name_en || a.name)

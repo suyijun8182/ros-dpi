@@ -1,10 +1,10 @@
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import health, hostnames, stats, timeutil
+from app import health, hostnames, oplog, stats, timeutil
 from app.asn import asndb
 from app.database import get_db
 from app.engine import engine
@@ -104,7 +104,8 @@ class HostPatch(BaseModel):
 
 
 @router.patch("/hosts/{key:path}")
-def host_patch(key: str, req: HostPatch, db: Session = Depends(get_db)):
+def host_patch(key: str, req: HostPatch, request: Request, user: str = Depends(current_user),
+               db: Session = Depends(get_db)):
     """给终端改名。按 MAC 命名跟着设备走；按 IP 命名跟着地址走。"""
     h = db.get(Host, key)
     if h is None:
@@ -119,7 +120,7 @@ def host_patch(key: str, req: HostPatch, db: Session = Depends(get_db)):
         hostnames.put(db, other[0], other[1], None)
     hostnames.put(db, by, value, req.alias)
     h.alias = None
-    db.commit()
+    oplog.log(db, request, user, "rename_host", {"host": key, "by": by, "name": req.alias})
     return {"ok": True, **stats.host_meta(db, [key])[key]}
 
 
@@ -151,24 +152,25 @@ def list_names(db: Session = Depends(get_db)):
 
 
 @router.put("/names")
-def put_name(req: NameIn, db: Session = Depends(get_db)):
+def put_name(req: NameIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
     """新增或修改一条命名；name 为空表示删除。可以给还没出现过的设备提前命名。"""
     value = hostnames.normalize(req.kind, req.value)
     if value is None:
         raise HTTPException(400, "MAC 地址格式不正确，例如 AA:BB:CC:DD:EE:FF" if req.kind == "mac"
                             else "IP 地址格式不正确，例如 192.168.88.20")
     hostnames.put(db, req.kind, value, req.name)
-    db.commit()
+    oplog.log(db, request, user, "name_set", {"kind": req.kind, "value": value, "name": req.name})
     return _name_rows(db)
 
 
 @router.delete("/names/{kind}/{value:path}")
-def delete_name(kind: str, value: str, db: Session = Depends(get_db)):
+def delete_name(kind: str, value: str, request: Request, user: str = Depends(current_user),
+                db: Session = Depends(get_db)):
     v = hostnames.normalize(kind, value)
     if v is None:
         raise HTTPException(400, "格式不正确")
     hostnames.put(db, kind, v, None)
-    db.commit()
+    oplog.log(db, request, user, "name_delete", {"kind": kind, "value": v})
     return _name_rows(db)
 
 
@@ -251,7 +253,7 @@ def sessions(q: str = "", host: str | None = None, limit: int = Query(300, ge=10
         m = meta[r["host"]]
         app = stats.app_meta(r["app"])
         if s and not any(s in str(v).lower() for v in (m["name"], r["host_ip"], r["remote"], r["domain"], app["name"],
-                                                         app["name_en"], r["port"]) if v):
+                                                         app["name_en"], r["port"], *(r["route"] or {}).values()) if v):
             continue
         out.append({**r, "host_name": m["name"], "online": m["online"], "app": app, "asn": _asn(r["remote"])})
     out.sort(key=lambda r: (r["rate_up"] + r["rate_down"], r["up"] + r["down"]), reverse=True)
@@ -265,9 +267,33 @@ def destinations(range: str = Query("today", pattern=RANGES), q: str = "", merge
     """访问目标排行（远端域名 / IP）"""
     start, end = _bounds(range)
     rows = stats.destinations(db, start, end, q, merge, kind)
+    idx = engine.dns.name_index()
+    countries: dict[str, int] = {}
     for r in rows:
         r["asn"] = _asn(r["dest"]) if r["ip"] else None
-    return {"range_total": stats.total(db, start, end), "rows": rows}
+        if not r["ip"]:
+            # 域名：用 DNS 缓存里它最近解析到的 IP 查国家（合并主域名时看它的子域名）
+            ip = idx.get(r["dest"]) or next((idx[n] for n in r["name_list"] if n in idx), None)
+            hit = asndb.lookup(ip) if ip else None
+            r["country"] = hit[1] if hit else None
+        else:
+            r["country"] = r["asn"]["country"] if r["asn"] else None
+        r.pop("name_list", None)
+        cc = r["country"] or "-"
+        countries[cc] = countries.get(cc, 0) + r["bytes"]
+    return {"range_total": stats.total(db, start, end), "rows": rows,
+            "countries": [{"cc": k, "bytes": v} for k, v in sorted(countries.items(), key=lambda x: x[1], reverse=True)]}
+
+
+@router.get("/proxy/routes")
+def proxy_routes():
+    """代理分流（sing-box）：今天按 策略组 / 出口节点 的流量、连接数和主要应用"""
+    from app.integrations import singbox
+    rows = engine.proxy_route_list()
+    for r in rows:
+        r["apps"] = [{**stats.app_meta(a["id"]), "bytes": a["bytes"]} for a in r["apps"]]
+    return {"enabled": singbox.enabled, "ok": singbox.ok, "error": singbox.error, "rows": rows,
+            "up": sum(r["up"] for r in rows), "down": sum(r["down"] for r in rows)}
 
 
 def _asn(ip: str):
