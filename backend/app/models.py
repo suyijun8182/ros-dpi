@@ -56,6 +56,7 @@ class Host(Base):
     alias = Column(String(128))
     first_seen = Column(BigInteger)
     last_seen = Column(BigInteger)
+    online_since = Column(BigInteger)  # 本次上线时间（离线超过 5 分钟后再出现算新的一次）
 
 
 class HostName(Base):

@@ -67,7 +67,7 @@ export const CAT_GROUP = {
   download: 'transfer', cloud: 'transfer', update: 'transfer', app_store: 'transfer',
   work: 'work', meeting: 'work', dev: 'work', remote: 'work', ai: 'work', education: 'work',
   shopping: 'life', life: 'life', travel: 'life', finance: 'life', bank: 'life', stock: 'life',
-  news: 'info', search: 'info', reading: 'info',
+  news: 'info', search: 'info', reading: 'info', site: 'info', adult: 'info',
   iot: 'iot', camera: 'iot',
   network: 'base', system: 'base', cdn: 'base', proxy: 'base', security: 'base', ads: 'base', web: 'base',
   unknown: 'unknown',

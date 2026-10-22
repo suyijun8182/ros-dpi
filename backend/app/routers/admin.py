@@ -189,6 +189,10 @@ def system():
                 "servers": sorted(({"ip": ip, "answers": n, "last": ts, "lan": engine.is_lan(ip)}
                                    for ip, (n, ts) in list(engine.dns_servers.items())),
                                   key=lambda x: x["answers"], reverse=True)[:8]},
+        "sni": {"tls": st["sni_tls"], "quic": st["sni_quic"], "last": st["last_sni"],
+                "ok": bool(st["last_sni"] and now - st["last_sni"] < 600)},
+        # 流量靠什么认出域名（按字节）：conn 本连接 SNI、pair 本终端 DNS/SNI、ip 全网 IP 表、none 没有域名
+        "match": dict(st["match"]),
         "router": poller.status(),
         "generic_apps": sorted(GENERIC_APPS),
     }

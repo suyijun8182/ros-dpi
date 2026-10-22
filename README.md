@@ -12,11 +12,12 @@
 
 ### 能做什么
 
-- **全网概览**：今日 / 本周 / 本月流量，此刻的上下行速率，流量构成环图（应用大类 → 小类），按应用大类堆叠的流量趋势，Top 应用与 Top 终端排行。
-- **主机监控**：所有终端的 IP、MAC、主机名、在线状态、当前速率、今日 / 本周 / 本月流量，可以按 MAC 或按 IP 给设备命名（也能提前给还没上线的设备命名）；详情页可看该终端的应用排行、应用构成、按大类的趋势和访问过的域名。
-- **应用统计**：参照 Panabit 分三级（应用大类 → 小类 → 应用）：10 个大类、41 个小类、270 多个内置应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……）。识别不出具体应用的流量，会按 CDN 的 CNAME 归到阿里云 / 腾讯云 / Akamai 等厂商。可以查看每个应用被哪些终端使用。
+- **全网概览**：一屏看全的仪表盘：路由器状态、**网络健康指数**（逐项扣分和改进建议）、在线终端、**DHCP 地址池**、每条 **WAN 线路**的状态和速率；流量构成环图（应用大类 → 小类）；实时流量、流量趋势、历史在线终端数；Top 应用与 Top 终端排行。
+- **主机监控**：在线终端 / 全部终端 / DHCP 租约 / 命名管理四个标签。每台终端的 IP、MAC、主机名、在线时长、连接数、当前速率、今日 / 本周 / 本月流量，可导出 CSV；可以按 MAC 或按 IP 给设备命名（也能提前给还没上线的设备命名）；详情页可看该终端的应用排行、应用构成、按大类的趋势和访问过的域名。
+- **应用统计**：参照 Panabit 分三级（应用大类 → 小类 → 应用）：10 个大类、43 个小类、2800 多个内置应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……，其中约 2500 个来自 v2fly 开源域名库）。识别不出具体应用的流量，会按 CDN 的 CNAME 归到阿里云 / 腾讯云 / Akamai 等厂商。可以查看每个应用被哪些终端使用。
 - **流量流向**：桑基图展示 终端 → 应用大类 → 应用 的流向。
 - **识别规则**：按域名后缀、IP 段、端口自定义识别规则；列出“未识别域名 Top”，一键归类。
+- 顶栏功能搜索（终端、IP、MAC、应用、页面），按 / 键聚焦。
 - 中英双语，深浅色主题，手机可用。
 
 ![应用统计](docs/images/apps-light.png)
@@ -30,16 +31,21 @@ RouterOS 本身没有 DPI，ROS-DPI 用两路数据拼出应用级统计：
 ```
 RouterOS ──IPFIX  udp/2055 ──▶ 流量采集：每条连接的终端、远端 IP、端口、字节数
 RouterOS ──TZSP   udp/37008──▶ DNS 嗅探：远端 IP 是哪个域名解析出来的
+                             ▶ SNI：每条 HTTPS / QUIC 连接握手里的目标域名
 RouterOS ◀─REST 只读（可选）── 主机名、IP↔MAC、WAN 口速率、LAN 前缀
                     ↓
          域名 → 应用规则库 → 按 分钟 / 小时 / 天 汇总写入 MySQL
 ```
 
 - 流量来自 `/ip traffic-flow`（IPFIX），统计的是真实字节数。
-- 应用识别靠 DNS：终端访问 `v26.douyinvod.com` 时，路由器把 DNS 应答镜像一份过来，之后发往该 IP 的流量就归到“抖音”。查不到域名时，依次按 IP 段、端口兜底（HTTPS / QUIC 等）。
+- 应用识别靠域名，有两个来源：
+  - **SNI**（推荐开启）：每条 HTTPS 连接开头的 TLS 握手里有明文的目标域名；HTTP/3（QUIC）的握手包也能解开。按连接识别，最准，终端用加密 DNS 也有效。
+  - **DNS 嗅探**：终端访问 `v26.douyinvod.com` 时，路由器把 DNS 应答镜像一份过来，之后发往该 IP 的流量就归到“抖音”。
+  - 查找顺序由准到粗：这条连接的 SNI → 这台终端对该 IP 的 DNS / SNI → 全网的 IP→域名 表。都查不到时，依次按 IP 段、端口兜底（HTTPS / QUIC 等）。**系统设置 → 运行状态 → 域名来源** 会显示各来源的占比。
+- 域名 → 应用：手工维护的规则库（约 280 个常用应用，带中文名和细分类），加上从 [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) 转换来的约 2500 个应用、3.6 万条域名。
 - 终端用 MAC 区分（来自 ROS 的 ARP / DHCP，或流记录中的源 MAC），IP 变化不影响统计。
 
-**已知局限**：终端使用 DoH / DoT 加密 DNS 时，这部分流量只能识别为 HTTPS / QUIC。可以在终端或路由器上禁用加密 DNS 来提高识别率。
+**已知局限**：只开 DNS 嗅探时，终端使用 DoH / DoT 加密 DNS 的流量只能识别为 HTTPS / QUIC，开启 SNI 识别可以补上。启用了 ECH（加密 ClientHello）的少数网站，SNI 只能看到外层的公共名字。
 
 **内网有自己的 DNS 服务器（AdGuard Home / Pi-hole 等）时**：DNS 嗅探照样能用。终端查询内网 DNS 走的是交换机，路由器看不到；但内网 DNS 向上游（如 223.5.5.5）查询时，应答要经过路由器，会被 `forward` 那条规则嗅探到，同样能得到“IP → 域名”的对应关系。前提是内网 DNS 的上游用普通 DNS（udp/53）；上游设成 DoH / DoT 时路由器看不到域名，可以把上游改成普通 DNS，或者改成路由器地址。**系统设置 → DNS 嗅探** 里的“应答来源”会显示应答来自哪台 DNS 服务器。
 
@@ -80,7 +86,7 @@ services:
     ports:
       - "8080:8080/tcp"     # Web 界面
       - "2055:2055/udp"     # IPFIX / NetFlow：RouterOS Traffic Flow 发到这里
-      - "37008:37008/udp"   # TZSP：RouterOS 镜像的 DNS 应答发到这里
+      - "37008:37008/udp"   # TZSP：RouterOS 镜像的 DNS 应答和 HTTPS/QUIC 握手包发到这里
     environment:
       TZ: Asia/Shanghai
       # MySQL 连接信息在首次打开网页时填写（保存在 ./data/db_config.json）
@@ -148,12 +154,16 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 /ip firewall mangle add chain=output protocol=udp src-port=53 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-DNS
 /ip firewall mangle add chain=forward protocol=udp src-port=53 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-DNS
 
-# 3. 只读 API 账号（可选：主机名、WAN 速率）
+# 3. SNI 识别（推荐：按连接识别，终端用加密 DNS 也有效）
+/ip firewall mangle add chain=forward protocol=tcp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-SNI
+/ip firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-SNI
+
+# 4. 只读 API 账号（可选：主机名、WAN 速率）
 /user group add name=rosdpi policy=read,rest-api,api,!write,!policy,!sensitive
 /user add name=rosdpi group=rosdpi password=<强密码> address=192.168.88.10
 ```
 
-更多说明（FastTrack、双 NAT、IPv6、排错）见 [docs/RouterOS配置.md](docs/RouterOS配置.md)。
+更多说明（SNI 的开销、FastTrack、双 NAT、IPv6、排错）见 [docs/RouterOS配置.md](docs/RouterOS配置.md)。
 
 ### 环境变量
 
@@ -185,7 +195,10 @@ cd frontend && npm install && npm run dev   # http://localhost:5173，/api 代�
 backend/.venv/bin/python scripts/simulate.py --minutes 5
 ```
 
-应用规则库在 [backend/app/classify/apps.yaml](backend/app/classify/apps.yaml)，欢迎 PR 补充。
+应用规则库：
+
+- [backend/app/classify/apps.yaml](backend/app/classify/apps.yaml)：手工维护，优先级高，欢迎 PR 补充。
+- [backend/app/classify/apps_v2fly.yaml](backend/app/classify/apps_v2fly.yaml)：由 `python scripts/import_v2fly.py` 从 v2fly/domain-list-community 生成，不要手工修改；更新时重新运行脚本即可。
 
 ---
 
@@ -193,16 +206,16 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
 
 **ROS-DPI** shows per-device traffic and per-application usage (today / this week / this month) for networks behind a MikroTik RouterOS router, in the spirit of Panabit-style DPI dashboards.
 
-- **Overview**: totals, live rate, a two-ring traffic-mix donut (app group → category), trends stacked by app group, ranked top apps and hosts.
+- **Overview**: a dashboard with router status, a network health score with fixes, DHCP pool usage, WAN line status, online-host history, live rate, and a two-ring traffic-mix donut (app group → category), trends stacked by app group, ranked top apps and hosts.
 - **Hosts**: every device with IP, MAC, hostname, online state, live rate and daily / weekly / monthly totals; name devices by MAC or by IP (even before they appear); per-host app breakdown and visited domains.
-- **Applications**: a Panabit-style three-level library: 10 app groups, 41 categories, 270+ built-in apps. Traffic that can't be tied to an app is attributed to its CDN (Alibaba Cloud, Tencent Cloud, Akamai, Cloudflare…) via CNAME.
+- **Applications**: a Panabit-style three-level library: 10 app groups, 43 categories, 2800+ built-in apps (about 2500 converted from v2fly/domain-list-community). Traffic that can't be tied to an app is attributed to its CDN (Alibaba Cloud, Tencent Cloud, Akamai, Cloudflare…) via CNAME.
 - **Flows**: a Sankey diagram from hosts through app groups to apps.
 - **Rules**: custom domain / CIDR / port rules, and a list of top unidentified domains to classify.
 - Chinese and English UI, light and dark themes, works on phones.
 
-**How it works.** RouterOS exports IPFIX (`/ip traffic-flow`) for byte counts, and mirrors DNS answers via `sniff-tzsp` so each remote IP can be mapped back to the domain the client looked up. A rule library maps domains to apps. An optional read-only REST user provides hostnames, IP-to-MAC, WAN rate and LAN prefixes. Data is aggregated per minute, hour and day into MySQL.
+**How it works.** RouterOS exports IPFIX (`/ip traffic-flow`) for byte counts, and mirrors DNS answers plus the first packets of each HTTPS/QUIC connection via `sniff-tzsp`. The TLS / QUIC handshake carries the target domain (SNI) per connection; DNS answers map remote IPs back to the domain the client looked up. A rule library maps domains to apps. An optional read-only REST user provides hostnames, IP-to-MAC, WAN rate and LAN prefixes. Data is aggregated per minute, hour and day into MySQL.
 
-**Limitations.** Clients using DoH/DoT show up as generic HTTPS/QUIC. A LAN DNS server (AdGuard Home, Pi-hole…) works fine as long as its upstream is plain DNS on udp/53: its upstream answers pass through the router and are sniffed by the `forward` rule.
+**Limitations.** With DNS sniffing alone, clients using DoH/DoT show up as generic HTTPS/QUIC; SNI covers them. Sites using ECH only expose their outer public name. A LAN DNS server (AdGuard Home, Pi-hole…) works fine as long as its upstream is plain DNS on udp/53: its upstream answers pass through the router and are sniffed by the `forward` rule.
 
 **Deploy.** ROS-DPI stores data in **MySQL** (5.7 / 8.x) and assumes you already have one. Create a database and user for it:
 
@@ -222,3 +235,5 @@ No MySQL yet? Use [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.ym
 ## License
 
 [MIT](LICENSE)
+
+`backend/app/classify/apps_v2fly.yaml` is generated from [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) (MIT License, Copyright (c) 2019-present V2Fly Community).

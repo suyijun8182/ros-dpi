@@ -1,13 +1,6 @@
 <template>
-  <div class="wrap">
-    <form class="panel box" @submit.prevent="submit">
-      <div class="brand">
-        <Mark :size="34" />
-        <div>
-          <div class="b1">ROS-DPI</div>
-          <div class="muted b2">{{ t('app.subtitle') }}</div>
-        </div>
-      </div>
+  <AuthLayout>
+    <form class="box" @submit.prevent="submit">
       <ol class="steps" v-if="setup">
         <li class="done">{{ t('setup.step1') }}</li>
         <li class="on">{{ t('setup.step2') }}</li>
@@ -18,12 +11,8 @@
       <label v-if="setup">{{ t('login.password2') }}<input class="input" type="password" v-model="password2" autocomplete="new-password" /></label>
       <div class="err" v-if="error">{{ error }}</div>
       <button class="btn primary full" :disabled="busy">{{ setup ? t('login.setup') : t('login.submit') }}</button>
-      <div class="foot">
-        <button type="button" class="btn ghost sm" @click="setLang(locale === 'zh' ? 'en' : 'zh')">{{ t('common.lang') }}</button>
-        <button type="button" class="btn ghost sm" @click="toggleTheme">{{ t('common.theme') }}</button>
-      </div>
     </form>
-  </div>
+  </AuthLayout>
 </template>
 
 <script setup>
@@ -31,11 +20,9 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import http, { setAuth } from '../api.js'
-import Mark from '../components/Mark.vue'
-import { setLang } from '../i18n/index.js'
-import { toggleTheme } from '../state.js'
+import AuthLayout from '../components/AuthLayout.vue'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const setup = ref(false)
@@ -69,18 +56,12 @@ async function submit() {
 </script>
 
 <style scoped>
-.wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
-.box { width: 100%; max-width: 380px; padding: 32px 28px 22px; display: flex; flex-direction: column; gap: 16px; border-top: 3px solid var(--pair-blue); }
-.brand { display: flex; gap: 12px; align-items: center; }
-.b1 { font: 700 24px/1 var(--cond); letter-spacing: .02em; }
-.b2 { font-size: 12px; }
-h2 { font: 600 20px/1.2 var(--cond); margin: 10px 0 0; }
+h2 { font: 600 19px/1.3 var(--sans); margin: 0; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); }
-.full { width: 100%; justify-content: center; height: 38px; }
-.foot { display: flex; gap: 8px; justify-content: center; }
+.full { width: 100%; justify-content: center; height: 40px; font-size: 15px; }
 .steps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; gap: 6px; counter-reset: s; }
 .steps li { flex: 1; font-size: 13px; color: var(--faint); padding-top: 8px; border-top: 3px solid var(--line); counter-increment: s; }
 .steps li::before { content: counter(s) ". "; }
 .steps li.done { color: var(--muted); border-top-color: var(--pair-green); }
-.steps li.on { color: var(--ink); border-top-color: var(--pair-blue); }
+.steps li.on { color: var(--ink); border-top-color: var(--brand-ink); }
 </style>

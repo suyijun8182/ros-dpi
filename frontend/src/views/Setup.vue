@@ -1,13 +1,6 @@
 <template>
-  <div class="wrap">
-    <div class="panel box">
-      <div class="brand">
-        <Mark :size="34" />
-        <div>
-          <div class="b1">ROS-DPI</div>
-          <div class="muted b2">{{ t('app.subtitle') }}</div>
-        </div>
-      </div>
+  <AuthLayout>
+    <div class="box">
 
       <!-- 已有配置但暂时连不上：不让用户重填，自动重试 -->
       <template v-if="setupState.present">
@@ -48,13 +41,8 @@
           <pre class="code">{{ sql }}</pre>
         </details>
       </form>
-
-      <div class="foot">
-        <button type="button" class="btn ghost sm" @click="setLang(locale === 'zh' ? 'en' : 'zh')">{{ t('common.lang') }}</button>
-        <button type="button" class="btn ghost sm" @click="toggleTheme">{{ t('common.theme') }}</button>
-      </div>
     </div>
-  </div>
+  </AuthLayout>
 </template>
 
 <script setup>
@@ -62,11 +50,9 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import http, { checkSetup, setupState } from '../api.js'
-import Mark from '../components/Mark.vue'
-import { setLang } from '../i18n/index.js'
-import { toggleTheme } from '../state.js'
+import AuthLayout from '../components/AuthLayout.vue'
 
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const router = useRouter()
 const f = reactive({ host: '', port: 3306, user: 'rosdpi', password: '', database: 'rosdpi' })
 const busy = ref('')  // '' | 'test' | 'save'
@@ -116,13 +102,8 @@ async function save() {
 </script>
 
 <style scoped>
-.wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
-.box { width: 100%; max-width: 460px; padding: 30px 28px 20px; display: flex; flex-direction: column; gap: 16px; border-top: 3px solid var(--pair-blue); }
 form { display: flex; flex-direction: column; gap: 14px; }
-.brand { display: flex; gap: 12px; align-items: center; }
-.b1 { font: 700 24px/1 var(--cond); letter-spacing: .02em; }
-.b2 { font-size: 12px; }
-h2 { font: 600 20px/1.2 var(--cond); margin: 0; }
+h2 { font: 600 19px/1.3 var(--sans); margin: 0; }
 .intro { margin: -6px 0 0; font-size: 14px; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); }
 .row { display: flex; gap: 12px; }
@@ -131,14 +112,13 @@ label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color:
 .small { font-size: 13px; margin: -4px 0 0; }
 .acts { display: flex; gap: 10px; justify-content: flex-end; }
 .ok { color: var(--ok); font-size: 14px; }
-.foot { display: flex; gap: 8px; justify-content: center; }
 
 /* 两步：连接数据库 → 设置管理员，当前步骤用蓝色线标出 */
 .steps { list-style: none; margin: 4px 0 0; padding: 0; display: flex; gap: 6px; counter-reset: s; }
 .steps li { flex: 1; font-size: 13px; color: var(--faint); padding-top: 8px; border-top: 3px solid var(--line); counter-increment: s; }
 .steps li::before { content: counter(s) ". "; }
-.steps li.on { color: var(--ink); border-top-color: var(--pair-blue); }
+.steps li.on { color: var(--ink); border-top-color: var(--brand-ink); }
 
-.sql summary { cursor: pointer; color: var(--pair-blue); font-size: 14px; }
+.sql summary { cursor: pointer; color: var(--brand-ink); font-size: 14px; }
 .sql pre { margin-top: 8px; white-space: pre; overflow-x: auto; font-size: 12px; }
 </style>

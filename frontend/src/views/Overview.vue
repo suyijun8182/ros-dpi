@@ -15,67 +15,136 @@
         <router-link to="/settings#guide" class="btn sm">{{ t('overview.openGuide') }}</router-link>
       </div>
 
-      <!-- 首屏：本期流量 + 此刻速率 + 流量构成 -->
-      <section class="hero">
-        <div class="hero-main">
-          <div class="hero-lbl">{{ ui.range === 'today' ? t('overview.heroToday') : t('overview.heroRange', { range: t('range.' + ui.range) }) }}</div>
-          <div class="hero-num num">{{ big[0] }}<span class="unit">{{ big[1] }}</span></div>
-          <div class="hero-sub">
-            <span><b class="num down">{{ bytes(d.range_total.down) }}</b> {{ t('common.down') }}</span>
-            <span><b class="num up">{{ bytes(d.range_total.up) }}</b> {{ t('common.up') }}</span>
-            <span class="pair hero-pair"><i class="d" :style="{ flexGrow: d.range_total.down }" /><i class="u" :style="{ flexGrow: d.range_total.up }" /></span>
+      <!-- 第一行：路由器 / 健康指数 / 在线终端 / DHCP 分配 -->
+      <div class="grid g4 row1">
+        <div class="panel card">
+          <div class="panel-h"><h2>{{ t('overview.router') }}</h2><span class="sp" /><router-link to="/settings" class="more">{{ t('common.details') }} ›</router-link></div>
+          <div class="panel-b">
+            <template v-if="d.router.enabled">
+              <div class="rt"><span class="dot" :class="d.router.ok ? 'on' : 'bad'" /><b>{{ d.router.identity || 'RouterOS' }}</b></div>
+              <dl class="kv">
+                <div><dt>{{ t('overview.model') }}</dt><dd>{{ d.router.board || '-' }}</dd></div>
+                <div><dt>{{ t('overview.rosVersion') }}</dt><dd class="num">{{ d.router.version || '-' }}</dd></div>
+                <div><dt>{{ t('overview.uptime') }}</dt><dd class="num">{{ d.router.uptime || '-' }}</dd></div>
+              </dl>
+              <div class="bars" v-if="d.router.ok">
+                <div><span>{{ t('overview.cpu') }}</span><span class="meter" :class="lvl(d.router.cpu_load / 100)"><i :style="{ width: (d.router.cpu_load || 0) + '%' }" /></span><b class="num">{{ d.router.cpu_load ?? '-' }}%</b></div>
+                <div v-if="d.router.mem_total"><span>{{ t('overview.memory') }}</span><span class="meter" :class="lvl(memUsed)"><i :style="{ width: memUsed * 100 + '%' }" /></span><b class="num">{{ pct(memUsed, 0) }}</b></div>
+              </div>
+              <div v-else class="err small">{{ d.router.error }}</div>
+            </template>
+            <div v-else class="hint">{{ t('overview.rosOff') }} <router-link to="/settings#guide" class="link">{{ t('overview.openGuide') }}</router-link></div>
           </div>
-          <dl class="hero-meta">
-            <div v-if="ui.range !== 'today'"><dt>{{ t('range.today') }}</dt><dd class="num">{{ bytes(d.totals.today.total) }}</dd></div>
-            <div v-if="ui.range !== 'week'"><dt>{{ t('overview.weekShort') }}</dt><dd class="num">{{ bytes(d.totals.week.total) }}</dd></div>
-            <div v-if="ui.range !== 'month'"><dt>{{ t('overview.monthShort') }}</dt><dd class="num">{{ bytes(d.totals.month.total) }}</dd></div>
-            <div><dt>{{ t('overview.online') }}</dt><dd class="num">{{ d.online }}<span class="faint"> / {{ d.hosts_total }}</span></dd></div>
-            <div><dt>{{ t('overview.identified') }}</dt><dd class="num">{{ pct(d.identified_ratio, 0) }}</dd></div>
-          </dl>
         </div>
-        <div class="hero-live">
-          <div class="hero-lbl"><span class="dot on pulse" />{{ t('overview.live') }}</div>
-          <div class="live-row"><span class="arrow down">↓</span><span class="num live-v">{{ rate(liveDown) }}</span></div>
-          <div class="live-row"><span class="arrow up">↑</span><span class="num live-v">{{ rate(liveUp) }}</span></div>
-          <div class="faint small">{{ wanFrom }}</div>
-        </div>
-      </section>
 
-      <div class="grid g-3-2">
-        <div class="panel">
-          <div class="panel-h"><h2>{{ t('overview.mix') }}</h2><span class="faint small">{{ t('overview.mixHint', { n: d.apps_count }) }}</span>
-            <span class="sp" /><router-link to="/apps" class="small link">{{ t('common.allApps') }}</router-link></div>
-          <div class="panel-b"><Composition :groups="d.groups" clickable @pick="p => $router.push({ path: '/apps', query: p.cat ? { cat: p.cat } : { group: p.group } })" /></div>
+        <div class="panel card">
+          <div class="panel-h"><h2>{{ t('overview.health') }}</h2><span class="sp" /><button class="more" @click="showHealth = true">{{ t('common.details') }} ›</button></div>
+          <div class="gauge">
+            <Chart :option="gaugeOpt" height="150px" />
+            <div class="lv" :class="d.health.level">{{ t('health.level.' + d.health.level) }}<span v-if="issues.length"> · {{ t('health.issues', { n: issues.length }) }}</span></div>
+          </div>
         </div>
-        <div class="panel">
-          <div class="panel-h"><h2>{{ t('overview.realtime') }}</h2><span class="faint small">{{ t('overview.realtimeHint') }}</span></div>
-          <div class="panel-b"><Chart :option="rtOpt" height="320px" /></div>
+
+        <div class="panel card">
+          <div class="panel-h"><h2>{{ t('overview.online') }}</h2><span class="sp" /><router-link to="/hosts" class="more">{{ t('common.details') }} ›</router-link></div>
+          <div class="panel-b">
+            <div class="big"><b class="num accent">{{ d.online }}</b><span class="num faint"> / {{ d.hosts_total }}</span></div>
+            <div class="muted small">{{ t('overview.newToday', { n: d.new_today }) }}</div>
+            <Chart class="spark" :option="sparkOpt" height="58px" />
+          </div>
+        </div>
+
+        <div class="panel card">
+          <div class="panel-h"><h2>{{ t('overview.dhcp') }}</h2><span class="sp" /><router-link to="/hosts?tab=dhcp" class="more">{{ t('overview.leases') }} ›</router-link></div>
+          <div class="panel-b">
+            <template v-if="pool">
+              <div class="pool">
+                <div><span class="muted small">{{ t('overview.poolFree') }}</span><b class="num accent">{{ pool.size - pool.used }}</b></div>
+                <div><span class="muted small">{{ t('overview.poolSize') }}</span><b class="num">{{ pool.size }}</b></div>
+              </div>
+              <div class="meter" :class="lvl(pool.used / (pool.size || 1))"><i :style="{ width: pool.used / (pool.size || 1) * 100 + '%' }" /></div>
+              <div class="faint small pool-sub">{{ pool.server }} · {{ pool.used }} / {{ pool.size }}（{{ pct(pool.used / (pool.size || 1), 0) }}）<span v-if="d.pools.length > 1"> · {{ t('overview.morePools', { n: d.pools.length - 1 }) }}</span></div>
+            </template>
+            <div v-else class="hint">{{ d.router.enabled ? t('overview.noPool') : t('overview.rosOff') }}</div>
+          </div>
         </div>
       </div>
 
-      <TrendPanel class="mt" :title="t('overview.trend')" :sub="t('range.' + ui.range)" :points="d.trend" :groups="d.trend_groups" :gran="gran" />
+      <!-- 第二行：全网状态 -->
+      <div class="panel mt">
+        <div class="panel-h"><h2>{{ t('overview.status') }}</h2><span class="faint small">{{ t('overview.statusHint') }}</span></div>
+        <div class="panel-b tiles">
+          <div v-for="w in wanTiles" :key="w.name" class="tile">
+            <div class="t-h"><Icon name="wan" /><b>{{ w.comment || w.name }}</b>
+              <span class="pill" :class="w.running ? 'ok' : 'bad'">{{ w.running ? t('overview.wanUp') : t('overview.wanDown') }}</span></div>
+            <div class="t-v num">{{ w.ip || '-' }}</div>
+            <div class="t-s"><span class="pill grey">{{ t('overview.wanType.' + w.type) }}</span>
+              <span class="num up">↑{{ rate(w.rate_up) }}</span><span class="num down">↓{{ rate(w.rate_down) }}</span></div>
+          </div>
+          <div class="tile">
+            <div class="t-h"><Icon name="gauge" /><b>{{ t('overview.live') }}</b><span class="faint small">{{ wanFrom }}</span></div>
+            <div class="t-rate"><span class="num up">↑ {{ rate(liveUp) }}</span><span class="num down">↓ {{ rate(liveDown) }}</span></div>
+          </div>
+          <div class="tile">
+            <div class="t-h"><Icon name="overview" /><b>{{ ui.range === 'today' ? t('overview.heroToday') : t('overview.heroRange', { range: t('range.' + ui.range) }) }}</b></div>
+            <div class="t-v num accent">{{ bytes(d.range_total.total) }}</div>
+            <div class="t-s"><span class="num down">↓{{ bytes(d.range_total.down) }}</span><span class="num up">↑{{ bytes(d.range_total.up) }}</span>
+              <span class="faint" v-if="ui.range !== 'month'">{{ t('overview.monthShort') }} {{ bytes(d.totals.month.total) }}</span></div>
+          </div>
+          <div class="tile">
+            <div class="t-h"><Icon name="apps" /><b>{{ t('overview.identified') }}</b></div>
+            <div class="t-v num accent">{{ pct(d.identified_ratio, 0) }}</div>
+            <div class="t-s"><span class="faint">{{ t('overview.appsN', { n: d.apps_count }) }}</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 第三行：DPI 应用构成 + 流量 / 在线数 -->
+      <div class="grid g-2-3 mt">
+        <div class="panel">
+          <div class="panel-h"><h2>{{ t('overview.mix') }}</h2><span class="sp" /><router-link to="/apps" class="more">{{ t('common.details') }} ›</router-link></div>
+          <div class="panel-b"><Composition :groups="d.groups" compact clickable
+            @pick="p => $router.push({ path: '/apps', query: p.cat ? { cat: p.cat } : { group: p.group } })" /></div>
+        </div>
+        <div class="panel">
+          <div class="panel-h">
+            <div class="seg" role="tablist">
+              <button v-for="m in ['live', 'trend', 'online']" :key="m" role="tab" :aria-selected="tab === m" :class="{ on: tab === m }" @click="tab = m">{{ t('overview.tab.' + m) }}</button>
+            </div>
+            <span class="sp" />
+            <div class="seg mini" v-if="tab === 'trend' && d.trend_groups.series.length">
+              <button v-for="m in ['groups', 'pair']" :key="m" :class="{ on: ui.trendMode === m }" @click="ui.trendMode = m">{{ t('chart.mode.' + m) }}</button>
+            </div>
+            <span class="faint small" v-else>{{ tabHint }}</span>
+          </div>
+          <div class="panel-b"><Chart :option="tabOpt" height="300px" /></div>
+        </div>
+      </div>
 
       <div class="grid g2 mt">
         <div class="panel">
-          <div class="panel-h"><h2>{{ t('overview.topApps') }}</h2><span class="sp" /><router-link to="/apps" class="small link">{{ t('common.allApps') }}</router-link></div>
+          <div class="panel-h"><h2>{{ t('overview.topApps') }}</h2><span class="sp" /><router-link to="/apps" class="more">{{ t('common.allApps') }} ›</router-link></div>
           <div class="panel-b"><BarList :items="appItems" :total="d.range_total.total" /></div>
         </div>
         <div class="panel">
-          <div class="panel-h"><h2>{{ t('overview.topHosts') }}</h2><span class="sp" /><router-link to="/hosts" class="small link">{{ t('common.allHosts') }}</router-link></div>
+          <div class="panel-h"><h2>{{ t('overview.topHosts') }}</h2><span class="sp" /><router-link to="/hosts" class="more">{{ t('common.allHosts') }} ›</router-link></div>
           <div class="panel-b"><BarList :items="hostItems" :total="d.range_total.total" /></div>
         </div>
       </div>
 
-      <footer class="router" v-if="d.router.enabled">
-        <span class="dot" :class="d.router.ok ? 'on' : 'bad'" />
-        <b>{{ d.router.identity || 'RouterOS' }}</b>
-        <span class="muted">{{ d.router.board }}</span>
-        <span class="muted">RouterOS {{ d.router.version }}</span>
-        <span v-if="d.router.cpu_load != null">{{ t('overview.cpu') }} <b class="num">{{ d.router.cpu_load }}%</b></span>
-        <span v-if="d.router.mem_total">{{ t('overview.memory') }} <b class="num">{{ pct(1 - d.router.mem_free / d.router.mem_total, 0) }}</b></span>
-        <span v-if="d.router.uptime">{{ t('overview.uptime') }} <b class="num">{{ d.router.uptime }}</b></span>
-        <span v-if="!d.router.ok" class="err">{{ d.router.error }}</span>
-      </footer>
+      <Modal :open="showHealth" :title="t('overview.health')" @close="showHealth = false">
+        <div class="hh"><b class="num">{{ d.health.score }}</b><span>{{ t('health.level.' + d.health.level) }}</span><span class="faint small">{{ t('health.hint') }}</span></div>
+        <ul class="hl">
+          <li v-for="it in d.health.items" :key="it.code" :class="{ bad: !it.ok }">
+            <span class="dot" :class="it.ok ? 'on' : it.deduct >= 10 ? 'bad' : 'warn'" />
+            <div class="hl-b">
+              <div class="hl-t"><b>{{ t('health.' + it.code + '.title') }}</b><span v-if="!it.ok" class="num ded">-{{ it.deduct }}</span></div>
+              <div class="muted small">{{ healthText(it) }}</div>
+              <div v-if="!it.ok" class="fix small">{{ t('health.' + it.code + '.fix', it.params) }}</div>
+            </div>
+          </li>
+        </ul>
+      </Modal>
     </template>
     <div v-else-if="loading" class="empty">{{ t('common.loading') }}</div>
   </div>
@@ -85,18 +154,21 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http, { enc } from '../api.js'
-import { trendOption } from '../charts.js'
+import { gaugeOption, onlineOption, stackedOption, trendOption } from '../charts.js'
 import BarList from '../components/BarList.vue'
 import Chart from '../components/Chart.vue'
 import Composition from '../components/Composition.vue'
+import Icon from '../components/Icon.vue'
+import Modal from '../components/Modal.vue'
 import RangeTabs from '../components/RangeTabs.vue'
-import TrendPanel from '../components/TrendPanel.vue'
 import { appName, bytes, catColor, catName, groupName, pct, rate } from '../format.js'
 import { usePoll } from '../poll.js'
 import { ui } from '../state.js'
 
 const { t, locale } = useI18n()
 const d = ref(null)
+const tab = ref('live')
+const showHealth = ref(false)
 const { loading, error } = usePoll(async () => { d.value = await http.get('/overview', { params: { range: ui.range } }) },
   30000, () => ui.range)
 
@@ -105,15 +177,33 @@ const liveUp = computed(() => (useWan.value ? d.value.rate.wan_up : d.value.rate
 const liveDown = computed(() => (useWan.value ? d.value.rate.wan_down : d.value.rate.flow_down))
 const wanFrom = computed(() => (useWan.value && d.value.router.wan_interface
   ? t('overview.viaWan', { name: d.value.router.wan_interface }) : t('overview.viaFlow')))
-// 大数字拆成 数值 + 单位，单位单独排小号
-const big = computed(() => {
-  const [v, u] = bytes(d.value.range_total.total).split(' ')
-  return [v, u]
-})
+const memUsed = computed(() => (d.value.router.mem_total ? 1 - d.value.router.mem_free / d.value.router.mem_total : 0))
+const lvl = x => (x >= 0.9 ? 'bad' : x >= 0.75 ? 'warn' : '')
+// 地址池：显示最满的一个
+const pool = computed(() => [...(d.value.pools || [])].filter(p => p.size).sort((a, b) => b.used / b.size - a.used / a.size)[0])
+// 没配 ROS API 时，全网状态里不显示 WAN 线路卡
+const wanTiles = computed(() => (d.value.router.enabled ? d.value.wans || [] : []))
+const issues = computed(() => d.value.health.items.filter(i => !i.ok))
 
 const gran = computed(() => (['today', 'yesterday'].includes(ui.range) ? 'hour' : 'day'))
 const deps = () => [ui.theme, locale.value]
-const rtOpt = computed(() => (deps(), trendOption(d.value.realtime, 'minute', true)))
+const gaugeOpt = computed(() => (deps(), gaugeOption(d.value.health.score)))
+const sparkOpt = computed(() => (deps(), onlineOption(d.value.online_realtime, 'minute', true)))
+const tabOpt = computed(() => {
+  deps()
+  if (tab.value === 'live') return trendOption(d.value.realtime, 'minute', true)
+  if (tab.value === 'online') return onlineOption(d.value.online_trend, gran.value)
+  return ui.trendMode === 'groups' && d.value.trend_groups.series.length ? stackedOption(d.value.trend_groups) : trendOption(d.value.trend, gran.value)
+})
+const tabHint = computed(() => (tab.value === 'live' ? t('overview.realtimeHint') : t('range.' + ui.range)))
+
+function healthText(it) {
+  const p = { ...it.params }
+  if (p.ratio != null) p.ratio = pct(p.ratio, 0)
+  if (p.used != null && p.size == null) p.used = pct(p.used, 0)
+  if (p.down) p.down = p.down.join('、')
+  return t(`health.${it.code}.${it.ok ? 'ok' : 'bad'}`, p)
+}
 
 const appItems = computed(() => d.value.top_apps.map(a => ({
   key: a.id, label: appName(a), sub: `${groupName(a)} · ${catName(a)}`, value: a.total, up: a.up, down: a.down,
@@ -126,40 +216,59 @@ const hostItems = computed(() => d.value.top_hosts.map(h => ({
 </script>
 
 <style scoped>
-.nodata { padding: 14px 18px; margin-bottom: 20px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; border-left: 3px solid var(--warn); }
+.nodata { padding: 14px 18px; margin-bottom: 14px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; border-left: 3px solid var(--warn); }
+.card { display: flex; flex-direction: column; min-height: 214px; }
+@media (max-width: 640px) { .card { min-height: 0; } }
+.card .panel-b { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.rt { display: flex; align-items: center; gap: 8px; font-size: 16px; }
+.kv { margin: 0; display: grid; gap: 3px; font-size: 13px; }
+.kv div { display: flex; justify-content: space-between; gap: 10px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bars { display: grid; gap: 6px; margin-top: auto; font-size: 12.5px; }
+.bars div { display: grid; grid-template-columns: 36px 1fr 40px; align-items: center; gap: 8px; color: var(--muted); }
+.bars b { color: var(--ink); text-align: right; font-weight: 600; }
+.hint { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.gauge { position: relative; padding: 0 12px 12px; }
+.lv { text-align: center; font-weight: 600; margin-top: -8px; }
+.lv.excellent { color: var(--accent); }
+.lv.good { color: var(--pair-blue); }
+.lv.fair { color: var(--warn); }
+.lv.poor { color: var(--bad); }
+.lv span { color: var(--muted); font-weight: 400; font-size: 13px; }
+.big b { font-size: 46px; font-weight: 600; line-height: 1; }
+.big span { font-size: 22px; }
+.spark { margin-top: auto; }
+.pool { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pool div { display: grid; }
+.pool b { font-size: 38px; font-weight: 600; line-height: 1.1; }
+.pool-sub { margin-top: 2px; }
 
-.hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px 48px; align-items: end; padding: 4px 0 26px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
-.hero-lbl { color: var(--muted); font-size: 14.5px; display: flex; align-items: center; gap: 8px; }
-.hero-num { font-size: clamp(64px, 9vw, 112px); font-weight: 600; line-height: .92; letter-spacing: -.035em; margin: 10px 0 14px; }
-.unit { font-size: .36em; font-weight: 500; letter-spacing: 0; margin-left: .18em; color: var(--muted); }
-.hero-sub { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; font-size: 14.5px; color: var(--muted); }
-.hero-sub b { font-size: 20px; font-weight: 600; margin-right: 2px; }
-.hero-pair { width: 160px; height: 6px; border-radius: 3px; }
-.hero-meta { display: flex; gap: 10px 36px; flex-wrap: wrap; margin: 22px 0 0; }
-.hero-meta div { display: flex; flex-direction: column; }
-.hero-meta dt { color: var(--muted); font-size: 13px; }
-.hero-meta dd { margin: 0; font-size: 22px; font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.tile { background: var(--sunk); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.t-h { display: flex; align-items: center; gap: 8px; font-size: 14px; min-width: 0; }
+.t-h :deep(svg) { color: var(--brand-ink); flex: none; }
+.t-h b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.t-h .pill { margin-left: auto; }
+.t-h .small { margin-left: auto; white-space: nowrap; }
+.t-v { font-size: 26px; font-weight: 600; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; }
+.t-s { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+.t-rate { display: grid; gap: 2px; font-size: 22px; font-weight: 600; }
 
-.hero-live { min-width: 240px; padding-left: 28px; border-left: 1px solid var(--line); }
-.live-row { display: flex; align-items: baseline; gap: 10px; margin-top: 6px; }
-.arrow { font: 600 22px/1 var(--cond); width: 16px; }
-.live-v { font-size: 34px; font-weight: 600; letter-spacing: -.01em; }
-.hero-live .small { margin-top: 10px; }
+.g-2-3 { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
+@media (max-width: 1180px) { .g-2-3 { grid-template-columns: 1fr; } }
+.panel-h .seg button { padding: 4px 10px 8px; font-size: 14.5px; }
+.panel-h .seg.mini button { font-size: 13px; padding: 4px 8px 7px; }
 
-/* 唯一的一个动效：在线指示点的呼吸，提示数据是实时的 */
-.pulse { animation: pulse 2.4s ease-in-out infinite; }
-@keyframes pulse { 50% { opacity: .3; } }
-
-.g-3-2 { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
-@media (max-width: 1100px) { .g-3-2 { grid-template-columns: 1fr; } }
-
-.link { color: var(--pair-blue); }
-.link:hover { text-decoration: underline; text-underline-offset: 3px; }
-
-.router { margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--line); display: flex; gap: 8px 22px; align-items: center; flex-wrap: wrap; font-size: 14px; }
-
-@media (max-width: 860px) {
-  .hero { grid-template-columns: 1fr; }
-  .hero-live { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); padding-top: 16px; }
-}
+.hh { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.hh b { font-size: 40px; font-weight: 600; color: var(--accent); }
+.hh > span:first-of-type { font-weight: 600; }
+.hl { list-style: none; margin: 0; padding: 0; }
+.hl li { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.hl li:last-child { border-bottom: 0; }
+.hl .dot { margin-top: 7px; }
+.hl-b { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.hl-t { display: flex; gap: 10px; align-items: baseline; }
+.ded { color: var(--bad); font-weight: 600; }
+.fix { color: var(--brand-ink); }
 </style>

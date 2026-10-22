@@ -86,3 +86,81 @@ def tzsp_dns(client, qname, ips, cnames=(), server="192.168.88.1", vlan=None):
     eth += b"\x08\x00"
     # TZSP v1, type 0 (received), encap 1 (Ethernet)，带一个填充和结束标记
     return b"\x01\x00\x00\x01" + b"\x00" + b"\x01" + eth + iph + udp
+
+
+# ---------- TLS / QUIC 握手（SNI 测试用） ----------
+
+def _eth_ip(src, dst, proto, l4):
+    """以太网 + IPv4/IPv6 头"""
+    a, b = ipaddress.ip_address(src), ipaddress.ip_address(dst)
+    eth = b"\x11" * 6 + b"\x22" * 6
+    if a.version == 4:
+        iph = struct.pack("!BBHHHBBH4s4s", 0x45, 0, 20 + len(l4), 0, 0, 64, proto, 0, a.packed, b.packed)
+        return eth + b"\x08\x00" + iph + l4
+    iph = struct.pack("!IHBB16s16s", 6 << 28, len(l4), proto, 64, a.packed, b.packed)
+    return eth + b"\x86\xdd" + iph + l4
+
+
+def tzsp(frame):
+    return b"\x01\x00\x00\x01" + b"\x01" + frame
+
+
+def tcp_segment(src, dst, sport, dport, seq, payload):
+    hdr = struct.pack("!HHIIBBHHH", sport, dport, seq, 1, 5 << 4, 0x18, 65535, 0, 0)
+    return tzsp(_eth_ip(src, dst, 6, hdr + payload))
+
+
+def udp_datagram(src, dst, sport, dport, payload):
+    return tzsp(_eth_ip(src, dst, 17, struct.pack("!HHHH", sport, dport, 8 + len(payload), 0) + payload))
+
+
+def client_hello(sni, pad_before_sni=0):
+    """最小的 TLS 1.3 ClientHello 握手消息；pad_before_sni 模拟 SNI 前面有很大的扩展（如后量子 key_share）。"""
+    exts = b""
+    if pad_before_sni:
+        exts += struct.pack("!HH", 0x0015, pad_before_sni) + b"\0" * pad_before_sni
+    name = sni.encode()
+    sn = struct.pack("!HBH", len(name) + 3, 0, len(name)) + name
+    exts += struct.pack("!HH", 0, len(sn)) + sn
+    body = b"\x03\x03" + b"\x07" * 32 + b"\x00" + struct.pack("!H", 2) + b"\x13\x01" + b"\x01\x00"
+    body += struct.pack("!H", len(exts)) + exts
+    return b"\x01" + len(body).to_bytes(3, "big") + body
+
+
+def tls_record(hs):
+    return b"\x16\x03\x01" + struct.pack("!H", len(hs)) + hs
+
+
+def _qvar(n):
+    if n < 64:
+        return bytes([n])
+    if n < 16384:
+        return struct.pack("!H", 0x4000 | n)
+    return struct.pack("!I", 0x80000000 | n)
+
+
+def quic_initial(dcid, crypto, pn=0, version=1, extra_frames=b""):
+    """加密一个客户端 Initial 包。crypto: [(offset, data)]，会被包成 CRYPTO 帧（中间夹 PING/PADDING）。"""
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    from app.collector.tls import initial_keys
+    key, iv, hp = initial_keys(dcid, version)
+    frames = extra_frames
+    for off, data in crypto:
+        frames += b"\x01" + b"\x06" + _qvar(off) + _qvar(len(data)) + data + b"\x00" * 3
+    frames += b"\x00" * max(0, 1162 - len(frames))  # 客户端 Initial 至少 1200 字节
+    ptype = 0 if version == 1 else 1
+    first = 0xC0 | (ptype << 4) | 0x03  # 4 字节包号
+    pnb = struct.pack("!I", pn)
+    length = len(frames) + 16 + 4
+    header = bytes([first]) + struct.pack("!I", version) + bytes([len(dcid)]) + dcid + b"\x00" + b"\x00" + \
+        struct.pack("!H", 0x4000 | length) + pnb
+    nonce = iv[:-4] + bytes(x ^ y for x, y in zip(iv[-4:], pnb))
+    ct = AESGCM(key).encrypt(nonce, frames, header)
+    mask = Cipher(algorithms.AES(hp), modes.ECB()).encryptor().update(ct[:16])
+    hdr = bytearray(header)
+    hdr[0] ^= mask[0] & 0x0F
+    for i in range(4):
+        hdr[-4 + i] ^= mask[1 + i]
+    return bytes(hdr) + ct

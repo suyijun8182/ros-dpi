@@ -172,3 +172,40 @@ export function sankeyOption(graph) {
     }],
   }
 }
+
+/** 健康指数仪表盘：维盟首页那种刻度弧 + 中间大分数。分段颜色用状态色（差 / 中 / 良 / 优）。 */
+export function gaugeOption(score) {
+  const color = score >= 90 ? css('--accent') : score >= 75 ? css('--pair-blue') : score >= 60 ? css('--warn') : css('--bad')
+  return {
+    series: [{
+      type: 'gauge', startAngle: 205, endAngle: -25, min: 0, max: 100, radius: '92%', center: ['50%', '60%'],
+      progress: { show: true, width: 10, roundCap: true, itemStyle: { color } },
+      axisLine: { roundCap: true, lineStyle: { width: 10, color: [[1, css('--sunk')]] } },
+      axisTick: { distance: -24, length: 6, splitNumber: 4, lineStyle: { color: css('--line-strong'), width: 1 } },
+      splitLine: { distance: -26, length: 9, lineStyle: { color: css('--line-strong'), width: 2 } },
+      axisLabel: { show: false },
+      pointer: { show: false }, anchor: { show: false }, title: { show: false },
+      detail: { valueAnimation: true, offsetCenter: [0, '-2%'], fontFamily: FONT, fontSize: 38, fontWeight: 600, color: css('--ink'),
+        formatter: v => `${Math.round(v)}` },
+      data: [{ value: score }],
+    }],
+  }
+}
+
+/** 在线终端数随时间：单条线，不需要图例（标题说明是什么） */
+export function onlineOption(points, gran = 'minute', compact = false) {
+  const color = css('--accent')
+  return {
+    textStyle: { fontFamily: FONT },
+    grid: compact ? { left: 0, right: 0, top: 4, bottom: 0 } : { left: 4, right: 12, top: 16, bottom: 2, containLabel: true },
+    tooltip: tooltip({ trigger: 'axis', axisPointer: { type: 'line', lineStyle: { color: css('--line-strong') } },
+      valueFormatter: v => t('overview.hostsN', { n: v }) }),
+    xAxis: { type: 'category', show: !compact, boundaryGap: false, data: points.map(p => fmtTime(p.ts, gran)),
+      axisLine: { lineStyle: { color: css('--line-strong') } }, axisTick: { show: false },
+      axisLabel: { color: css('--faint'), hideOverlap: true, fontFamily: FONT, fontSize: 12 } },
+    yAxis: { type: 'value', show: !compact, minInterval: 1, splitNumber: 4, splitLine: { lineStyle: { color: css('--line') } },
+      axisLabel: { color: css('--faint'), fontFamily: FONT, fontSize: 12 } },
+    series: [{ type: 'line', name: t('overview.online'), smooth: 0.25, symbol: 'none', step: false,
+      lineStyle: { width: 2, color }, areaStyle: { color, opacity: compact ? 0.18 : 0.12 }, data: points.map(p => p.n) }],
+  }
+}

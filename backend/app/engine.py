@@ -1,5 +1,6 @@
 """流量处理核心：流记录 → 判断终端与方向 → 查域名 → 识别应用 → 内存累加 → 定时落库。"""
 import ipaddress
+import struct
 import threading
 import time
 from collections import defaultdict
@@ -9,15 +10,17 @@ from sqlalchemy import delete, select
 from app import timeutil
 from app.classify import GENERIC_APPS, Classifier
 from app.collector.ipfix import FlowDecoder
-from app.collector.tzsp import parse_tzsp_dns
+from app.collector.tls import SniExtractor, ethernet_ip
+from app.collector.tzsp import parse_dns_response, tzsp_payload
 from app.config import get_settings
 from app import database, hostnames
 from app.database import upsert_add
-from app.dnsmap import DnsMap
+from app.dnsmap import ConnNames, DnsMap
 from app.models import (CustomRule, DnsCache, Host, HostDomainDay, Setting, TrafficDay, TrafficHour,
                         TrafficMinute)
 
 _ZERO = {"0.0.0.0", "::"}
+ONLINE_SECONDS = 300  # 最近 5 分钟有流量算在线
 
 
 def parse_cidrs(text: str) -> list:
@@ -37,6 +40,8 @@ class Engine:
         s = get_settings()
         self.decoder = FlowDecoder()
         self.dns = DnsMap()
+        self.names = ConnNames()
+        self.sni = SniExtractor()
         self.classifier = Classifier()
         self.lock = threading.Lock()
         self.lan_cidrs_text = s.lan_cidrs
@@ -53,10 +58,14 @@ class Engine:
         # 最近一个分钟窗口的统计，用于实时速率
         self.last_flush = time.time()
         self.host_rate: dict[str, tuple[float, float]] = {}
+        self.host_conns: dict[str, int] = {}  # 最近一个分钟窗口里每台终端的连接（流记录）数
         self.app_rate: dict[str, tuple[float, float]] = {}
         self.total_rate = (0.0, 0.0)
         self.stats = {"flows": 0, "flows_dropped": 0, "dns_packets": 0, "dns_answers": 0,
-                      "bytes_seen": 0, "last_flow": 0, "last_dns": 0, "exporters": {}}
+                      "bytes_seen": 0, "last_flow": 0, "last_dns": 0, "exporters": {},
+                      "sni_tls": 0, "sni_quic": 0, "last_sni": 0,
+                      # 流量是靠什么认出域名的（字节数）：conn=本连接 SNI，pair=本终端的 DNS/SNI，ip=全网 IP 表
+                      "match": {"conn": 0, "pair": 0, "ip": 0, "none": 0}}
         self.dns_servers: dict[str, list[int]] = {}  # 应答来源 DNS 服务器 -> [应答数, 最近时间]
 
     # ---------- 配置 ----------
@@ -105,20 +114,50 @@ class Engine:
                 self.add_flow(r, now)
 
     def on_tzsp(self, data: bytes):
+        """TZSP 镜像包：DNS 应答（udp 源端口 53）或连接首包（TLS / QUIC 握手，取 SNI）。"""
         self.stats["dns_packets"] += 1
-        ans = parse_tzsp_dns(data)
-        if ans is None:
+        frame = tzsp_payload(data)
+        ip = ethernet_ip(frame) if frame else None
+        if ip is None:
             return
+        src, dst, proto, l4 = ip
+        if proto == 17 and len(l4) >= 8 and struct.unpack_from("!H", l4, 0)[0] == 53:
+            self._on_dns(src, dst, l4[8:])
+            return
+        hit = self.sni.feed(src, dst, proto, l4)
+        if hit:
+            client, cport, server, _sport, name, kind = hit
+            now = time.time()
+            self.stats["sni_" + kind] += 1
+            self.stats["last_sni"] = int(now)
+            with self.lock:
+                self.names.add_conn(client, cport, server, name, now)
+            self.dns.add(name, [(server, 0)], [], now)
+
+    def _on_dns(self, server: str, client: str, payload: bytes):
+        try:
+            parsed = parse_dns_response(payload)
+        except (ValueError, struct.error, ipaddress.AddressValueError):
+            return
+        if parsed is None:
+            return
+        qname, ips, cnames = parsed
         now = int(time.time())
         self.stats["dns_answers"] += 1
         self.stats["last_dns"] = now
-        self.dns.add(ans.qname, ans.ips, ans.cnames)
+        self.dns.add(qname, ips, cnames)
+        if self.is_lan(client):
+            # 终端直接查询的应答：按 (终端, IP) 记一份，比全网共用的 IP 表更准
+            cname = cnames[-1] if cnames else None
+            with self.lock:
+                for ip, _ttl in ips:
+                    self.names.add_pair(client, ip, qname, cname, now)
         # 记录应答来自哪台 DNS 服务器，方便在系统设置里确认嗅探到的是哪一段（终端↔DNS 还是 DNS↔上游）
-        srv = self.dns_servers.get(ans.server)
+        srv = self.dns_servers.get(server)
         if srv is None:
             if len(self.dns_servers) >= 64:
                 del self.dns_servers[min(self.dns_servers, key=lambda k: self.dns_servers[k][1])]
-            srv = self.dns_servers[ans.server] = [0, 0]
+            srv = self.dns_servers[server] = [0, 0]
         srv[0] += 1
         srv[1] = now
 
@@ -143,21 +182,28 @@ class Engine:
         src_lan, dst_lan = self.is_lan(src), self.is_lan(dst)
         mac = None
         if src_lan and not dst_lan:
-            direction, host_ip, remote, rport = "up", src, dst, r.get("dport", 0)
+            direction, host_ip, remote, rport, hport = "up", src, dst, r.get("dport", 0), r.get("sport", 0)
             mac = r.get("src_mac")
         elif dst_lan and not src_lan:
             # 下行包在 WAN 口入方向采集，记录里的 MAC 是路由器自己的，不能用
-            direction, host_ip, remote, rport = "down", dst, src, r.get("sport", 0)
+            direction, host_ip, remote, rport, hport = "down", dst, src, r.get("sport", 0), r.get("dport", 0)
         elif not src_lan and not dst_lan and self.is_lan(post_dst):
-            # WAN 入方向、记录的是 DNAT 前地址：用 post-NAT 目的地址找终端
-            direction, host_ip, remote, rport = "down", post_dst, src, r.get("sport", 0)
+            # WAN 入方向、记录的是 DNAT 前地址：用 post-NAT 目的地址找终端（端口也是 NAT 前的，只能按终端查）
+            direction, host_ip, remote, rport, hport = "down", post_dst, src, r.get("sport", 0), -1
         else:
             # 内网互访，或路由器自身的流量
             self.stats["flows_dropped"] += 1
             return None
 
-        names = self.dns.lookup(remote)
-        qname, cname = names if names else (None, None)
+        # 域名来源由准到粗：这条连接的 SNI → 这台终端对该 IP 的 DNS/SNI → 全网 IP→域名 表
+        hit = self.names.lookup(host_ip, hport, remote)
+        if hit:
+            qname, cname, src_kind = hit
+        else:
+            names = self.dns.lookup(remote)
+            qname, cname = names if names else (None, None)
+            src_kind = "ip" if names else "none"
+        self.stats["match"][src_kind] += nbytes
         app = self.classifier.classify(remote, proto, rport, qname, cname)
         key, mac = self.host_key(host_ip, mac)
 
@@ -188,12 +234,15 @@ class Engine:
         self.last_flush = now
 
         hr, ar = defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0])
-        for (host, app), (up, down, _f) in buf.items():
+        hc: dict[str, int] = defaultdict(int)
+        for (host, app), (up, down, f) in buf.items():
             hr[host][0] += up
             hr[host][1] += down
+            hc[host] += f
             ar[app][0] += up
             ar[app][1] += down
         self.host_rate = {h: (u / elapsed, d / elapsed) for h, (u, d) in hr.items()}
+        self.host_conns = dict(hc)
         self.app_rate = {a: (u / elapsed, d / elapsed) for a, (u, d) in ar.items()}
         self.total_rate = (sum(v[0] for v in hr.values()) / elapsed, sum(v[1] for v in hr.values()) / elapsed)
 
@@ -223,7 +272,7 @@ class Engine:
         rows = []
         for key, (ip, mac, ts) in seen.items():
             rows.append({"key": key, "mac": mac, "ip": ip, "hostname": self.mac2name.get(mac) if mac else None,
-                         "first_seen": ts, "last_seen": ts})
+                         "first_seen": ts, "last_seen": ts, "online_since": ts})
         # 已存在的终端只更新 ip / last_seen，first_seen 与备注名保持不变
         existing = {h.key: h for h in db.scalars(select(Host).where(Host.key.in_(list(seen))))}
         for r in rows:
@@ -231,6 +280,8 @@ class Engine:
             if h is None:
                 db.add(Host(**r))
                 continue
+            if not h.last_seen or not h.online_since or r["last_seen"] - h.last_seen > ONLINE_SECONDS:
+                h.online_since = r["last_seen"]  # 离线后重新上线，开始新的一次
             h.ip, h.last_seen = r["ip"], r["last_seen"]
             h.first_seen = h.first_seen or r["first_seen"]
             h.mac = h.mac or r["mac"]
@@ -263,6 +314,8 @@ class Engine:
             db.execute(delete(DnsCache).where(DnsCache.expires < now))
             db.commit()
         self.dns.purge()
+        with self.lock:
+            self.names.purge()
 
     def is_generic(self, app: str) -> bool:
         return app in GENERIC_APPS

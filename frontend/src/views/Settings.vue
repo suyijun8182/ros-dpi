@@ -14,13 +14,15 @@
           <div class="kv"><span>{{ t('settings.last') }}</span><span>{{ ago(sys.collector.last_flow) }}</span></div>
         </div>
         <div class="st">
-          <div class="st-h"><span class="dot" :class="sys.dns.ok ? 'on' : 'warn'" />{{ t('settings.dns') }}
+          <div class="st-h"><span class="dot" :class="sys.dns.ok || sys.sni.ok ? 'on' : 'warn'" />{{ t('settings.dns') }}
             <span class="faint">udp/{{ s?.ports.tzsp }}</span></div>
           <div class="kv"><span>{{ t('settings.dnsAnswers') }}</span><b class="num">{{ sys.dns.answers.toLocaleString() }}</b></div>
           <div class="kv"><span>{{ t('settings.dnsEntries') }}</span><span class="num">{{ sys.dns.entries.toLocaleString() }}</span></div>
           <div class="kv"><span>{{ t('settings.last') }}</span><span>{{ ago(sys.dns.last) }}</span></div>
           <div class="kv" v-if="sys.dns.servers && sys.dns.servers.length"><span>{{ t('settings.dnsServers') }}</span>
             <span class="srv"><span v-for="x in sys.dns.servers.slice(0, 4)" :key="x.ip" class="num">{{ x.ip }} <span class="faint">{{ x.lan ? t('settings.dnsLan') : t('settings.dnsUpstream') }} · {{ x.answers.toLocaleString() }}</span></span></span></div>
+          <div class="kv"><span>{{ t('settings.sni') }}</span><span class="num">TLS {{ sys.sni.tls.toLocaleString() }} · QUIC {{ sys.sni.quic.toLocaleString() }}</span></div>
+          <div class="kv"><span>{{ t('settings.last') }} SNI</span><span>{{ ago(sys.sni.last) }}</span></div>
           <p class="faint small what">{{ t('settings.dnsWhat') }}</p>
         </div>
         <div class="st">
@@ -35,6 +37,11 @@
           </template>
           <div v-else class="muted small">{{ t('settings.rosHint') }}</div>
         </div>
+      </div>
+      <div class="panel-b match" v-if="matchTotal">
+        <div class="st-h">{{ t('settings.match') }}<span class="faint small">{{ t('settings.matchHint') }}</span></div>
+        <div class="mbar"><i v-for="m in matchParts" :key="m.k" :class="m.k" :style="{ flexGrow: m.v }" :title="`${t('settings.matchKind.' + m.k)} ${pct(m.v / matchTotal)}`" /></div>
+        <ul class="mlg"><li v-for="m in matchParts" :key="m.k"><span class="sw" :class="m.k" />{{ t('settings.matchKind.' + m.k) }} <b class="num">{{ pct(m.v / matchTotal) }}</b></li></ul>
       </div>
     </div>
 
@@ -89,7 +96,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http, { auth } from '../api.js'
-import { ago } from '../format.js'
+import { ago, pct } from '../format.js'
 
 const { t } = useI18n()
 const s = ref(null)
@@ -105,6 +112,8 @@ const copied = ref(false)
 const hostIp = ref(location.hostname)
 
 async function loadSys() { sys.value = await http.get('/system') }
+const matchParts = computed(() => (sys.value ? ['conn', 'pair', 'ip', 'none'].map(k => ({ k, v: sys.value.match[k] || 0 })) : []))
+const matchTotal = computed(() => matchParts.value.reduce((n, m) => n + m.v, 0))
 onMounted(async () => {
   s.value = await http.get('/settings')
   lan.value = s.value.lan_cidrs.split(',').join('\n')
@@ -149,7 +158,12 @@ const guide = computed(() => {
 /ip firewall mangle add chain=output protocol=udp src-port=53 action=sniff-tzsp sniff-target=${ip} sniff-target-port=${p.tzsp} comment=ROSDPI-DNS
 /ip firewall mangle add chain=forward protocol=udp src-port=53 action=sniff-tzsp sniff-target=${ip} sniff-target-port=${p.tzsp} comment=ROSDPI-DNS
 
-# 3. 只读 API 账号（可选，用于主机名、WAN 速率）
+# 3. SNI 识别（推荐）：镜像每条 HTTPS / QUIC 连接开头的握手包，按连接认出访问的域名
+#    终端用加密 DNS（DoH）时 DNS 嗅探失效，靠它补上；同一个 CDN IP 上的不同网站也能分清
+/ip firewall mangle add chain=forward protocol=tcp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=${ip} sniff-target-port=${p.tzsp} comment=ROSDPI-SNI
+/ip firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=${ip} sniff-target-port=${p.tzsp} comment=ROSDPI-SNI
+
+# 4. 只读 API 账号（可选，用于主机名、WAN 速率）
 /user group add name=rosdpi policy=read,rest-api,api,!write,!policy,!sensitive
 /user add name=rosdpi group=rosdpi password=<强密码> address=${ip}`
 })
@@ -172,6 +186,19 @@ async function copy() {
 .kv > :last-child { color: var(--text); text-align: right; overflow: hidden; text-overflow: ellipsis; }
 .srv { display: flex; flex-direction: column; align-items: flex-end; }
 .what { margin: 6px 0 0; line-height: 1.5; }
+.match { border-top: 1px solid var(--line); margin-top: 4px; }
+.match .st-h { gap: 10px; }
+.mbar { display: flex; gap: 2px; height: 10px; margin: 6px 0 8px; }
+.mbar i { display: block; border-radius: 3px; min-width: 2px; }
+.mlg { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: 13px; color: var(--muted); }
+.mlg li { display: flex; align-items: center; gap: 6px; }
+.mlg b { color: var(--ink); font-weight: 600; }
+.sw { width: 10px; height: 10px; border-radius: 3px; }
+/* 由准到粗：深 → 浅，"无域名"用中性灰 */
+.conn { background: var(--g-social); }
+.pair { background: color-mix(in srgb, var(--g-social) 62%, var(--panel)); }
+.ip { background: color-mix(in srgb, var(--g-social) 32%, var(--panel)); }
+.none { background: var(--line-strong); }
 .form { display: flex; flex-direction: column; gap: 8px; }
 .form label { font-size: 13px; color: var(--muted); margin-top: 4px; }
 .guide { margin: 0 0 10px; }

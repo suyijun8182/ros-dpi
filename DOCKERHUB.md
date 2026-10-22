@@ -8,6 +8,7 @@ Source & docs: https://github.com/suyijun8182/ros-dpi
 
 ## What's new
 
+- **0.2.0**: redesigned UI after WayOS 4.0 (sidebar layout, new "seven layers" logo, new login page); dashboard with network health score, DHCP pools, WAN line status and online-host history; session time and connection count per host; DHCP lease list; live per-app rates; top-bar search; CSV export. Also includes: 2800+ apps / ~38k domains (adds v2fly/domain-list-community, MIT); per-connection SNI identification from TLS ClientHello and decrypted QUIC Initial packets (v1/v2), so apps are identified even with DoH and on shared CDN IPs; domain-source breakdown in Settings.
 - **0.1.4**: Panabit-style three-level app library (10 groups, 41 categories, 277 apps; CDN attribution via CNAME); redesigned charts (traffic-mix donut, trend stacked by app group, ranked lists, Sankey by group); name hosts by MAC or IP; DNS sniffer card shows which DNS servers answers come from.
 - **0.1.3**: fix the 500 error on the overview page when the RouterOS API (`ROS_URL`) is configured; clearer RouterOS connection errors.
 - **0.1.2**: first-run setup wizard: enter your MySQL connection in the browser, like EasySub. The compose file no longer needs database settings. A README guide covers creating the database.
@@ -16,8 +17,9 @@ Source & docs: https://github.com/suyijun8182/ros-dpi
 
 ## Features
 
-- IPFIX / NetFlow v9 collector (udp/2055), TZSP DNS sniffer (udp/37008), optional read-only RouterOS REST polling
-- 277 built-in apps in 41 categories under 10 app groups (Panabit-style); custom domain / CIDR / port rules
+- IPFIX / NetFlow v9 collector (udp/2055), TZSP sniffer for DNS answers and TLS/QUIC handshakes (udp/37008), optional read-only RouterOS REST polling
+- 2800+ built-in apps in 43 categories under 10 app groups (Panabit-style; ~2500 from v2fly/domain-list-community, MIT); custom domain / CIDR / port rules
+- Per-connection SNI from TLS and QUIC handshakes mirrored via TZSP
 - Name hosts by MAC or by IP
 - Per-minute / hour / day aggregation in MySQL
 
@@ -49,7 +51,7 @@ services:
     ports:
       - "8080:8080/tcp"     # Web 界面
       - "2055:2055/udp"     # IPFIX / NetFlow：RouterOS Traffic Flow 发到这里
-      - "37008:37008/udp"   # TZSP：RouterOS 镜像的 DNS 应答发到这里
+      - "37008:37008/udp"   # TZSP：RouterOS 镜像的 DNS 应答和 HTTPS/QUIC 握手包发到这里
     environment:
       TZ: Asia/Shanghai
       # MySQL 连接信息在首次打开网页时填写（保存在 ./data/db_config.json）
@@ -85,7 +87,7 @@ Open `http://<host>:8080`. The setup wizard has two steps. 打开网页后按两
 |---|---|
 | 8080/tcp | Web UI |
 | 2055/udp | IPFIX / NetFlow v9 |
-| 37008/udp | TZSP (DNS mirror) |
+| 37008/udp | TZSP (DNS answers + TLS/QUIC handshakes) |
 
 ## Environment
 

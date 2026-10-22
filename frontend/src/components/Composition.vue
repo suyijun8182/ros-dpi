@@ -98,6 +98,7 @@ button.cat { cursor: pointer; }
 button.cat:hover, .cat.on { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 .cat .chip { height: 10px; width: 4px; }
 
+.compact .bar { display: none; }
 @media (max-width: 640px) {
   .comp, .comp.compact { grid-template-columns: 1fr; }
   .ring { max-width: 260px; margin: 0 auto; width: 100%; }

@@ -7,7 +7,7 @@ import threading
 import time
 
 from fastapi import HTTPException
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -124,11 +124,13 @@ def init_db(retries: int = 20, delay: float = 3.0):
     for i in range(1, retries + 1):
         try:
             Base.metadata.create_all(engine)
+            add_missing_columns()
             return
         except Exception as e:  # noqa: BLE001
             try:
                 if _create_database_if_missing(e):
                     Base.metadata.create_all(engine)
+                    add_missing_columns()
                     return
             except Exception as ce:  # noqa: BLE001
                 print(f"[db] 数据库不存在，且自动创建失败（账号可能没有建库权限）：{ce}", flush=True)
@@ -136,6 +138,21 @@ def init_db(retries: int = 20, delay: float = 3.0):
             if i == retries:
                 raise
             time.sleep(delay)
+
+
+def add_missing_columns():
+    """升级时补上新版本新增的列（create_all 只建新表，不改已有的表）。新增列一律可为空，不需要回填。"""
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in have and col.nullable:
+                    ctype = col.type.compile(dialect=engine.dialect)
+                    conn.exec_driver_sql(f"ALTER TABLE {table.name} ADD COLUMN {col.name} {ctype} NULL")
+                    print(f"[db] 已为 {table.name} 添加列 {col.name}", flush=True)
 
 
 def add_ready_hook(fn):

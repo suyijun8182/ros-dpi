@@ -41,7 +41,32 @@
 - 在 DHCP 里把 DNS 下发为路由器地址，并开启 `/ip dns set allow-remote-requests=yes`。
 - 浏览器 / 系统里的“安全 DNS（DoH）”会绕过嗅探，可以在终端上关闭，或用防火墙拦截常见 DoH 地址。
 
-## 3. 只读 API 账号（可选）
+## 3. SNI 识别（推荐）
+
+```routeros
+/ip firewall mangle add chain=forward protocol=tcp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-SNI
+/ip firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-SNI
+```
+
+**作用**：每条 HTTPS 连接开头，终端发出的 TLS ClientHello 里带着明文的目标域名（SNI）。HTTP/3（QUIC，udp/443）的握手包虽然加密了，但密钥由包头推导、算法公开，ROS-DPI 能解开。和 DNS 嗅探相比：
+
+- **按连接识别**：知道的是“这一条连接”访问的域名，而不是“这个 IP 最近被解析成哪个域名”。同一个 CDN IP 同时服务很多网站时（很常见），不会认错。
+- **不怕加密 DNS**：终端开了 DoH / DoT，或内网 DNS 的上游用 DoH 时，DNS 嗅探失效，SNI 依然可用。
+- 启用了 ECH（加密 ClientHello）的连接只能看到外层的公共名字（例如 `cloudflare-ech.com`），目前只有少数网站使用。
+
+**开销**：`connection-bytes=0-4000` 只镜像每条连接最开始约 4KB 内客户端发出的包（通常 2 到 4 个），不会把整条连接镜像过来。连接很多时会增加一些路由器 CPU 占用，可以在 **系统设置 → 运行状态** 看 SNI 握手的数量。
+
+**FastTrack**：被 FastTrack 的连接不经过 mangle。如果开了 FastTrack，而 SNI 握手数一直为 0，可以让 FastTrack 在连接传输一定字节之后才生效，例如：
+
+```routeros
+/ip firewall filter set [find action=fasttrack-connection] connection-bytes=10000-0
+```
+
+这样每条连接的前 10KB 走正常路径（会被嗅探），之后照常 FastTrack。
+
+**IPv6**：IPv6 流量需要在 `/ipv6 firewall mangle` 下再加一份相同的规则（DNS 嗅探的两条也一样）。
+
+## 4. 只读 API 账号（可选）
 
 ```routeros
 /user group add name=rosdpi policy=read,rest-api,api,!write,!policy,!sensitive
@@ -57,11 +82,11 @@ ROS_USER=rosdpi
 ROS_PASSWORD=<强密码>
 ```
 
-用于：DHCP 主机名、ARP / IPv6 邻居（IP↔MAC）、WAN 口实时速率、路由器 CPU / 内存，以及自动发现 LAN 的 IPv6 公网前缀。ROS-DPI 只发 GET 请求，不会修改路由器配置。
+用于：DHCP 主机名和租约、地址池使用率、WAN 线路状态（PPPoE / DHCP 客户端）、ARP / IPv6 邻居（IP↔MAC）、WAN 口实时速率、路由器 CPU / 内存，以及自动发现 LAN 的 IPv6 公网前缀。ROS-DPI 只发 GET 请求，不会修改路由器配置。
 
 > 修改了这个用户组的权限后，已登录的会话仍沿用旧权限，需要重启容器或执行 `/user active request-logout [find name=rosdpi]`。
 
-## 4. LAN 网段
+## 5. LAN 网段
 
 ROS-DPI 用 LAN 网段判断哪一端是终端。默认是三个私网段，以下情况需要手动修改（`.env` 的 `LAN_CIDRS`，或 **系统设置 → 网络**）：
 
@@ -76,6 +101,8 @@ ROS-DPI 用 LAN 网段判断哪一端是终端。默认是三个私网段，以�
 |---|---|
 | 流量采集一直“等待数据” | 容器的 udp/2055 是否映射；主机防火墙；`/ip traffic-flow target print` |
 | 已处理流很多，但全部“丢弃” | LAN 网段填错 |
-| DNS 应答为 0 | mangle 规则是否命中（`/ip firewall mangle print stats`）；udp/37008 是否映射 |
+| DNS 应答为 0 | mangle 规则是否命中（`/ip firewall mangle print stats`）；udp/37008 是否映射；内网 DNS 的上游是否用了 DoH |
+| SNI 握手为 0 | ROSDPI-SNI 规则是否命中；是否被 FastTrack 绕过（见上文） |
+| 域名来源里“全网 IP 表”占比高 | 开启 SNI 识别；同一 CDN IP 上的多个网站会因此分得更准 |
 | 识别率低 | 终端是否在用 DoH；在 **识别规则 → 未识别域名 Top** 里补规则 |
 | 统计明显偏少 | FastTrack，见上文 |

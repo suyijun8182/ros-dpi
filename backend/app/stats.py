@@ -6,10 +6,9 @@ from sqlalchemy import distinct, func, select
 
 from app import hostnames, timeutil
 from app.classify import GENERIC_APPS, UNIDENTIFIED_CATEGORIES
-from app.engine import engine
+from app.engine import ONLINE_SECONDS, engine
 from app.models import Host, HostDomainDay, TrafficDay, TrafficHour, TrafficMinute
 
-ONLINE_SECONDS = 300
 
 
 def _sum_cols(t):
@@ -103,15 +102,16 @@ def host_meta(db, keys) -> dict[str, dict]:
         out[h.key] = {"key": h.key, "mac": h.mac, "ip": h.ip, "hostname": h.hostname, "alias": alias,
                       "alias_by": by, "name": alias or h.hostname or h.ip or h.key, "first_seen": h.first_seen,
                       "last_seen": h.last_seen, "online": bool(h.last_seen and now - h.last_seen < ONLINE_SECONDS)}
+        out[h.key]["online_since"] = h.online_since if out[h.key]["online"] else None
     for k in keys:
-        if k in out:
-            continue
-        ip = k.removeprefix("IP:")
-        alias, by = hostnames.resolve(names, None, ip)
-        out[k] = {"key": k, "mac": None, "ip": ip, "hostname": None, "alias": alias, "alias_by": by,
-                  "name": alias or ip, "first_seen": None, "last_seen": None, "online": False}
+        if k not in out:
+            ip = k.removeprefix("IP:")
+            alias, by = hostnames.resolve(names, None, ip)
+            out[k] = {"key": k, "mac": None, "ip": ip, "hostname": None, "alias": alias, "alias_by": by,
+                      "name": alias or ip, "first_seen": None, "last_seen": None, "online": False, "online_since": None}
         rate = engine.host_rate.get(k, (0, 0))
         out[k]["rate_up"], out[k]["rate_down"] = rate
+        out[k]["conns"] = engine.host_conns.get(k, 0)
     return out
 
 
@@ -177,6 +177,18 @@ def trend_groups(db, gran: str, start, end, host=None, app=None, max_series=7) -
         series.append({"id": "__other", "name": None, "name_en": None, "total": sum(tot[g] for g in rest),
                        "values": [sum(per[g].get(ts, 0) for g in rest) for ts in buckets]})
     return {"gran": gran, "step": step, "ts": buckets, "series": series}
+
+
+def online_trend(db, gran: str, start, end) -> list[dict]:
+    """每个时间桶里有流量的终端数（历史在线数）。"""
+    t = _GRAN[gran][0]
+    q = select(t.ts, func.count(distinct(t.host))).where(t.ts >= start, t.ts < end).group_by(t.ts)
+    data = {int(ts): int(n) for ts, n in db.execute(q)}
+    return [{"ts": ts, "n": data.get(ts, 0)} for ts in _buckets(gran, start, end)]
+
+
+def new_hosts(db, since) -> int:
+    return db.scalar(select(func.count()).select_from(Host).where(Host.first_seen >= since)) or 0
 
 
 def all_hosts(db) -> list[dict]:

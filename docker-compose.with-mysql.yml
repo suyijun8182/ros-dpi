@@ -13,7 +13,7 @@ services:
     ports:
       - "8080:8080/tcp"     # Web 界面
       - "2055:2055/udp"     # IPFIX / NetFlow：RouterOS Traffic Flow 发到这里
-      - "37008:37008/udp"   # TZSP：RouterOS 镜像的 DNS 应答发到这里
+      - "37008:37008/udp"   # TZSP：RouterOS 镜像的 DNS 应答和 HTTPS/QUIC 握手包发到这里
     environment:
       TZ: Asia/Shanghai
       # 「必改」密码与下方 MYSQL_PASSWORD 保持一致

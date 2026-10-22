@@ -23,6 +23,9 @@ ROS = {
     "/rest/ipv6/neighbor": [{"address": "2408:8000:aa:bb::30", "mac-address": "AA:BB:CC:DD:EE:30"}],
     "/rest/ipv6/address": [{"address": "2408:8000:aa:bb::1/64", "interface": "bridge"},
                            {"address": "fe80::1/64", "interface": "bridge"}],
+    "/rest/ip/pool": [{"name": "dhcp_pool0", "ranges": "192.168.88.10-192.168.88.19,192.168.88.100/30"}],
+    "/rest/ip/dhcp-server": [{"name": "defconf", "interface": "bridge", "address-pool": "dhcp_pool0"}],
+    "/rest/ip/dhcp-client": [{"interface": "ether1", "status": "bound"}],
 }
 
 
@@ -50,6 +53,9 @@ def test_poll_success_populates_router_state(monkeypatch):
     nets = {str(n) for n in engine.auto_nets}
     assert "2408:8000:aa:bb::/64" in nets and "100.64.1.0/24" not in nets  # WAN 口的地址段不算 LAN
     assert engine.is_lan("2408:8000:aa:bb::30")
+    # 全网状态：WAN 线路；DHCP 地址池容量 = 10 + 4，已用 = 1 条租约
+    assert poller.wans[0]["name"] == "ether1" and poller.wans[0]["type"] == "dhcp" and poller.wans[0]["ip"] == "100.64.1.2"
+    assert poller.pools == [{"server": "defconf", "interface": "bridge", "pool": "dhcp_pool0", "size": 14, "used": 1}]
 
     # 配置了 ROS 后，概览页能正常返回路由器信息（此前这里会 500）
     with TestClient(app) as c:
@@ -58,6 +64,12 @@ def test_poll_success_populates_router_state(monkeypatch):
         tok = c.post("/api/auth/login", json={"username": "admin", "password": "secret1"}).json()["token"]
         r = c.get("/api/overview", headers={"Authorization": f"Bearer {tok}"})
         assert r.status_code == 200 and r.json()["router"]["identity"] == "MikroTik-Home"
+        ov = r.json()
+        assert ov["wans"][0]["running"] and ov["pools"][0]["size"] == 14
+        codes = {i["code"]: i for i in ov["health"]["items"]}
+        assert codes["wan"]["ok"] and codes["cpu"]["ok"] and 0 <= ov["health"]["score"] <= 100
+        leases = c.get("/api/dhcp/leases", headers={"Authorization": f"Bearer {tok}"}).json()
+        assert leases["leases"][0]["mac"] == "AA:BB:CC:DD:EE:31" and leases["leases"][0]["host_name"] == "iPhone"
 
 def test_poll_401_gives_actionable_error_and_keeps_status_usable(monkeypatch):
     _use_mock(monkeypatch, status=401)

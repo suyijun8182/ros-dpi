@@ -5,12 +5,12 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts/core'
-import { BarChart, LineChart, PieChart, SankeyChart } from 'echarts/charts'
+import { BarChart, GaugeChart, LineChart, PieChart, SankeyChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { ui } from '../state.js'
 
-echarts.use([LineChart, PieChart, BarChart, SankeyChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
+echarts.use([LineChart, PieChart, BarChart, SankeyChart, GaugeChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const props = defineProps({ option: Object, height: { type: String, default: '260px' } })
 const emit = defineEmits(['click'])

@@ -1,4 +1,4 @@
-"""通过 RouterOS REST API（只读，仅 GET）获取终端名称、IP↔MAC、LAN 前缀、WAN 口速率和系统状态。"""
+"""通过 RouterOS REST API（只读，仅 GET）获取终端名称、IP↔MAC、LAN 前缀、接口速率、WAN 线路、DHCP 地址池和系统状态。"""
 import ipaddress
 import time
 
@@ -21,6 +21,11 @@ class RosPoller:
         self._wan_prev: tuple[float, int, int] | None = None
         self.wan_override = ""
         self.leases: dict[str, dict] = {}  # mac -> lease
+        self.lease_list: list[dict] = []
+        self.if_rate: dict[str, tuple[float, float]] = {}  # 接口 -> (tx, rx) 字节/秒
+        self._if_prev: dict[str, tuple[float, int, int]] = {}
+        self.wans: list[dict] = []
+        self.pools: list[dict] = []
 
     @property
     def enabled(self) -> bool:
@@ -30,6 +35,16 @@ class RosPoller:
         s = get_settings()
         return httpx.Client(base_url=s.ros_url.rstrip("/") + "/rest", auth=(s.ros_user, s.ros_password),
                             verify=s.ros_verify_tls, timeout=10.0)
+
+    @classmethod
+    def _opt(cls, c: httpx.Client, path: str):
+        """可选数据：对应功能包没装（404）或权限不够时返回空列表，不影响其他数据"""
+        try:
+            return cls._get(c, path)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (400, 403, 404, 500):
+                return []
+            raise
 
     @staticmethod
     def _get(c: httpx.Client, path: str):
@@ -55,7 +70,11 @@ class RosPoller:
                     addrs6 = self._get(c, "/ipv6/address")
                 except httpx.HTTPError:
                     nb6, addrs6 = [], []  # IPv6 包未启用
+                extra = {k: self._opt(c, path) for k, path in (
+                    ("pools", "/ip/pool"), ("servers", "/ip/dhcp-server"), ("dhcpc", "/ip/dhcp-client"),
+                    ("pppoe", "/interface/pppoe-client"))}
             self._apply(ifaces, arp, leases, addrs, routes, nb6, addrs6)
+            self._apply_status(ifaces, addrs, leases, routes, extra)
             # 全部成功后再更新展示用的状态，失败时保留上一次的结果
             self.identity = ident.get("name", "") if isinstance(ident, dict) else ""
             self.resource = resource if isinstance(resource, dict) else {}
@@ -119,6 +138,63 @@ class RosPoller:
             nets.append(net)
         self.engine.set_auto_nets(nets)
 
+    def _apply_status(self, ifaces, addrs, leases, routes, extra):
+        """接口速率、WAN 线路、DHCP 地址池（概览页的全网状态、DHCP 分配、健康指数用）"""
+        now = time.time()
+        for i in ifaces:
+            name = i.get("name")
+            rx, tx = int(i.get("rx-byte", 0) or 0), int(i.get("tx-byte", 0) or 0)
+            prev = self._if_prev.get(name)
+            if prev and prev[0] < now:
+                dt = now - prev[0]
+                self.if_rate[name] = (max(tx - prev[2], 0) / dt, max(rx - prev[1], 0) / dt)
+            self._if_prev[name] = (now, rx, tx)
+
+        # WAN 线路：所有默认路由的出接口（多 WAN 时有多条），没有时用识别到的 WAN 口
+        names = []
+        for r in routes or []:
+            n = _default_route_iface([r])
+            if n and n not in names:
+                names.append(n)
+        if self.wan_name and self.wan_name not in names:
+            names.insert(0, self.wan_name)
+        by_name = {i.get("name"): i for i in ifaces}
+        pppoe = {p.get("name"): p for p in extra["pppoe"] or []}
+        dhcpc = {d.get("interface"): d for d in extra["dhcpc"] or []}
+        wans = []
+        for n in names:
+            i = by_name.get(n, {})
+            kind = "pppoe" if n in pppoe or i.get("type") == "pppoe-out" else "dhcp" if n in dhcpc else "static"
+            ip = next((a.get("address", "").split("/")[0] for a in addrs if a.get("interface") == n
+                       and a.get("disabled") != "true"), "")
+            rate = self.if_rate.get(n, (0.0, 0.0))
+            wans.append({"name": n, "type": kind, "running": i.get("running") == "true", "ip": ip,
+                         "since": i.get("last-link-up-time") or "", "comment": i.get("comment") or "",
+                         "rate_up": rate[0], "rate_down": rate[1],
+                         "dhcp_status": (dhcpc.get(n) or {}).get("status")})
+        self.wans = wans
+
+        # DHCP 地址池：容量来自 /ip/pool 的地址范围，已用 = 该 DHCP 服务器的租约数
+        pool_size = {p.get("name"): _pool_size(p.get("ranges", "")) for p in extra["pools"] or []}
+        used: dict[str, int] = {}
+        for le in leases:
+            if le.get("disabled") == "true":
+                continue
+            used[le.get("server") or ""] = used.get(le.get("server") or "", 0) + 1
+        servers = [sv for sv in extra["servers"] or [] if sv.get("disabled") != "true"]
+        if len(servers) == 1 and "" in used:  # 租约没带 server 字段时，只有一个 DHCP 服务器就算它的
+            used[servers[0].get("name")] = used.get(servers[0].get("name"), 0) + used.pop("")
+        self.pools = [{"server": sv.get("name"), "interface": sv.get("interface"), "pool": sv.get("address-pool"),
+                       "size": pool_size.get(sv.get("address-pool"), 0), "used": used.get(sv.get("name"), 0)}
+                      for sv in servers]
+        self.lease_list = [{
+            "address": le.get("active-address") or le.get("address"), "mac": (le.get("mac-address") or "").upper(),
+            "host_name": le.get("host-name") or le.get("active-host-name") or "", "comment": le.get("comment") or "",
+            "server": le.get("server") or "", "status": le.get("status") or "",
+            "dynamic": le.get("dynamic") == "true", "expires_after": le.get("expires-after") or "",
+            "last_seen": le.get("last-seen") or "",
+        } for le in leases]
+
     def status(self) -> dict:
         r = self.resource if isinstance(self.resource, dict) else {}
         return {
@@ -151,6 +227,25 @@ def _int(v):
         return int(v)
     except (TypeError, ValueError):
         return None
+
+
+def _pool_size(ranges: str) -> int:
+    """"192.168.88.10-192.168.88.254,10.0.0.0/24" → 地址数"""
+    n = 0
+    for part in (ranges or "").split(","):
+        part = part.strip()
+        try:
+            if "-" in part:
+                a, b = (ipaddress.ip_address(x.strip()) for x in part.split("-", 1))
+                n += int(b) - int(a) + 1
+            elif "/" in part:
+                n += ipaddress.ip_network(part, strict=False).num_addresses
+            elif part:
+                ipaddress.ip_address(part)
+                n += 1
+        except ValueError:
+            continue
+    return n
 
 
 def _default_route_iface(routes) -> str:

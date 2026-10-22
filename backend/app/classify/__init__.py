@@ -1,7 +1,8 @@
 """把一条流（远端 IP + 端口 + 域名）识别为应用。
 
 分三级：应用大类（group）→ 应用小类（category）→ 应用（app），与 Panabit 的应用分类方式一致。
-优先级：自定义规则 > 域名后缀（先查询名再 CNAME，最长后缀优先）> CIDR > 端口 > IP 协议号 > other。
+优先级：自定义规则 > 域名（先查询名再 CNAME；精确匹配 > 最长后缀）> CIDR > 端口 > IP 协议号 > other。
+内置规则两份：手工维护的 apps.yaml，以及从 v2fly/domain-list-community 生成的 apps_v2fly.yaml（同一域名以前者为准）。
 """
 import ipaddress
 import os
@@ -9,7 +10,11 @@ from dataclasses import dataclass
 
 import yaml
 
+_Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)  # 有 libyaml 时快 10 倍（v2fly 规则有几万条）
+
 RULES_FILE = os.path.join(os.path.dirname(__file__), "apps.yaml")
+# 由 scripts/import_v2fly.py 从 v2fly/domain-list-community 生成；优先级低于手工维护的 apps.yaml
+V2FLY_FILE = os.path.join(os.path.dirname(__file__), "apps_v2fly.yaml")
 UNKNOWN_APP = "other"
 GENERIC_APPS = {"https", "quic", "http", UNKNOWN_APP}  # 这些应用下的域名算"未识别"
 # 只能说明协议或 CDN 厂商、说明不了具体应用的分类，不计入"应用识别率"
@@ -33,18 +38,24 @@ def _parse_port(spec: str) -> tuple[int, int, int]:
 
 
 class Classifier:
-    def __init__(self, rules_file: str = RULES_FILE):
+    def __init__(self, rules_file: str = RULES_FILE, extra_file: str | None = V2FLY_FILE):
         with open(rules_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         self.groups: dict[str, dict] = data["groups"]
         self.categories: dict[str, dict] = data["categories"]
         self._base_apps = data["apps"]
+        self._extra = {"extend": [], "apps": []}
+        if extra_file and os.path.exists(extra_file):
+            with open(extra_file, encoding="utf-8") as f:
+                self._extra = yaml.load(f, Loader=_Loader) or self._extra
         self.load_custom([])
 
     def load_custom(self, custom_rules: list):
         """custom_rules: CustomRule 行（或同字段的对象）。每次规则变更后整体重建。"""
         self.apps: dict[str, App] = {}
-        self.domains: dict[str, str] = {}
+        self.domains: dict[str, str] = {}       # 后缀匹配
+        self.full: dict[str, str] = {}          # 精确匹配
+        self.custom_domains: dict[str, str] = {}
         self.nets: list[tuple[ipaddress._BaseNetwork, str]] = []
         self.ports: list[tuple[int, int, int, str]] = []
         self.protos: dict[int, str] = {}
@@ -53,6 +64,18 @@ class Classifier:
             self._add(a["id"], a.get("domains", []), a.get("cidrs", []), a.get("ports", []), first_wins=True)
             for p in a.get("protos", []):
                 self.protos.setdefault(int(p), a["id"])
+        for e in self._extra.get("extend", []):
+            if e["extend"] in self.apps:
+                self._add(e["extend"], e.get("domains", []), [], [], first_wins=True)
+                for d in e.get("full", []):
+                    self.full.setdefault(d, e["extend"])
+        for a in self._extra.get("apps", []):
+            if a["id"] in self.apps or a["category"] not in self.categories:
+                continue
+            self.apps[a["id"]] = App(a["id"], str(a["name"]), str(a.get("name_en", a["name"])), a["category"])
+            self._add(a["id"], a.get("domains", []), [], [], first_wins=True)
+            for d in a.get("full", []):
+                self.full.setdefault(d, a["id"])
         self.apps[UNKNOWN_APP] = App(UNKNOWN_APP, "其他", "Other", "unknown")
 
         custom_nets, custom_ports = [], []
@@ -62,7 +85,7 @@ class Classifier:
                                           r.category or "web", custom=True)
             try:
                 if r.kind == "domain":
-                    self.domains[r.pattern.lower().strip(".")] = r.app_id
+                    self.custom_domains[r.pattern.lower().strip(".")] = r.app_id
                 elif r.kind == "cidr":
                     custom_nets.append((ipaddress.ip_network(r.pattern, strict=False), r.app_id))
                 elif r.kind == "port":
@@ -90,10 +113,19 @@ class Classifier:
     def match_domain(self, name: str | None) -> str | None:
         if not name:
             return None
-        parts = name.lower().strip(".").split(".")
+        name = name.lower().strip(".")
+        parts = name.split(".")
         # 从完整域名开始逐级去掉左边一段；单段名（如 dns.google 的 google）不参与匹配
-        for i in range(len(parts) - 1):
-            hit = self.domains.get(".".join(parts[i:]))
+        suffixes = [".".join(parts[i:]) for i in range(len(parts) - 1)]
+        if self.custom_domains:
+            for sfx in suffixes:
+                if sfx in self.custom_domains:
+                    return self.custom_domains[sfx]
+        hit = self.full.get(name)
+        if hit:
+            return hit
+        for sfx in suffixes:
+            hit = self.domains.get(sfx)
             if hit:
                 return hit
         return None

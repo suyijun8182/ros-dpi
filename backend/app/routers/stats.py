@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import hostnames, stats, timeutil
+from app import health, hostnames, stats, timeutil
 from app.database import get_db
 from app.engine import engine
 from app.models import Host, HostName
@@ -46,7 +46,13 @@ def overview(range: str = Query("today", pattern=RANGES), db: Session = Depends(
         "trend": stats.trend(db, _trend_gran(range), start, end),
         "trend_groups": stats.trend_groups(db, _trend_gran(range), start, end),
         "realtime": stats.trend(db, "minute", now - 3600, now + 1),
+        "online_realtime": stats.online_trend(db, "minute", now - 3600, now + 1),
+        "online_trend": stats.online_trend(db, _trend_gran(range), start, end),
+        "new_today": stats.new_hosts(db, timeutil.range_bounds("today")[0]),
         "router": poller.status(),
+        "wans": poller.wans,
+        "pools": poller.pools,
+        "health": health.compute(db),
     }
 
 
@@ -162,6 +168,39 @@ def delete_name(kind: str, value: str, db: Session = Depends(get_db)):
     hostnames.put(db, kind, v, None)
     db.commit()
     return _name_rows(db)
+
+
+@router.get("/search")
+def search(q: str = Query(..., min_length=1, max_length=64), db: Session = Depends(get_db)):
+    """顶栏功能搜索：终端（名称 / IP / MAC / 主机名）和应用。页面名由前端自己匹配。"""
+    s = q.strip().lower()
+    names = hostnames.load(db)
+    hosts = []
+    for h in db.query(Host).order_by(Host.last_seen.desc()).limit(5000):
+        alias, _by = hostnames.resolve(names, h.mac, h.ip)
+        fields = [alias, h.hostname, h.ip, h.mac, h.key]
+        if any(f and s in f.lower() for f in fields):
+            hosts.append({"key": h.key, "name": alias or h.hostname or h.ip or h.key, "ip": h.ip, "mac": h.mac})
+            if len(hosts) >= 8:
+                break
+    apps = [stats.app_meta(a.id) for a in engine.classifier.apps.values()
+            if s in a.id.lower() or s in str(a.name).lower() or s in str(a.name_en).lower()]
+    # ID 完全相同的最前；手工规则库的应用排在 v2fly 导入的前面；再按名称开头匹配、名称长短
+    apps.sort(key=lambda a: (a["id"] != s, a["id"].startswith("v2_"),
+                             not any(str(a[k]).lower().startswith(s) for k in ("name", "name_en")), len(str(a["name"]))))
+    return {"hosts": hosts, "apps": apps[:8]}
+
+
+@router.get("/dhcp/leases")
+def dhcp_leases(db: Session = Depends(get_db)):
+    """RouterOS 的 DHCP 租约（需要配置 ROS API），附带 ROS-DPI 里的命名和终端链接。"""
+    names = hostnames.load(db)
+    keys = {h.mac: h.key for h in db.query(Host).filter(Host.mac.isnot(None))}
+    out = []
+    for le in poller.lease_list:
+        alias, _by = hostnames.resolve(names, le["mac"] or None, le["address"])
+        out.append({**le, "alias": alias, "host_key": keys.get(le["mac"])})
+    return {"enabled": poller.enabled, "pools": poller.pools, "leases": out}
 
 
 @router.get("/apps")

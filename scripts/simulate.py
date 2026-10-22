@@ -11,7 +11,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend", "tests"))
-from packets import ipfix, tzsp_dns  # noqa: E402
+from packets import client_hello, ipfix, tcp_segment, tls_record, tzsp_dns  # noqa: E402
 
 # (域名, 典型下行 MB/分钟, 上行比例)
 SITES = [
@@ -37,6 +37,7 @@ def main():
     ap.add_argument("--minutes", type=float, default=3)
     ap.add_argument("--hosts", type=int, default=14)
     ap.add_argument("--fast", action="store_true", help="不等待，一次性发完")
+    ap.add_argument("--no-sni", action="store_true", help="不发 TLS 握手（只靠 DNS 识别）")
     a = ap.parse_args()
 
     rnd = random.Random(42)
@@ -58,11 +59,13 @@ def main():
             for d, mb, up_ratio in prefs[ip]:
                 down = int(mb * 1024 * 1024 / 6 * rnd.uniform(.3, 1.6))  # 10 秒一轮
                 up = int(down * up_ratio)
-                port = 443
-                flows.append(dict(src=ip, dst=ips[d], sport=rnd.randint(30000, 60000), dport=port, proto=6,
-                                  nbytes=up, mac=mac))
-                flows.append(dict(src=ips[d], dst=ip, sport=port, dport=rnd.randint(30000, 60000), proto=6,
-                                  nbytes=down))
+                port, cport = 443, rnd.randint(30000, 60000)
+                if not a.no_sni and rnd.random() < .7:
+                    # 模拟 RouterOS 镜像过来的连接首包（TLS ClientHello）
+                    sock.sendto(tcp_segment(ip, ips[d], cport, port, rnd.randint(1, 2**31), tls_record(client_hello(d))),
+                                (a.host, a.tzsp_port))
+                flows.append(dict(src=ip, dst=ips[d], sport=cport, dport=port, proto=6, nbytes=up, mac=mac))
+                flows.append(dict(src=ips[d], dst=ip, sport=port, dport=cport, proto=6, nbytes=down))
         for i in range(0, len(flows), 20):
             sock.sendto(ipfix(flows[i:i + 20], seq=rounds), (a.host, a.ipfix_port))
         rounds += 1
