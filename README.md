@@ -1,6 +1,6 @@
 # ROS-DPI
 
-**RouterOS 终端流量与应用统计面板**：像 Panabit / 碧海威那样，按 今日 / 本周 / 本月 统计 RouterOS 下每台终端用了多少流量、用在了哪些应用上。
+**RouterOS 终端流量、应用统计与上网审计面板**：像 Panabit / 维盟那样，按 今日 / 昨日 / 本周 / 本月 统计 RouterOS 下每台终端、每个人用了多少流量、用在了哪些应用上；像深信服 AC 那样记录访问日志、按规则告警。支持家用（孩子上网健康）和企业（效率与合规）两种场景。
 
 [中文](#中文) · [English](#english)
 
@@ -12,21 +12,29 @@
 
 ### 能做什么
 
-- **全网概览**：一屏看全的仪表盘：路由器状态、**网络健康指数**（逐项扣分和改进建议）、在线终端、**DHCP 地址池**、每条 **WAN 线路**的状态和速率；流量构成环图（应用大类 → 小类）；实时流量、流量趋势、历史在线终端数；Top 应用与 Top 终端排行。
-- **主机监控**：在线终端 / 全部终端 / DHCP 租约 / 命名管理四个标签。每台终端的 IP、MAC、主机名、在线时长、连接数、当前速率、今日 / 本周 / 本月流量，可导出 CSV；可以按 MAC 或按 IP 给设备命名（也能提前给还没上线的设备命名）；详情页可看该终端的应用排行、应用构成、按大类的趋势和访问过的域名。
-- **应用统计**：参照 Panabit / 维盟分三级（应用大类 → 小类 → 应用，逐级「查看详情」下钻，每级显示上传 / 下载速度和数据及占比）：10 个大类、43 个小类、2800 多个内置应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……，其中约 2500 个来自 v2fly 开源域名库）。识别不出具体应用的流量，会按 CDN 的 CNAME 归到阿里云 / 腾讯云 / Akamai 等厂商。可以查看每个应用被哪些终端使用。
-- **流量流向**：**实时连接**（此刻哪台终端连到哪个域名 / IP、什么应用、多快；走 sing-box 的连接显示策略组和出口节点）、**访问目标排行**（流量最大的远端域名和 IP，显示国家 / 地区及分布，可按主域名合并，看是哪些终端在访问）和**代理分流**（sing-box 各策略组、各节点的流量与主要应用）。
-- **识别规则**：按域名后缀、IP 段、端口自定义识别规则；列出“未识别域名 Top”，一键归类。
-- **审计日志**：访问日志（每台终端什么时候访问了什么、多久、多少流量，可筛选、导出 CSV，默认保留 30 天）；终端的上网时间线；审计规则（按应用、域名、时段、流量、新设备）命中时推送到企业微信 / 钉钉 / 飞书 / Bark / Telegram / Webhook；日报和周报；操作日志。
-- **管理员与普通用户**：普通用户只能查看，不能修改设置和规则；在 系统设置 → 用户管理 添加。
-- **人员与使用场景**：把一个人的多台设备归到一起，按人看流量、在线时长和行为标签。**家用**场景关注孩子的上网健康（屏幕时间、游戏和短视频上限、熬夜、不良内容）；**企业**场景关注效率与合规（工作时间娱乐占比、求职倾向、上班炒股、大流量外发、私接路由）。终端类型（手机、电脑、电视、摄像头……）自动识别。
-- **合规与管控**：Syslog 外发访问日志和审计事件；留存天数可在网页设置；按人员 / 设备生成 RouterOS 管控命令（封禁应用、定时断网、限速，附撤销命令，ROS-DPI 不直接改路由器）。通知支持企业微信、钉钉、飞书、Bark、Telegram、邮件、PushPlus、Server酱、ntfy、Gotify、Discord、Slack、Webhook，可设免打扰。
-- 顶栏功能搜索（终端、IP、MAC、应用、页面），按 / 键聚焦。
-- 中英双语，深浅色主题，手机可用。
+- **全网概览**：路由器状态、**网络健康指数**（逐项扣分和改进建议）、在线终端、**DHCP 地址池**、每条 **WAN 线路**的状态和速率；流量构成饼图（应用大类 → 小类）；实时流量、历史流量、历史在线终端数；Top 应用与 Top 终端排行。
+- **主机监控**：在线终端 / 全部终端 / DHCP 租约 / 命名管理四个标签。每台终端的类型（手机、电脑、电视、摄像头……自动识别）、IP、MAC、主机名、归属人、在线时长、连接数、当前速率、今日 / 本周 / 本月流量，可导出 CSV；可以按 MAC 或按 IP 给设备命名。详情页有应用排行与构成、按大类的趋势、访问过的域名、访问日志和上网时间线。
+- **应用统计**：参照 Panabit / 维盟分三级（应用大类 → 小类 → 应用，逐级“查看详情”下钻）。大类和小类固定列出，每级显示上传 / 下载速度和数据及占比；应用构成用矩形树图一眼看两层。共 10 个大类、43 个小类、2800 多个内置应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……，其中约 2500 个来自 v2fly 开源域名库）。识别不出具体应用的流量，会按 CDN 的 CNAME 归到阿里云 / 腾讯云 / Akamai 等厂商。
+- **流量流向**：**实时连接**（此刻哪台终端连到哪个域名 / IP、什么应用、多快；走 sing-box 的连接显示策略组和出口节点）、**访问目标排行**（流量最大的远端域名和 IP，世界地图和国家 / 地区分布，可按主域名合并，看是哪些终端在访问）、**代理分流**（sing-box 各策略组、各节点的流量和主要应用）。
+- **家庭成员 / 人员**：把一个人的手机、平板、电脑归到一起，按人统计流量、在线时长、常用应用，以及最近 7 天的行为标签（附依据）。按使用场景：
+  - **家用**：关注孩子的上网健康，包括每日屏幕时间、游戏和短视频时长上限，熬夜，不良内容，学习时间玩娱乐应用。
+  - **企业**：关注效率与合规，包括工作时间娱乐占比、求职倾向、上班炒股，按部门统计。
+- **审计日志**：
+  - **访问日志**：每台终端什么时候访问了什么、多久、多少流量，可按人员 / 部门 / 关键字筛选，导出 CSV，默认保留 30 天。
+  - **审计规则**：按应用、域名、时段、流量、**大流量外发**、**私接路由**、新设备设置，可限定人员 / 部门，带按场景的常用模板。命中后推送通知。
+  - **通知渠道**：企业微信、钉钉、飞书、Bark、Telegram、邮件、PushPlus、Server酱、ntfy、Gotify、Discord、Slack、通用 Webhook。每条规则可以选渠道，可设免打扰。
+  - **私接检测**：根据数据包 TTL 发现后面接了路由器或多种系统共享的设备。
+  - **日报 / 周报**和**操作日志**。
+- **管控命令**：在人员或终端详情里，按应用、时段生成 RouterOS 命令（封禁应用、定时断网、限速），附撤销命令。ROS-DPI 只生成命令，不会修改路由器。
+- **识别规则**：按域名后缀、IP 段、端口自定义识别规则；列出“未识别域名 Top”，一键归类；查看识别库的版本和更新状态。
+- **系统设置**：接入与自检（检查 RouterOS 上的镜像规则）、外部数据源（sing-box / MosDNS）、**日志与留存**（Syslog 外发、各类数据保留天数、数据库占用）、**用户管理**（管理员可以修改一切；普通用户只读，可以改自己的密码）。
+- 顶栏功能搜索（终端、IP、MAC、应用、页面），按 / 键聚焦。中英双语，深浅色主题，手机可用。
 
 ![应用统计](docs/images/apps-light.png)
 
 ![流量流向](docs/images/flow-light.png)
+
+![家庭成员](docs/images/people-light.png)
 
 ### 工作原理
 
@@ -51,7 +59,7 @@ RouterOS ◀─REST 只读（可选）── 主机名、IP↔MAC、WAN 口速�
 
 **已知局限**：只开 DNS 嗅探时，终端使用 DoH / DoT 加密 DNS 的流量只能识别为 HTTPS / QUIC，开启 SNI 识别可以补上。启用了 ECH（加密 ClientHello）的少数网站，SNI 只能看到外层的公共名字。
 
-**内网有自己的 DNS 服务器（AdGuard Home / Pi-hole 等）时**：DNS 嗅探照样能用。终端查询内网 DNS 走的是交换机，路由器看不到；但内网 DNS 向上游（如 223.5.5.5）查询时，应答要经过路由器，会被 `forward` 那条规则嗅探到，同样能得到“IP → 域名”的对应关系。前提是内网 DNS 的上游用普通 DNS（udp/53）；上游设成 DoH / DoT 时路由器看不到域名，可以把上游改成普通 DNS，或者改成路由器地址。**系统设置 → DNS 嗅探** 里的“应答来源”会显示应答来自哪台 DNS 服务器。
+**内网有自己的 DNS 服务器（AdGuard Home / Pi-hole 等）时**：DNS 嗅探照样能用。终端查询内网 DNS 走的是交换机，路由器看不到；但内网 DNS 向上游（如 223.5.5.5）查询时，应答要经过路由器，会被 `forward` 那条规则嗅探到，同样能得到“IP → 域名”的对应关系。前提是内网 DNS 的上游用普通 DNS（udp/53）；上游设成 DoH / DoT 时路由器看不到域名，可以把上游改成普通 DNS，或者改成路由器地址。**系统设置 → 运行状态** 里 DNS 嗅探卡片的“应答来源”会显示应答来自哪台 DNS 服务器。
 
 ### 部署
 
@@ -94,7 +102,7 @@ services:
     environment:
       TZ: Asia/Shanghai
       # MySQL 连接信息在首次打开网页时填写（保存在 ./data/db_config.json）
-      # 「必改」内网网段，逗号分隔（之后也可在 系统设置 → 网络 里改）
+      # 「必改」内网网段，逗号分隔（之后也可在 系统设置 → 网络与账号 里改）
       LAN_CIDRS: 192.168.88.0/24
       # 管理员 admin 的初始密码；留空则首次打开网页时设置
       ADMIN_PASSWORD: ""
@@ -132,7 +140,14 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 
 ![安装向导](docs/images/setup-wizard.png)
 
-完成后，到 **系统设置 → 接入向导** 复制 RouterOS 命令，在路由器终端执行（见下一节）。大约 1 分钟后，概览页开始有数据。
+完成后，到 **系统设置 → 接入与自检** 复制 RouterOS 命令，在路由器终端执行（见下一节）。大约 1 分钟后，概览页开始有数据。
+
+接下来可以：
+
+1. 在 **家庭成员 / 人员 → 分析设置** 选择使用场景（家用 / 企业），设置学习或工作时间、每日时长上限；
+2. 添加成员并把设备分给他们；
+3. 在 **审计日志 → 通知渠道** 配置推送，在 **审计规则** 里从模板新建规则；
+4. 需要只读账号时，在 **系统设置 → 用户管理** 添加普通用户。
 
 **常见问题**
 
@@ -143,11 +158,11 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 | 提示“没有该数据库的权限” | 执行第 1 步的 `GRANT` 语句 |
 | 重启后网页显示“正在连接数据库” | MySQL 还没启动完成，页面会每 5 秒自动重试，不需要重新填写 |
 | 需要更换数据库 | 删除 `./data/db_config.json`，然后重启容器，会重新出现安装向导 |
-| 忘记管理员密码 | 在 MySQL 中执行 `DELETE FROM rosdpi.users;`，然后刷新网页重新设置，统计数据不受影响 |
+| 忘记管理员密码 | 还有其他管理员时，由他在 **系统设置 → 用户管理** 重置。都忘了时，在 MySQL 中执行 `DELETE FROM rosdpi.users;`（会删除所有账号，包括普通用户），刷新网页重新设置管理员；统计数据不受影响 |
 
 ### RouterOS 配置
 
-把 `192.168.88.10` 换成运行容器的主机 IP（**系统设置 → 接入向导**里可以直接复制填好 IP 的命令）：
+把 `192.168.88.10` 换成运行容器的主机 IP（**系统设置 → 接入与自检**里可以直接复制填好 IP 的命令，还会检查规则是否生效）：
 
 ```routeros
 # 1. 流量采集（IPFIX）
@@ -180,7 +195,9 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 
 ### 识别库与自动更新
 
-识别靠三份库：内置规则库（手工维护，随版本更新）、[v2fly/domain-list-community](https://github.com/v2fly/domain-list-community)（每天自动检查更新，自检通过后热加载）、[iptoasn.com](https://iptoasn.com) 的 IP 归属库（每天自动下载）。三者的版本和状态在 **识别规则 → 识别库** 查看，也可以关闭自动更新。自动更新需要容器能访问外网；文件保存在 `./data` 卷里。
+应用识别靠三份库：内置规则库（手工维护，随版本更新）、[v2fly/domain-list-community](https://github.com/v2fly/domain-list-community)（每天自动检查更新，自检通过后热加载）、[iptoasn.com](https://iptoasn.com) 的 IP 归属库（每天自动下载，也用来显示国家 / 地区）。三者的版本和状态在 **识别规则 → 识别库** 查看，也可以关闭自动更新。终端类型识别另外用 IEEE 公开的 MAC 厂商库（OUI，每 30 天更新）。自动更新需要容器能访问外网；文件保存在 `./data` 卷里。没有外网时设 `ASN_DB=false`、`OUI_DB=false`，其余功能不受影响。
+
+世界地图使用 [Natural Earth](https://www.naturalearthdata.com/)（公有领域）的简化数据。
 
 ### 环境变量
 
@@ -201,7 +218,7 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 | `TZ` | `Asia/Shanghai` | 统计用时区，每周从周一开始 |
 | `HTTP_PORT` / `IPFIX_PORT` / `TZSP_PORT` | 8080 / 2055 / 37008 | 端口 |
 | `RETENTION_*_DAYS` | 2 / 45 / 730 / 31 | 分钟 / 小时 / 每日 / 域名明细的保留天数 |
-| `RETENTION_LOG_DAYS` / `RETENTION_EVENT_DAYS` | 30 / 180 | 访问日志 / 审计事件和操作日志的保留天数 |
+| `RETENTION_LOG_DAYS` / `RETENTION_EVENT_DAYS` | 30 / 180 | 访问日志 / 审计事件和操作日志的保留天数。以上保留天数也可以在 **系统设置 → 日志与留存** 里改，网页优先 |
 | `SECRET_KEY` | 自动生成 | 登录令牌签名密钥 |
 
 ### 开发
@@ -228,22 +245,29 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
 
 ## English
 
-**ROS-DPI** shows per-device traffic and per-application usage (today / this week / this month) for networks behind a MikroTik RouterOS router, in the spirit of Panabit-style DPI dashboards.
+**ROS-DPI** shows per-device and per-person traffic and per-application usage (today / yesterday / this week / this month) for networks behind a MikroTik RouterOS router, in the spirit of Panabit-style DPI dashboards, plus Sangfor-AC-style access logging and alerting. It has a home scenario (children's online health) and a business scenario (productivity and compliance).
 
-- **Overview**: a dashboard with router status, a network health score with fixes, DHCP pool usage, WAN line status, online-host history, live rate, and a two-ring traffic-mix donut (app group → category), trends stacked by app group, ranked top apps and hosts.
-- **Hosts**: every device with IP, MAC, hostname, online state, live rate and daily / weekly / monthly totals; name devices by MAC or by IP (even before they appear); per-host app breakdown and visited domains.
-- **Applications**: a Panabit-style three-level library: 10 app groups, 43 categories, 2800+ built-in apps (about 2500 converted from v2fly/domain-list-community). Traffic that can't be tied to an app is attributed to its CDN (Alibaba Cloud, Tencent Cloud, Akamai, Cloudflare…) via CNAME.
-- **Flows**: live connections (which host talks to which domain or IP, which app, how fast; sing-box connections show their policy group and outbound node), top destinations (remote domains and IPs by traffic with country, mergeable by base domain, with the hosts behind each) and proxy routing (traffic and top apps per sing-box policy group and node).
-- **Rules**: custom domain / CIDR / port rules, and a list of top unidentified domains to classify.
-- **Audit**: an access log of every visit (who reached what, when, for how long and how much; filterable, CSV export, kept 30 days), a per-host daily timeline, audit rules (by app, domain, time window, traffic or new device) that push alerts to WeCom / DingTalk / Feishu / Bark / Telegram / webhooks, daily and weekly reports, and an operation log.
-- **Admins and users**: regular users are read-only; add them under Settings → Users.
-- **People and scenarios**: group a person's devices and see their traffic, online time and behaviour tags. The **home** scenario focuses on children's online health (screen time, gaming and short-video limits, late nights, adult content); the **business** scenario on productivity and compliance (leisure at work, job hunting, trading at work, large uploads, rogue routers). Device types are detected automatically.
-- **Compliance and control**: Syslog forwarding of the access log and audit events, retention set in the web UI, and generated RouterOS control commands (block apps, scheduled blocks, rate limits, with undo; ROS-DPI never writes to the router). Notifications via WeCom, DingTalk, Feishu, Bark, Telegram, email, PushPlus, ServerChan, ntfy, Gotify, Discord, Slack and webhooks, with quiet hours.
+- **Overview**: router status, a network health score with fixes, DHCP pool usage, WAN line status, online-host history, live rate, a traffic-mix pie (app group → category), and top apps and hosts.
+- **Hosts**: every device with its detected type (phone, computer, TV, camera…), IP, MAC, hostname, owner, online state, live rate and daily / weekly / monthly totals. Name devices by MAC or by IP. Each device has an app breakdown, visited domains, an access log and a daily timeline.
+- **Applications**: a three-level drill-down (app group → category → app) with fixed groups and categories, upload/download rates and totals with shares at each level, and a treemap of the mix. It covers 10 groups, 43 categories and 2800+ built-in apps (about 2500 converted from v2fly/domain-list-community). Traffic that can't be tied to an app is attributed to its CDN via CNAME.
+- **Flows**: live connections (sing-box connections show their policy group and outbound node), top destinations on a world map with a country breakdown, and proxy routing (traffic and top apps per sing-box policy group and node).
+- **People / Family**: group each person's devices and see their traffic, online time, top apps and behaviour tags for the last 7 days, with the evidence behind each tag.
+  - **Home**: daily screen-time, gaming and short-video limits, late nights, adult content, and leisure during homework time.
+  - **Business**: leisure share in working hours, job hunting and trading at work, with departments.
+- **Audit**:
+  - **Access log**: filter by person, department or keyword, export to CSV; kept 30 days by default.
+  - **Audit rules**: by app, domain, time window, traffic, **large upload**, **rogue router** or new device; can be scoped to people or departments, with scenario-specific templates.
+  - **Notifications**: WeCom, DingTalk, Feishu, Bark, Telegram, email, PushPlus, ServerChan, ntfy, Gotify, Discord, Slack or webhooks, with per-rule channel choice and quiet hours.
+  - **Shared-access check**: TTL-based detection of devices with a router behind them.
+  - **Daily / weekly reports** and an **operation log**.
+- **Control commands**: generate RouterOS commands that block apps, block internet on a schedule or set rate limits for a person or device, with undo commands. ROS-DPI never writes to the router.
+- **Rules**: custom domain / CIDR / port rules, top unidentified domains, and library versions and update status.
+- **Settings**: setup & self-check of the RouterOS mirror rules, external sources (sing-box / MosDNS), **logging & retention** (Syslog forwarding, retention per data type, database usage), and **users** (admins change everything; regular users are read-only).
 - Chinese and English UI, light and dark themes, works on phones.
 
 **How it works.** RouterOS exports IPFIX (`/ip traffic-flow`) for byte counts, and mirrors DNS answers plus the first packets of each HTTPS/QUIC connection via `sniff-tzsp`. The TLS / QUIC handshake carries the target domain (SNI) per connection; DNS answers map remote IPs back to the domain the client looked up. A rule library maps domains to apps. An optional read-only REST user provides hostnames, IP-to-MAC, WAN rate and LAN prefixes. Data is aggregated per minute, hour and day into MySQL.
 
-**Side-router proxy and LAN DNS (optional).** If you run sing-box as a side router or MosDNS as LAN DNS, fill in their Clash API / audit API under Settings → External sources: proxied traffic is then counted per device and domain, and per-device DNS answers are used for identification. **Library updates.** v2fly rules are checked daily and hot-reloaded after a self-test; an IP→ASN database from iptoasn.com (public domain) identifies domain-less traffic by owner.
+**Side-router proxy and LAN DNS (optional).** If you run sing-box as a side router or MosDNS as LAN DNS, fill in their Clash API / audit API under Settings → External sources: proxied traffic is then counted per device and domain, and per-device DNS answers are used for identification. **Library updates.** v2fly rules are checked daily and hot-reloaded after a self-test; an IP→ASN database from iptoasn.com (public domain) identifies domain-less traffic by owner and country; the IEEE OUI list identifies device vendors. Set `ASN_DB=false` / `OUI_DB=false` without internet access. The world map uses simplified Natural Earth data (public domain).
 
 **Limitations.** With DNS sniffing alone, clients using DoH/DoT show up as generic HTTPS/QUIC; SNI covers them. Sites using ECH only expose their outer public name. A LAN DNS server (AdGuard Home, Pi-hole…) works fine as long as its upstream is plain DNS on udp/53: its upstream answers pass through the router and are sniffed by the `forward` rule.
 
@@ -260,7 +284,7 @@ Save the `docker-compose.yml` shown above (or `curl -O https://raw.githubusercon
 
 No MySQL yet? Use [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml): it starts MySQL 8.4 alongside and is pre-configured, so the database step is skipped.
 
-**First run.** Open `http://<host>:8080`. A two-step setup wizard asks for (1) the MySQL host, port, user, password and database, with a connection test, and (2) the admin password. Tables are created automatically and the connection is saved to `./data/db_config.json`. If MySQL runs on the same machine, use its LAN IP, not `127.0.0.1`. To change databases later, delete that file and restart. Setting `DATABASE_URL` skips the wizard. RouterOS commands are listed above and in **Settings → Setup guide**.
+**First run.** Open `http://<host>:8080`. A two-step setup wizard asks for (1) the MySQL host, port, user, password and database, with a connection test, and (2) the admin password. Tables are created automatically and the connection is saved to `./data/db_config.json`. If MySQL runs on the same machine, use its LAN IP, not `127.0.0.1`. To change databases later, delete that file and restart. Setting `DATABASE_URL` skips the wizard. RouterOS commands are listed above and in **Settings → Setup & check**. Then choose the scenario under **People → Settings**, add people and assign their devices, and set up notification channels under **Audit → Notifications**.
 
 ## License
 

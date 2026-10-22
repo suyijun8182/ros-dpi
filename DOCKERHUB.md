@@ -1,8 +1,8 @@
 # ROS-DPI
 
-RouterOS 终端流量与应用统计面板。按 今日 / 本周 / 本月 统计每台终端的流量和应用使用情况，类似 Panabit / 碧海威。
+RouterOS 终端流量、应用统计与上网审计面板。按 今日 / 昨日 / 本周 / 本月 统计每台终端、每个人的流量和应用使用情况（类似 Panabit / 维盟），记录访问日志并按规则告警（参照深信服 AC）；分家用和企业两种场景。
 
-Per-device traffic and per-application (DPI-style) statistics for MikroTik RouterOS, built on IPFIX + DNS sniffing.
+Per-device and per-person traffic, per-application (DPI-style) statistics and access auditing for MikroTik RouterOS, built on IPFIX + DNS / SNI sniffing.
 
 Source & docs: https://github.com/suyijun8182/ros-dpi
 
@@ -86,7 +86,8 @@ Open `http://<host>:8080`. The setup wizard has two steps. 打开网页后按两
 
 - Change database later: delete `./data/db_config.json` and restart. 更换数据库：删除该文件后重启容器。
 - Setting `DATABASE_URL` skips the wizard. 设置环境变量 `DATABASE_URL` 可跳过向导。
-- RouterOS commands: **Settings → Setup guide**. Full guide: https://github.com/suyijun8182/ros-dpi
+- RouterOS commands: **Settings → Setup & check / 系统设置 → 接入与自检**. Full guide: https://github.com/suyijun8182/ros-dpi
+- Then choose the scenario under **People → Settings**, assign devices to people, and set up notifications under **Audit → Notifications**. 之后在 家庭成员 / 人员 → 分析设置 选择场景，把设备分给成员，在 审计日志 → 通知渠道 配置推送。
 
 ## Ports
 
