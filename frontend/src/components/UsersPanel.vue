@@ -30,7 +30,7 @@
       <form v-if="form" class="uf" @submit.prevent="save">
         <template v-if="!form.id">
           <label for="uf-name">{{ t('login.username') }}</label>
-          <input id="uf-name" class="input" v-model.trim="form.username" required maxlength="64" autocomplete="off" pattern="[A-Za-z0-9_.@-]+" :title="t('users.nameRule')" />
+          <input id="uf-name" class="input" v-model.trim="form.username" required maxlength="64" autocomplete="off" pattern="[A-Za-z0-9_.@\-]+" :title="t('users.nameRule')" />
         </template>
         <label>{{ t('users.role') }}</label>
         <div class="roles">

@@ -193,7 +193,7 @@ export default {
     list: 'Users', add: 'Add user', edit: 'Edit user {name}', role: 'Role', created: 'Created', lastLogin: 'Last sign-in', me: 'you',
     roles: { admin: 'Admin', user: 'User' },
     roleHint: { admin: 'Can change all settings and rules, and manage users', user: 'View only; cannot change settings or rules' },
-    resetPw: 'Reset password', resetPwHint: 'Leave blank to keep it', nameRule: 'Letters, digits and _ . @ -',
+    resetPw: 'Reset password', resetPwHint: 'Leave blank to keep it', nameRule: "Letters, digits and _ . {'@'} -",
     delTitle: 'Delete user', delText: 'Delete user {name}? The account can no longer sign in.',
   },
   settings: {

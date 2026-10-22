@@ -193,7 +193,7 @@ export default {
     list: '用户列表', add: '新建用户', edit: '编辑用户 {name}', role: '角色', created: '创建时间', lastLogin: '最近登录', me: '当前账号',
     roles: { admin: '管理员', user: '普通用户' },
     roleHint: { admin: '可以修改所有设置、规则，管理用户', user: '只能查看，不能修改设置和规则' },
-    resetPw: '重置密码', resetPwHint: '留空表示不修改', nameRule: '字母、数字和 _ . @ -',
+    resetPw: '重置密码', resetPwHint: '留空表示不修改', nameRule: "字母、数字和 _ . {'@'} -",
     delTitle: '删除用户', delText: '确定删除用户 {name}？删除后该账号立即无法登录。',
   },
   settings: {
