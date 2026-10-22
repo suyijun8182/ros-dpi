@@ -29,20 +29,23 @@
       <div class="tbl-wrap" v-if="live">
         <table class="tbl">
           <thead><tr>
-            <th>{{ t('flow.host') }}</th><th>{{ t('flow.remote') }}</th><th>{{ t('flow.port') }}</th><th>{{ t('apps.app') }}</th>
-            <th class="r">{{ t('common.rate') }}</th><th class="r">{{ t('flow.bytes') }}</th><th class="r">{{ t('flow.duration') }}</th><th>{{ t('flow.source') }}</th>
+            <th>{{ t('flow.host') }}</th><th>{{ t('flow.remote') }}</th><th class="m-hide">{{ t('flow.port') }}</th><th class="m-hide">{{ t('apps.app') }}</th>
+            <th class="r">{{ t('common.rate') }}</th><th class="r m-hide">{{ t('flow.bytes') }}</th><th class="r m-hide">{{ t('flow.duration') }}</th><th class="m-hide">{{ t('flow.source') }}</th>
           </tr></thead>
           <tbody>
             <tr v-for="s in live.sessions" :key="s.host + s.remote + s.port + s.proto + s.host_port">
               <td><router-link :to="`/hosts/${enc(s.host)}`" class="hl"><span class="dot" :class="{ on: s.online }" />{{ s.host_name }}</router-link>
                 <div class="faint addr small">{{ s.host_ip }}<span v-if="s.host_port">:{{ s.host_port }}</span></div></td>
-              <td class="rm"><div class="dn" :title="s.domain || s.remote">{{ s.domain || s.remote }}</div><div class="faint addr small" v-if="s.domain">{{ s.remote }}</div></td>
-              <td class="num"><span class="pill grey">{{ proto(s.proto) }}</span> {{ s.port || '' }}</td>
-              <td><router-link :to="`/apps/${enc(s.app.id)}`" class="tag"><span class="chip" :style="{ background: catColor(s.app.category) }" />{{ appName(s.app) }}</router-link></td>
+              <td class="rm"><div class="dn" :title="s.domain || s.remote">{{ s.domain || s.remote }}</div>
+                <div class="faint addr small" v-if="s.domain && s.remote !== s.domain">{{ s.remote }}</div>
+                <div class="faint small dn" v-else-if="s.asn">{{ s.asn.name }} · {{ s.asn.country }}</div>
+                <div class="m-only faint small">{{ appName(s.app) }} · {{ proto(s.proto) }} {{ s.port || '' }}</div></td>
+              <td class="num m-hide"><span class="pill grey">{{ proto(s.proto) }}</span> {{ s.port || '' }}</td>
+              <td class="m-hide"><router-link :to="`/apps/${enc(s.app.id)}`" class="tag"><span class="chip" :style="{ background: catColor(s.app.category) }" />{{ appName(s.app) }}</router-link></td>
               <td class="r num small"><span class="up">↑{{ rate(s.rate_up) }}</span><br /><span class="down">↓{{ rate(s.rate_down) }}</span></td>
-              <td class="r num small"><span class="up">↑{{ bytes(s.up) }}</span><br /><span class="down">↓{{ bytes(s.down) }}</span></td>
-              <td class="r num muted">{{ duration(s.last - s.start, locale === 'zh') }}</td>
-              <td><span class="pill" :class="SRC_CLASS[s.source]" :title="t('settings.matchKind.' + s.source)">{{ t('flow.src.' + s.source) }}</span></td>
+              <td class="r num small m-hide"><span class="up">↑{{ bytes(s.up) }}</span><br /><span class="down">↓{{ bytes(s.down) }}</span></td>
+              <td class="r num muted m-hide">{{ duration(s.last - s.start, locale === 'zh') }}</td>
+              <td class="m-hide"><span class="pill" :class="SRC_CLASS[s.source]" :title="t('settings.matchKind.' + s.source)">{{ t('flow.src.' + s.source) }}</span></td>
             </tr>
           </tbody>
         </table>
@@ -69,22 +72,24 @@
       <div class="tbl-wrap" v-if="dest">
         <table class="tbl">
           <thead><tr>
-            <th class="rk">#</th><th>{{ t('flow.dest') }}</th><th>{{ t('flow.mainApp') }}</th><th class="r">{{ t('flow.bytes') }}</th>
-            <th class="r">{{ t('common.share') }}</th><th class="r">{{ t('common.hosts') }}</th><th />
+            <th class="rk m-hide">#</th><th>{{ t('flow.dest') }}</th><th class="m-hide">{{ t('flow.mainApp') }}</th><th class="r">{{ t('flow.bytes') }}</th>
+            <th class="r m-hide">{{ t('common.share') }}</th><th class="r">{{ t('common.hosts') }}</th><th class="m-hide" />
           </tr></thead>
           <tbody>
             <template v-for="(r, i) in dest.rows" :key="r.dest">
               <tr class="link" @click="toggle(r)">
-                <td class="rk num faint">{{ i + 1 }}</td>
+                <td class="rk num faint m-hide">{{ i + 1 }}</td>
                 <td class="rm"><div class="dn"><span :class="{ addr: r.ip }">{{ r.dest }}</span>
                   <span v-if="merge && r.names > 1" class="faint small"> · {{ t('flow.subdomains', { n: r.names }) }}</span>
-                  <span v-if="r.ip" class="pill grey ipt">IP</span></div></td>
-                <td><span class="tag"><span class="chip" :style="{ background: catColor(r.app.category) }" />{{ appName(r.app) }}</span></td>
+                  <span v-if="r.ip" class="pill grey ipt">IP</span></div>
+                  <div class="faint small dn" v-if="r.asn">AS{{ r.asn.asn }} {{ r.asn.name }} · {{ r.asn.country }}</div>
+                  <div class="m-only faint small">{{ appName(r.app) }}</div></td>
+                <td class="m-hide"><span class="tag"><span class="chip" :style="{ background: catColor(r.app.category) }" />{{ appName(r.app) }}</span></td>
                 <td class="r num"><b>{{ bytes(r.bytes) }}</b></td>
-                <td class="r share"><span class="num muted">{{ pct(r.bytes / (dest.range_total.total || 1)) }}</span>
+                <td class="r share m-hide"><span class="num muted">{{ pct(r.bytes / (dest.range_total.total || 1)) }}</span>
                   <span class="bar"><i :style="{ width: (r.bytes / (dest.rows[0].bytes || 1) * 100) + '%' }" /></span></td>
                 <td class="r num">{{ r.hosts }}</td>
-                <td class="r"><Icon name="chevron" :size="16" class="chev" :class="{ open: open === r.dest }" /></td>
+                <td class="r m-hide"><Icon name="chevron" :size="16" class="chev" :class="{ open: open === r.dest }" /></td>
               </tr>
               <!-- 展开：访问这个目标的终端 -->
               <tr v-if="open === r.dest" class="sub">
@@ -123,7 +128,7 @@ import { appName, bytes, catColor, pct, rate } from '../format.js'
 import { ui } from '../state.js'
 
 const TABS = ['live', 'dest']
-const SRC_CLASS = { conn: 'ok', pair: '', ip: 'grey', none: 'warn' }
+const SRC_CLASS = { conn: 'ok', proxy: 'ok', pair: '', ip: 'grey', none: 'warn' }
 const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()

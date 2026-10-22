@@ -11,6 +11,8 @@ os.environ["ADMIN_PASSWORD"] = ""
 os.environ["TZ"] = "Asia/Shanghai"
 os.environ["IPFIX_PORT"] = "0"
 os.environ["TZSP_PORT"] = "0"
+os.environ["ASN_DB"] = "false"  # 测试不下载 ASN 库
+os.environ["ROSDPI_NO_JOBS"] = "1"  # 不启动后台定时任务（每分钟落库会打乱测试里的计数）
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

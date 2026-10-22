@@ -73,7 +73,7 @@
       <!-- 第二行：全网状态 -->
       <div class="panel mt">
         <div class="panel-h"><h2>{{ t('overview.status') }}</h2><span class="faint small">{{ t('overview.statusHint') }}</span></div>
-        <div class="panel-b tiles">
+        <div class="panel-b tiles" :style="{ '--cols': Math.min(wanTiles.length + 3, 4) }">
           <div v-for="w in wanTiles" :key="w.name" class="tile">
             <div class="t-h"><Icon name="wan" /><b>{{ w.comment || w.name }}</b>
               <span class="pill" :class="w.running ? 'ok' : 'bad'">{{ w.running ? t('overview.wanUp') : t('overview.wanDown') }}</span></div>
@@ -94,7 +94,7 @@
           <div class="tile">
             <div class="t-h"><Icon name="apps" /><b>{{ t('overview.identified') }}</b></div>
             <div class="t-v num accent">{{ pct(d.identified_ratio, 0) }}</div>
-            <div class="t-s"><span class="faint">{{ t('overview.appsN', { n: d.apps_count }) }}</span></div>
+            <div class="t-s"><span class="faint">{{ t('overview.appsN', { n: d.apps_count, lib: (d.apps_library || 0).toLocaleString() }) }}</span></div>
           </div>
         </div>
       </div>
@@ -185,6 +185,7 @@ function healthText(it) {
   if (p.used != null && p.size == null) p.used = pct(p.used, 0)
   if (p.down) p.down = p.down.join('、')
   if (Array.isArray(p.wrong)) p.wrong = p.wrong.join('、')
+  if (it.code === 'proxy' && p.share != null) p.share = pct(p.share, 0)
   return t(`health.${it.code}.${it.ok ? 'ok' : 'bad'}`, p)
 }
 
@@ -227,7 +228,10 @@ const hostItems = computed(() => d.value.top_hosts.map(h => ({
 .pool b { font-size: 38px; font-weight: 600; line-height: 1.1; }
 .pool-sub { margin-top: 2px; }
 
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+/* 小卡按实际个数排列，不出现落单的一张：桌面最多 4 列，平板 2 列，手机 1 列 */
+.tiles { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1180px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .tiles { grid-template-columns: 1fr; } }
 .tile { background: var(--sunk); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
 .t-h { display: flex; align-items: center; gap: 8px; font-size: 14px; min-width: 0; }
 .t-h :deep(svg) { color: var(--brand-ink); flex: none; }

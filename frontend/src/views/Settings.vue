@@ -1,11 +1,17 @@
 <template>
   <div>
-    <div class="page-h"><h1>{{ t('settings.title') }}</h1><span class="sp" /><span class="faint" v-if="sys">{{ t('settings.version') }} {{ sys.version }}</span></div>
+    <div class="page-h">
+      <div class="seg tabs" role="tablist">
+        <button v-for="k in TABS" :key="k" role="tab" :aria-selected="tab === k" :class="{ on: tab === k }" @click="setTab(k)">
+          {{ t('settings.tab.' + k) }}<span v-if="badge[k]" class="dot bad tdot" /></button>
+      </div>
+      <span class="sp" /><span class="faint small" v-if="sys">{{ t('settings.version') }} {{ sys.version }}</span>
+    </div>
 
-    <div class="panel" v-if="sys">
+    <div class="panel" v-if="sys && tab === 'status'">
       <div class="panel-h">{{ t('settings.status') }}<span class="sp" /><button class="btn sm" @click="loadSys">{{ t('common.refresh') }}</button></div>
       <div class="panel-b grid g3">
-        <div class="st">
+        <div class="stc">
           <div class="st-h"><span class="dot" :class="sys.collector.flow_ok ? 'on' : 'warn'" />{{ t('settings.collector') }}
             <span class="faint">udp/{{ s?.ports.ipfix }}</span></div>
           <div class="kv"><span>{{ t('settings.flows') }}</span><b class="num">{{ sys.collector.flows.toLocaleString() }}</b></div>
@@ -13,7 +19,7 @@
           <div class="kv"><span>{{ t('settings.exporters') }}</span><span class="num">{{ Object.keys(sys.collector.exporters).join(', ') || '-' }}</span></div>
           <div class="kv"><span>{{ t('settings.last') }}</span><span>{{ ago(sys.collector.last_flow) }}</span></div>
         </div>
-        <div class="st">
+        <div class="stc">
           <div class="st-h"><span class="dot" :class="sys.dns.ok || sys.sni.ok ? 'on' : 'warn'" />{{ t('settings.dns') }}
             <span class="faint">udp/{{ s?.ports.tzsp }}</span></div>
           <div class="kv"><span>{{ t('settings.dnsAnswers') }}</span><b class="num">{{ sys.dns.answers.toLocaleString() }}</b></div>
@@ -25,7 +31,7 @@
           <div class="kv"><span>{{ t('settings.last') }} SNI</span><span>{{ ago(sys.sni.last) }}</span></div>
           <p class="faint small what">{{ t('settings.dnsWhat') }}</p>
         </div>
-        <div class="st">
+        <div class="stc">
           <div class="st-h"><span class="dot" :class="!sys.router.enabled ? '' : sys.router.ok ? 'on' : 'bad'" />{{ t('settings.ros') }}
             <button v-if="sys.router.enabled" class="btn sm" @click="testRos">{{ t('settings.test') }}</button></div>
           <template v-if="sys.router.enabled">
@@ -46,7 +52,7 @@
     </div>
 
     <!-- 接入自检：读取 RouterOS 的 sniff-tzsp 规则（只读），检查目标端口 / 地址、是否停用、命中数 -->
-    <div class="panel mt" v-if="sys && sys.ros_check" id="check">
+    <div class="panel" v-if="sys && sys.ros_check && tab === 'access'" id="check">
       <div class="panel-h"><h2>{{ t('check.title') }}</h2><span class="faint small">{{ t('check.hint') }}</span></div>
       <div class="panel-b">
         <div v-if="!sys.ros_check.checked" class="muted small">{{ t('check.needRos') }}</div>
@@ -80,7 +86,63 @@
       </div>
     </div>
 
-    <div class="grid g2 mt" v-if="s">
+    <!-- 外部数据源：旁路代理 sing-box、内网 DNS MosDNS（可选，地址每个人不同，由用户填写） -->
+    <div class="panel" v-if="s && tab === 'sources'" id="sources">
+      <div class="panel-h"><h2>{{ t('sources.title') }}</h2><span class="faint small">{{ t('sources.hint') }}</span></div>
+      <div class="panel-b src">
+        <form class="src-form" @submit.prevent="saveSources">
+          <div class="src-box">
+            <div class="sec">sing-box / Clash API<span class="sp" />
+              <span v-if="sys && sys.singbox.enabled" class="pill" :class="sys.singbox.ok ? 'ok' : 'bad'">{{ sys.singbox.ok ? t('sources.connected') : t('sources.failed') }}</span>
+              <span v-else class="pill grey">{{ t('sources.off') }}</span></div>
+            <p class="faint small">{{ t('sources.sbWhy') }}</p>
+            <label for="sb-url">{{ t('sources.sbUrl') }}</label>
+            <input id="sb-url" class="input addr" v-model.trim="src.singbox_url" placeholder="http://192.168.1.2:9090" autocomplete="off" />
+            <label for="sb-secret">{{ t('sources.sbSecret') }}</label>
+            <div class="row">
+              <input id="sb-secret" class="input" type="password" v-model="src.singbox_secret" autocomplete="new-password"
+                     :placeholder="s.integrations.has_secret ? t('sources.secretKept') : t('sources.secretNone')" />
+              <button v-if="s.integrations.has_secret" type="button" class="btn sm" @click="clearSecret">{{ t('sources.clearSecret') }}</button>
+            </div>
+            <label for="sb-ips">{{ t('sources.proxyIps') }}</label>
+            <input id="sb-ips" class="input addr" v-model.trim="src.proxy_ips" :placeholder="s.integrations.proxy_auto ? t('sources.proxyAuto', { ip: s.integrations.proxy_auto }) : '192.168.1.2'" />
+            <div class="faint small">{{ t('sources.proxyIpsHint') }}</div>
+            <div v-if="sys && sys.singbox.enabled" class="st small">
+              <span>{{ t('settings.last') }} {{ ago(sys.singbox.last) }}</span>
+              <span v-if="sys.singbox.version">{{ sys.singbox.version }}</span>
+              <span>{{ t('sources.conns', { n: sys.singbox.conns }) }}</span>
+              <span>{{ t('sources.counted', { b: bytes(sys.singbox.bytes) }) }}</span>
+              <span class="err" v-if="sys.singbox.error">{{ sys.singbox.error }}</span>
+            </div>
+          </div>
+          <div class="src-box">
+            <div class="sec">MosDNS<span class="sp" />
+              <span v-if="sys && sys.mosdns.enabled" class="pill" :class="sys.mosdns.ok ? 'ok' : 'bad'">{{ sys.mosdns.ok ? t('sources.connected') : t('sources.failed') }}</span>
+              <span v-else class="pill grey">{{ t('sources.off') }}</span></div>
+            <p class="faint small">{{ t('sources.mdWhy') }}</p>
+            <label for="md-url">{{ t('sources.mdUrl') }}</label>
+            <input id="md-url" class="input addr" v-model.trim="src.mosdns_url" placeholder="http://192.168.1.3:9099" autocomplete="off" />
+            <div v-if="sys && sys.mosdns.enabled" class="st small">
+              <span>{{ t('settings.last') }} {{ ago(sys.mosdns.last) }}</span>
+              <span>{{ t('sources.answers', { n: sys.mosdns.answers.toLocaleString() }) }}</span>
+              <span class="err" v-if="sys.mosdns.error">{{ sys.mosdns.error }}</span>
+            </div>
+            <div class="sec asn">{{ t('sources.asn') }}<span class="sp" />
+              <span class="pill" :class="sys && sys.asn.rows ? 'ok' : 'grey'">{{ sys && sys.asn.rows ? t('sources.asnOn') : t('sources.off') }}</span></div>
+            <p class="faint small">{{ t('sources.asnWhy') }}
+              <span v-if="sys && sys.asn.rows"> {{ t('sources.asnRows', { n: sys.asn.rows.toLocaleString(), d: datetime(sys.asn.updated) }) }}</span>
+              <span v-else-if="sys && sys.asn.error" class="err"> {{ sys.asn.error }}</span></p>
+          </div>
+          <div class="acts">
+            <span class="err" v-if="srcErr">{{ srcErr }}</span><span class="sp" />
+            <button type="button" class="btn" @click="testSources" :disabled="testing">{{ testing ? t('setup.testing') : t('settings.test') }}</button>
+            <button class="btn primary">{{ srcSaved ? t('common.saved') : t('common.save') }}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="grid g2 sys" v-if="s && tab === 'system'">
       <div class="panel">
         <div class="panel-h">{{ t('settings.network') }}</div>
         <div class="panel-b form">
@@ -115,7 +177,7 @@
       </div>
     </div>
 
-    <div class="panel mt" id="guide">
+    <div class="panel mt" id="guide" v-if="tab === 'access'">
       <div class="panel-h">{{ t('settings.guide') }}<span class="sp" /><button class="btn sm" @click="copy">{{ copied ? t('settings.copied') : t('settings.copy') }}</button></div>
       <div class="panel-b">
         <p class="muted guide">{{ t('settings.guideIntro', { ip: '<HOST_IP>' }) }}</p>
@@ -130,10 +192,13 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import http, { auth } from '../api.js'
-import { ago, pct } from '../format.js'
+import { ago, bytes, datetime, pct } from '../format.js'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const s = ref(null)
 const sys = ref(null)
 const lan = ref('')
@@ -146,15 +211,64 @@ const pwOk = ref(false)
 const copied = ref(false)
 const hostIp = ref(location.hostname)
 
-async function loadSys() { sys.value = await http.get('/system') }
-const matchParts = computed(() => (sys.value ? ['conn', 'pair', 'ip', 'none'].map(k => ({ k, v: sys.value.match[k] || 0 })) : []))
+// 子标签写在地址栏 ?tab=；旧链接 /settings#guide 打开“接入与自检”
+const TABS = ['status', 'access', 'sources', 'system']
+const tab = computed(() => (TABS.includes(route.query.tab) ? route.query.tab : route.hash === '#guide' || route.hash === '#check' ? 'access' : route.hash === '#sources' ? 'sources' : 'status'))
+const setTab = k => router.replace({ query: k === 'status' ? {} : { tab: k } })
+// 有问题的标签页上标一个红点
+const badge = computed(() => ({
+  access: !!(sys.value && sys.value.ros_check && sys.value.ros_check.checked && sys.value.ros_check.rules.some(r => r.problems.length)),
+  sources: !!(sys.value && ((sys.value.singbox.enabled && !sys.value.singbox.ok) || (sys.value.mosdns.enabled && !sys.value.mosdns.ok))),
+}))
+
+async function loadSys() {
+  sys.value = await http.get('/system')
+  // 接入向导的 HOST_IP：优先用 RouterOS 上已经在正常工作的 DNS 镜像规则的目标地址
+  const tgt = sys.value.ros_check && sys.value.ros_check.target
+  if (tgt && hostIp.value === location.hostname) hostIp.value = tgt
+}
+const matchParts = computed(() => (sys.value ? ['proxy', 'conn', 'pair', 'ip', 'none'].map(k => ({ k, v: sys.value.match[k] || 0 })) : []))
 const matchTotal = computed(() => matchParts.value.reduce((n, m) => n + m.v, 0))
 onMounted(async () => {
   s.value = await http.get('/settings')
   lan.value = s.value.lan_cidrs.split(',').join('\n')
   wan.value = s.value.wan_interface
+  fillSources()
   loadSys()
 })
+
+// ---------- 外部数据源 ----------
+const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '' })
+const srcErr = ref('')
+const srcSaved = ref(false)
+const testing = ref(false)
+function fillSources() {
+  const i = s.value.integrations
+  Object.assign(src, { singbox_url: i.singbox_url, singbox_secret: '', proxy_ips: i.proxy_ips, mosdns_url: i.mosdns_url })
+}
+async function saveSources() {
+  srcErr.value = ''
+  try {
+    // 密钥留空表示不修改；要清除用“清除密钥”按钮
+    const body = { singbox_url: src.singbox_url, proxy_ips: src.proxy_ips, mosdns_url: src.mosdns_url }
+    if (src.singbox_secret) body.singbox_secret = src.singbox_secret
+    s.value = await http.put('/settings', body)
+    fillSources()
+    srcSaved.value = true
+    setTimeout(() => (srcSaved.value = false), 1500)
+    await testSources()
+  } catch (e) { srcErr.value = e.message }
+}
+async function clearSecret() {
+  try { s.value = await http.put('/settings', { singbox_secret: '' }); fillSources() } catch (e) { srcErr.value = e.message }
+}
+async function testSources() {
+  testing.value = true
+  try {
+    const r = await http.post('/integrations/test')
+    if (sys.value) Object.assign(sys.value, r)
+  } catch (e) { srcErr.value = e.message } finally { testing.value = false }
+}
 
 async function save() {
   saveErr.value = ''
@@ -249,12 +363,24 @@ async function copy() {
 <style scoped>
 .mt { margin-top: 14px; }
 .small { font-size: 12.5px; }
-.st { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.stc { display: flex; flex-direction: column; gap: 6px; font-size: 13px; min-width: 0; }
+.tdot { width: 6px; height: 6px; margin-left: 4px; vertical-align: top; }
+.sys { align-items: start; }
 .st-h { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 4px; }
 .kv { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); }
 .kv > :last-child { color: var(--text); text-align: right; overflow: hidden; text-overflow: ellipsis; }
 .srv { display: flex; flex-direction: column; align-items: flex-end; }
 .what { margin: 6px 0 0; line-height: 1.5; }
+.src-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 28px; }
+.src-box { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.src-box p { margin: 0; line-height: 1.55; }
+.src-box label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.src-box .row { display: flex; gap: 8px; }
+.src-box .st { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); margin-top: 4px; }
+.src-box .asn { margin-top: 12px; }
+.acts { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; }
+.acts .sp { flex: 1; }
+@media (max-width: 860px) { .src-form { grid-template-columns: 1fr; } }
 .ck .pill { margin-right: 4px; }
 .fixes { margin-top: 14px; display: grid; gap: 10px; }
 .iss { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13.5px; }
@@ -267,6 +393,7 @@ async function copy() {
 .mlg b { color: var(--ink); font-weight: 600; }
 .sw { width: 10px; height: 10px; border-radius: 3px; }
 /* 由准到粗：深 → 浅，"无域名"用中性灰 */
+.proxy { background: var(--brand); }
 .conn { background: var(--g-social); }
 .pair { background: color-mix(in srgb, var(--g-social) 62%, var(--panel)); }
 .ip { background: color-mix(in srgb, var(--g-social) 32%, var(--panel)); }

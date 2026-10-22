@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app import health, hostnames, stats, timeutil
+from app.asn import asndb
 from app.database import get_db
 from app.engine import engine
 from app.models import Host, HostName
@@ -39,6 +40,7 @@ def overview(range: str = Query("today", pattern=RANGES), db: Session = Depends(
         "hosts_total": db.query(Host).count(),
         "identified_ratio": stats.identified_ratio(apps),
         "apps_count": len(apps),
+        "apps_library": len(engine.classifier.apps),
         "top_apps": apps[:10],
         "categories": cats,
         "groups": stats.top_groups(cats),
@@ -251,7 +253,7 @@ def sessions(q: str = "", host: str | None = None, limit: int = Query(300, ge=10
         if s and not any(s in str(v).lower() for v in (m["name"], r["host_ip"], r["remote"], r["domain"], app["name"],
                                                          app["name_en"], r["port"]) if v):
             continue
-        out.append({**r, "host_name": m["name"], "online": m["online"], "app": app})
+        out.append({**r, "host_name": m["name"], "online": m["online"], "app": app, "asn": _asn(r["remote"])})
     out.sort(key=lambda r: (r["rate_up"] + r["rate_down"], r["up"] + r["down"]), reverse=True)
     return {"count": len(out), "rate_up": sum(r["rate_up"] for r in out), "rate_down": sum(r["rate_down"] for r in out),
             "sessions": out[:limit]}
@@ -262,7 +264,16 @@ def destinations(range: str = Query("today", pattern=RANGES), q: str = "", merge
                  kind: str = Query("all", pattern="^(all|domain|ip)$"), db: Session = Depends(get_db)):
     """访问目标排行（远端域名 / IP）"""
     start, end = _bounds(range)
-    return {"range_total": stats.total(db, start, end), "rows": stats.destinations(db, start, end, q, merge, kind)}
+    rows = stats.destinations(db, start, end, q, merge, kind)
+    for r in rows:
+        r["asn"] = _asn(r["dest"]) if r["ip"] else None
+    return {"range_total": stats.total(db, start, end), "rows": rows}
+
+
+def _asn(ip: str):
+    """远端 IP 的归属（ASN、国家、名称），没有 ASN 库或查不到时为 None"""
+    hit = asndb.lookup(ip) if ip else None
+    return {"asn": hit[0], "country": hit[1], "name": hit[2]} if hit else None
 
 
 @router.get("/destinations/hosts")

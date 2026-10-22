@@ -1,7 +1,7 @@
 """把一条流（远端 IP + 端口 + 域名）识别为应用。
 
 分三级：应用大类（group）→ 应用小类（category）→ 应用（app），与 Panabit 的应用分类方式一致。
-优先级：自定义规则 > 域名（先查询名再 CNAME；精确匹配 > 最长后缀）> CIDR > 端口 > IP 协议号 > other。
+优先级：自定义规则 > 域名（先查询名再 CNAME；精确匹配 > 最长后缀）> CIDR > 专用端口 > IP 所属 ASN > 通用端口（HTTPS 等）> IP 协议号 > other。
 内置规则两份：手工维护的 apps.yaml，以及从 v2fly/domain-list-community 生成的 apps_v2fly.yaml（同一域名以前者为准）。
 """
 import ipaddress
@@ -15,6 +15,16 @@ _Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)  # 有 libyaml 时快 10
 RULES_FILE = os.path.join(os.path.dirname(__file__), "apps.yaml")
 # 由 scripts/import_v2fly.py 从 v2fly/domain-list-community 生成；优先级低于手工维护的 apps.yaml
 V2FLY_FILE = os.path.join(os.path.dirname(__file__), "apps_v2fly.yaml")
+
+
+def active_v2fly_file() -> str:
+    """数据目录里自动更新的 v2fly 规则比镜像自带的新时用它，否则用镜像自带的"""
+    from app.classify.v2fly import read_source
+    data = os.path.join(os.environ.get("DATA_DIR", "data"), "apps_v2fly.yaml")
+    if not os.path.exists(data):
+        return V2FLY_FILE
+    a, b = read_source(data) or {}, read_source(V2FLY_FILE) or {}
+    return data if a.get("date", "") > b.get("date", "") else V2FLY_FILE
 UNKNOWN_APP = "other"
 GENERIC_APPS = {"https", "quic", "http", UNKNOWN_APP}  # 这些应用下的域名算"未识别"
 # 只能说明协议或 CDN 厂商、说明不了具体应用的分类，不计入"应用识别率"
@@ -38,7 +48,9 @@ def _parse_port(spec: str) -> tuple[int, int, int]:
 
 
 class Classifier:
-    def __init__(self, rules_file: str = RULES_FILE, extra_file: str | None = V2FLY_FILE):
+    def __init__(self, rules_file: str = RULES_FILE, extra_file: str | None = ""):
+        if extra_file == "":
+            extra_file = active_v2fly_file()
         with open(rules_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         self.groups: dict[str, dict] = data["groups"]
@@ -59,7 +71,10 @@ class Classifier:
         self.nets: list[tuple[ipaddress._BaseNetwork, str]] = []
         self.ports: list[tuple[int, int, int, str]] = []
         self.protos: dict[int, str] = {}
+        self.asn_apps: dict[int, str] = {}   # ASN -> 应用（IP 段归属某家公司时）
         for a in self._base_apps:
+            for n in a.get("asns", []):
+                self.asn_apps.setdefault(int(n), a["id"])
             self.apps[a["id"]] = App(a["id"], a["name"], a.get("name_en", a["name"]), a["category"])
             self._add(a["id"], a.get("domains", []), a.get("cidrs", []), a.get("ports", []), first_wins=True)
             for p in a.get("protos", []):
@@ -145,13 +160,22 @@ class Classifier:
                         break
             except ValueError:
                 pass
+        generic = None
         if app is None:
             for p, lo, hi, aid in self.ports:
                 if p == proto and lo <= port <= hi:
-                    app = aid
+                    if aid in GENERIC_APPS:   # HTTPS / QUIC / HTTP 这类通用端口留到 ASN 之后
+                        generic = aid
+                    else:
+                        app = aid
                     break
+        if app is None and self.asn_apps:
+            from app.asn import asndb
+            hit = asndb.lookup(remote_ip)
+            if hit:
+                app = self.asn_apps.get(hit[0])
         if app is None:
-            app = self.protos.get(proto)
+            app = generic or self.protos.get(proto)
         app = app or UNKNOWN_APP
         if len(self._cache) > 200_000:
             self._cache.clear()

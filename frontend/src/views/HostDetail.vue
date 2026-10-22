@@ -47,18 +47,18 @@
                       :gran="gran" height="254px" />
       </div>
 
-      <div class="grid g2 mt">
+      <div class="grid g2-wide mt">
         <div class="panel">
           <div class="panel-h">{{ t('nav.apps') }}<button v-if="openGroup" class="btn sm" @click="openGroup = ''">{{ t('apps.showAll') }}</button></div>
           <div class="tbl-wrap">
             <table class="tbl">
-              <thead><tr><th>{{ t('apps.app') }}</th><th>{{ t('common.category') }}</th><th class="r">{{ t('common.down') }}</th><th class="r">{{ t('common.up') }}</th><th class="r">{{ t('common.share') }}</th></tr></thead>
+              <thead><tr><th>{{ t('apps.app') }}</th><th class="m-hide">{{ t('common.category') }}</th><th class="r">{{ t('common.down') }}</th><th class="r m-hide">{{ t('common.up') }}</th><th class="r">{{ t('common.share') }}</th></tr></thead>
               <tbody>
                 <tr v-for="a in appsShown" :key="a.id" class="link" @click="$router.push(`/apps/${enc(a.id)}`)">
                   <td>{{ appName(a) }}</td>
-                  <td><span class="tag"><span class="chip" :style="{ background: catColor(a.category) }" />{{ catName(a) }}</span></td>
+                  <td class="m-hide"><span class="tag"><span class="chip" :style="{ background: catColor(a.category) }" />{{ catName(a) }}</span></td>
                   <td class="r num">{{ bytes(a.down) }}</td>
-                  <td class="r num">{{ bytes(a.up) }}</td>
+                  <td class="r num m-hide">{{ bytes(a.up) }}</td>
                   <td class="r num muted">{{ pct(a.total / (d.range_total.total || 1)) }}</td>
                 </tr>
               </tbody>
@@ -70,11 +70,11 @@
           <div class="panel-h">{{ t('hosts.domains') }}</div>
           <div class="tbl-wrap dom">
             <table class="tbl">
-              <thead><tr><th>{{ t('hosts.domain') }}</th><th>{{ t('apps.app') }}</th><th class="r">{{ t('common.total') }}</th></tr></thead>
+              <thead><tr><th>{{ t('hosts.domain') }}</th><th class="m-hide">{{ t('apps.app') }}</th><th class="r">{{ t('common.total') }}</th></tr></thead>
               <tbody>
                 <tr v-for="x in d.domains" :key="x.domain">
                   <td class="dn" :title="x.domain">{{ x.domain }}</td>
-                  <td><span class="tag"><span class="chip" :style="{ background: catColor(x.app.category) }" />{{ appName(x.app) }}</span></td>
+                  <td class="m-hide"><span class="tag"><span class="chip" :style="{ background: catColor(x.app.category) }" />{{ appName(x.app) }}</span></td>
                   <td class="r num">{{ bytes(x.bytes) }}</td>
                 </tr>
               </tbody>

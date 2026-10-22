@@ -165,6 +165,19 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 
 更多说明（SNI 的开销、FastTrack、双 NAT、IPv6、排错）见 [docs/RouterOS配置.md](docs/RouterOS配置.md)。
 
+### 旁路代理与内网 DNS（可选）
+
+家里用旁路代理（sing-box 做旁路由）或内网 DNS（MosDNS）时，路由器看到的多是代理的加密隧道，识别率会很低。在 **系统设置 → 外部数据源** 填写：
+
+- **sing-box Clash API**（`experimental.clash_api.external_controller` 和 `secret`）：按“哪台终端、哪个域名、多少字节”统计走代理的流量，代理自身的隧道流量不再重复计算。
+- **MosDNS 审计 API**：知道每台终端查了哪个域名、解析出哪些 IP。
+
+地址每个人都不一样，都不填就不启用。
+
+### 识别库与自动更新
+
+识别靠三份库：内置规则库（手工维护，随版本更新）、[v2fly/domain-list-community](https://github.com/v2fly/domain-list-community)（每天自动检查更新，自检通过后热加载）、[iptoasn.com](https://iptoasn.com) 的 IP 归属库（每天自动下载）。三者的版本和状态在 **识别规则 → 识别库** 查看，也可以关闭自动更新。自动更新需要容器能访问外网；文件保存在 `./data` 卷里。
+
 ### 环境变量
 
 | 变量 | 默认值 | 说明 |
@@ -175,6 +188,10 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 | `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | 空 | RouterOS REST 地址与只读账号，如 `https://192.168.88.1` |
 | `ROS_VERIFY_TLS` | `false` | 是否校验 ROS 证书 |
 | `ROS_POLL_SECONDS` / `ROS_RATE_SECONDS` | 30 / 5 | RouterOS 完整轮询间隔 / WAN 口速率采样间隔（实时流量图） |
+| `SINGBOX_URL` / `SINGBOX_SECRET` / `PROXY_IPS` | 空 | 旁路代理 sing-box 的 Clash API（也可在网页填写，网页优先） |
+| `MOSDNS_URL` | 空 | MosDNS 审计 API 地址（也可在网页填写） |
+| `FAKEIP_CIDRS` | `198.18.0.0/15,fc00::/18` | FakeIP 地址段 |
+| `ASN_DB` | `true` | 自动下载 IP→ASN 库；没有外网时设为 `false` |
 | `WAN_INTERFACE` | 自动 | WAN 接口名，默认按默认路由识别 |
 | `TZ` | `Asia/Shanghai` | 统计用时区，每周从周一开始 |
 | `HTTP_PORT` / `IPFIX_PORT` / `TZSP_PORT` | 8080 / 2055 / 37008 | 端口 |
@@ -215,6 +232,8 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
 - Chinese and English UI, light and dark themes, works on phones.
 
 **How it works.** RouterOS exports IPFIX (`/ip traffic-flow`) for byte counts, and mirrors DNS answers plus the first packets of each HTTPS/QUIC connection via `sniff-tzsp`. The TLS / QUIC handshake carries the target domain (SNI) per connection; DNS answers map remote IPs back to the domain the client looked up. A rule library maps domains to apps. An optional read-only REST user provides hostnames, IP-to-MAC, WAN rate and LAN prefixes. Data is aggregated per minute, hour and day into MySQL.
+
+**Side-router proxy and LAN DNS (optional).** If you run sing-box as a side router or MosDNS as LAN DNS, fill in their Clash API / audit API under Settings → External sources: proxied traffic is then counted per device and domain, and per-device DNS answers are used for identification. **Library updates.** v2fly rules are checked daily and hot-reloaded after a self-test; an IP→ASN database from iptoasn.com (public domain) identifies domain-less traffic by owner.
 
 **Limitations.** With DNS sniffing alone, clients using DoH/DoT show up as generic HTTPS/QUIC; SNI covers them. Sites using ECH only expose their outer public name. A LAN DNS server (AdGuard Home, Pi-hole…) works fine as long as its upstream is plain DNS on udp/53: its upstream answers pass through the router and are sniffed by the `forward` rule.
 

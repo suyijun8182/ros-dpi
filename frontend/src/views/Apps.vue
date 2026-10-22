@@ -29,25 +29,25 @@
         <div class="tbl-wrap">
           <table class="tbl">
             <thead><tr>
-              <th class="rk">#</th><th>{{ t('apps.app') }}</th><th>{{ t('common.category') }}</th>
-              <th class="r">{{ t('common.down') }}</th><th class="r">{{ t('common.up') }}</th><th class="r">{{ t('common.total') }}</th>
-              <th class="r">{{ t('common.share') }}</th><th class="r">{{ t('apps.live') }}</th><th class="r">{{ t('apps.usedBy') }}</th><th class="r">{{ t('common.flows') }}</th>
+              <th class="rk m-hide">#</th><th>{{ t('apps.app') }}</th><th class="m-hide">{{ t('common.category') }}</th>
+              <th class="r m-hide">{{ t('common.down') }}</th><th class="r m-hide">{{ t('common.up') }}</th><th class="r">{{ t('common.total') }}</th>
+              <th class="r m-hide">{{ t('common.share') }}</th><th class="r">{{ t('apps.live') }}</th><th class="r m-hide">{{ t('apps.usedBy') }}</th><th class="r m-hide">{{ t('common.flows') }}</th>
             </tr></thead>
             <tbody>
               <tr v-for="(a, i) in shown" :key="a.id" class="link" @click="$router.push(`/apps/${enc(a.id)}`)">
-                <td class="rk num faint">{{ i + 1 }}</td>
-                <td class="nm">{{ appName(a) }}</td>
-                <td><span class="tag"><span class="chip" :style="{ background: catColor(a.category) }" /><span class="faint">{{ groupName(a) }} ·</span> {{ catName(a) }}</span></td>
-                <td class="r num">{{ bytes(a.down) }}</td>
-                <td class="r num">{{ bytes(a.up) }}</td>
+                <td class="rk num faint m-hide">{{ i + 1 }}</td>
+                <td class="nm">{{ appName(a) }}<div class="m-only faint small">{{ catName(a) }} · {{ pct(a.total / (d.range_total.total || 1)) }}</div></td>
+                <td class="m-hide"><span class="tag"><span class="chip" :style="{ background: catColor(a.category) }" /><span class="faint">{{ groupName(a) }} ·</span> {{ catName(a) }}</span></td>
+                <td class="r num m-hide">{{ bytes(a.down) }}</td>
+                <td class="r num m-hide">{{ bytes(a.up) }}</td>
                 <td class="r num"><b>{{ bytes(a.total) }}</b></td>
-                <td class="r share">
+                <td class="r share m-hide">
                   <span class="num muted">{{ pct(a.total / (d.range_total.total || 1)) }}</span>
                   <span class="pair"><i class="d" :style="{ flexGrow: a.down }" /><i class="u" :style="{ flexGrow: a.up }" /></span>
                 </td>
                 <td class="r num small live"><span class="up">↑{{ rate(a.rate_up) }}</span><br /><span class="down">↓{{ rate(a.rate_down) }}</span></td>
-                <td class="r num">{{ a.hosts }}</td>
-                <td class="r num muted">{{ a.flows.toLocaleString() }}</td>
+                <td class="r num m-hide">{{ a.hosts }}</td>
+                <td class="r num muted m-hide">{{ a.flows.toLocaleString() }}</td>
               </tr>
             </tbody>
           </table>

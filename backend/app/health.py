@@ -65,7 +65,18 @@ def compute(db) -> dict:
                            server=worst["server"] if worst else None, used=worst["used"] if worst else 0,
                            size=worst["size"] if worst else 0))
 
-    # 5. 终端在用加密 DNS（DoH）：只开 DNS 嗅探时这些终端的应用认不出来
+    # 5. 旁路代理：某台机器的流量大头是认不出的加密隧道，又没接 Clash API 时，提示接入
+    from app import integrations
+    if total and not integrations.singbox.enabled:
+        rows = db.execute(select(TrafficDay.host, func.sum(TrafficDay.up + TrafficDay.down))
+                          .where(TrafficDay.ts >= start, TrafficDay.ts < end, TrafficDay.app.in_(["other", "proxy_tunnel"]))
+                          .group_by(TrafficDay.host)).all()
+        top = max(rows, key=lambda r: r[1], default=None)
+        share = int(top[1]) / total if top else 0
+        hm = stats.host_meta(db, [top[0]])[top[0]] if top and share >= .3 else None
+        items.append(_item("proxy", 10, share < .3, host=hm["ip"] if hm else None, share=round(share, 3)))
+
+    # 6. 终端在用加密 DNS（DoH）：只开 DNS 嗅探时这些终端的应用认不出来
     n_doh = db.scalar(select(func.count(distinct(TrafficDay.host)))
                       .where(TrafficDay.ts >= start, TrafficDay.ts < end, TrafficDay.app == "doh")) or 0
     items.append(_item("doh", 3, n_doh == 0 or sni_ok, hosts=n_doh))

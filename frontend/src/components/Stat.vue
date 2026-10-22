@@ -1,11 +1,12 @@
 <template>
-  <div class="stat">
+  <!-- 统计卡：白色圆角卡片，标签 + 大数字 + 上下行（与其他卡片同一套样式） -->
+  <div class="stat panel">
     <div class="lbl">{{ label }}</div>
     <div class="val num"><slot>{{ value }}</slot></div>
     <template v-if="up != null || down != null">
       <div class="sub">
-        <span><span class="num down">↓ {{ fmt(down) }}</span></span>
-        <span><span class="num up">↑ {{ fmt(up) }}</span></span>
+        <span class="num down">↓ {{ fmt(down) }}</span>
+        <span class="num up">↑ {{ fmt(up) }}</span>
       </div>
       <span class="pair"><i class="d" :style="{ flexGrow: down || 0 }" /><i class="u" :style="{ flexGrow: up || 0 }" /></span>
     </template>
@@ -21,9 +22,9 @@ const fmt = v => (props.isRate ? rate(v) : bytes(v))
 </script>
 
 <style scoped>
-/* 不做卡片：顶部一条细线分隔，数字本身就是视觉重点 */
-.stat { padding: 12px 0 4px; border-top: 2px solid var(--ink); min-width: 0; }
-.lbl { color: var(--muted); font-size: 14px; }
-.val { font-size: 34px; font-weight: 600; margin: 2px 0 6px; letter-spacing: -.02em; line-height: 1.1; }
-.sub { display: flex; gap: 16px; font-size: 14.5px; flex-wrap: wrap; margin-bottom: 8px; }
+.stat { padding: 16px 18px 14px; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.lbl { color: var(--muted); font-size: 13.5px; }
+.val { font-size: 30px; font-weight: 600; letter-spacing: -.01em; line-height: 1.15; color: var(--accent); font-variant-numeric: normal; }
+.sub { display: flex; gap: 14px; font-size: 13.5px; flex-wrap: wrap; }
+.pair { margin-top: 6px; }
 </style>

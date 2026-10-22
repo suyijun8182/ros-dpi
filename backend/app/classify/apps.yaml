@@ -3,6 +3,7 @@
 # cidrs:   目的 IP 段（没有 DNS 记录时使用）
 # ports:   "tcp/443"、"udp/3478-3481" 形式，最后兜底
 # protos:  IP 协议号（1=ICMP、47=GRE、50=ESP、58=ICMPv6）
+# asns:    IP 段所属的自治系统号（需要 IP→ASN 库，见 app/asn.py）；只标整个 ASN 都属于这家公司的
 # 欢迎通过 PR 补充；用户也可以在 识别规则 页添加自定义规则（优先级最高）。
 #
 # 已发布过的应用 ID 和分类 ID 不要删除或改名：历史流量按应用 ID 存储。
@@ -94,9 +95,9 @@ apps:
   - {id: sohu_video, name: 搜狐视频, name_en: Sohu Video, category: video, domains: [tv.sohu.com, film.sohu.com]}
   - {id: migu_video, name: 咪咕视频, name_en: Migu Video, category: video, domains: [miguvideo.com, cmvideo.cn]}
   - {id: cctv, name: 央视频/CCTV, name_en: CCTV, category: video, domains: [cctv.com, cntv.cn, cctvpic.com, yangshipin.cn]}
-  - {id: youtube, name: YouTube, name_en: YouTube, category: video,
+  - {id: youtube, asns: [36040], name: YouTube, name_en: YouTube, category: video,
      domains: [youtube.com, googlevideo.com, ytimg.com, youtu.be, youtube-nocookie.com, yt3.ggpht.com, youtubei.googleapis.com]}
-  - {id: netflix, name: Netflix, name_en: Netflix, category: video,
+  - {id: netflix, asns: [2906, 40027], name: Netflix, name_en: Netflix, category: video,
      domains: [netflix.com, nflxvideo.net, nflximg.net, nflxext.com, nflxso.net, nflximg.com]}
   - {id: disney, name: Disney+, name_en: Disney+, category: video,
      domains: [disneyplus.com, disney-plus.net, dssott.com, bamgrid.com, disneystreaming.com]}
@@ -107,7 +108,7 @@ apps:
   - {id: apple_tv, name: Apple TV+, name_en: Apple TV+, category: video,
      domains: [tv.apple.com, hls.itunes.apple.com, play-edge.itunes.apple.com, np-edge.itunes.apple.com]}
   # ---------- 直播 ----------
-  - {id: twitch, name: Twitch, name_en: Twitch, category: live,
+  - {id: twitch, asns: [46489], name: Twitch, name_en: Twitch, category: live,
      domains: [twitch.tv, ttvnw.net, jtvnw.net, twitchcdn.net]}
   - {id: huya, name: 虎牙直播, name_en: Huya, category: live,
      domains: [huya.com, msstatic.com, huyaimg.com, hy-cdn.com]}
@@ -128,7 +129,7 @@ apps:
   - {id: ximalaya, name: 喜马拉雅, name_en: Ximalaya, category: music,
      domains: [ximalaya.com, xmcdn.com]}
   - {id: lizhi, name: 荔枝/蜻蜓FM, name_en: Lizhi/Qingting FM, category: music, domains: [lizhi.fm, lizhifm.com, qingting.fm, qtfm.cn]}
-  - {id: spotify, name: Spotify, name_en: Spotify, category: music,
+  - {id: spotify, asns: [8403], name: Spotify, name_en: Spotify, category: music,
      domains: [spotify.com, scdn.co, spotifycdn.com, spotify.design, pscdn.co]}
   - {id: apple_music, name: Apple Music, name_en: Apple Music, category: music,
      domains: [music.apple.com, aod.itunes.apple.com, audio-ssl.itunes.apple.com, mvod.itunes.apple.com, podcasts.apple.com]}
@@ -136,7 +137,7 @@ apps:
   - {id: soundcloud, name: SoundCloud, name_en: SoundCloud, category: music, domains: [soundcloud.com, sndcdn.com]}
 
   # ================= 网络游戏 =================
-  - {id: steam, name: Steam, name_en: Steam, category: game,
+  - {id: steam, asns: [32590], name: Steam, name_en: Steam, category: game,
      domains: [steampowered.com, steamcommunity.com, steamstatic.com, steamcontent.com, steamserver.net, steamgames.com, steamusercontent.com, valvesoftware.com, steamchina.com, akamai.steamstatic.com]}
   - {id: epic, name: Epic Games, name_en: Epic Games, category: game,
      domains: [epicgames.com, epicgames.dev, unrealengine.com, fortnite.com, epicgamescdn.com]}
@@ -144,9 +145,9 @@ apps:
      domains: [game.qq.com, gamesafe.qq.com, wegame.com, wegame.com.cn, gcloud.qq.com, pvp.qq.com, gp.qq.com, tgpa.qq.com, dlied1.qq.com, dlied5.qq.com, gamecenter.qq.com, tencentgames.com, levelinfinite.com]}
   - {id: netease_games, name: 网易游戏, name_en: NetEase Games, category: game,
      domains: [game.163.com, nie.netease.com, netease.gg, x19.update.netease.com, gdl.netease.com, update.netease.com]}
-  - {id: blizzard, name: 暴雪战网, name_en: Battle.net, category: game,
+  - {id: blizzard, asns: [57976], name: 暴雪战网, name_en: Battle.net, category: game,
      domains: [battle.net, blizzard.com, blizzard.cn, battlenet.com.cn, blzstatic.cn]}
-  - {id: riot, name: Riot Games, name_en: Riot Games, category: game,
+  - {id: riot, asns: [6507], name: Riot Games, name_en: Riot Games, category: game,
      domains: [riotgames.com, leagueoflegends.com, riotcdn.net, playvalorant.com]}
   - {id: ea, name: EA, name_en: EA, category: game,
      domains: [ea.com, origin.com, eaassets-a.akamaihd.net]}
@@ -181,7 +182,7 @@ apps:
      domains: [weixin.qq.com, wechat.com, servicewechat.com, weixinbridge.com, wx.qq.com, qpic.cn, qlogo.cn, wxs.qq.com, mmbiz.qpic.cn, tenpay.com, wxapp.tc.qq.com, szextshort.weixin.qq.com, szshort.weixin.qq.com, szminorshort.weixin.qq.com, extshort.weixin.qq.com, short.weixin.qq.com, dns.weixin.qq.com]}
   - {id: qq, name: QQ, name_en: QQ, category: im,
      domains: [qq.com, qzone.qq.com, im.qq.com, idqqimg.com, gtimg.cn, tencent.com]}
-  - {id: telegram, name: Telegram, name_en: Telegram, category: im,
+  - {id: telegram, asns: [62041, 62014, 59930, 211157], name: Telegram, name_en: Telegram, category: im,
      domains: [telegram.org, t.me, telegram.me, tdesktop.com, telesco.pe, telegra.ph],
      cidrs: [91.108.4.0/22, 91.108.8.0/22, 91.108.12.0/22, 91.108.16.0/22, 91.108.56.0/22, 149.154.160.0/20, 95.161.64.0/20, "2001:b28:f23d::/48", "2001:b28:f23f::/48", "2001:67c:4e8::/48"]}
   - {id: whatsapp, name: WhatsApp, name_en: WhatsApp, category: im,
@@ -206,9 +207,9 @@ apps:
   - {id: hupu, name: 虎扑, name_en: Hupu, category: social, domains: [hupu.com, hoopchina.com.cn, hupucdn.com]}
   - {id: nga, name: NGA 玩家社区, name_en: NGA, category: social, domains: [nga.cn, ngabbs.com, 178.com, nga.178.com]}
   - {id: jike, name: 即刻/脉脉, name_en: Jike/Maimai, category: social, domains: [okjike.com, maimai.cn, taou.com]}
-  - {id: facebook, name: Facebook/Instagram, name_en: Meta, category: social,
+  - {id: facebook, asns: [32934], name: Facebook/Instagram, name_en: Meta, category: social,
      domains: [facebook.com, fbcdn.net, instagram.com, cdninstagram.com, messenger.com, fb.com, threads.net]}
-  - {id: twitter, name: X/Twitter, name_en: X/Twitter, category: social,
+  - {id: twitter, asns: [13414], name: X/Twitter, name_en: X/Twitter, category: social,
      domains: [twitter.com, x.com, twimg.com, t.co]}
   - {id: reddit, name: Reddit, name_en: Reddit, category: social,
      domains: [reddit.com, redd.it, redditmedia.com, redditstatic.com]}
@@ -247,7 +248,7 @@ apps:
      domains: [icloud.com, icloud-content.com, icloud.com.cn, apple-cloudkit.com, cdn-apple.com]}
   - {id: google_drive, name: Google Drive, name_en: Google Drive, category: cloud,
      domains: [drive.google.com, docs.google.com, drive.usercontent.google.com]}
-  - {id: dropbox, name: Dropbox, name_en: Dropbox, category: cloud,
+  - {id: dropbox, asns: [19679], name: Dropbox, name_en: Dropbox, category: cloud,
      domains: [dropbox.com, dropboxapi.com, dropboxusercontent.com, db.tt]}
   - {id: mega, name: MEGA, name_en: MEGA, category: cloud, domains: [mega.nz, mega.co.nz, mega.io]}
   - {id: synology, name: 群晖 QuickConnect, name_en: Synology QuickConnect, category: cloud, domains: [quickconnect.to, quickconnect.cn, synology.com, synology.cn]}
@@ -272,7 +273,7 @@ apps:
      domains: [feishu.cn, larksuite.com, feishucdn.com, larkoffice.com, feishu.net]}
   - {id: wework, name: 企业微信, name_en: WeCom, category: work,
      domains: [work.weixin.qq.com, wework.qpic.cn, qyapi.weixin.qq.com]}
-  - {id: microsoft, name: Microsoft 365, name_en: Microsoft 365, category: work,
+  - {id: microsoft, asns: [8075, 8068], name: Microsoft 365, name_en: Microsoft 365, category: work,
      domains: [microsoft.com, office.com, office.net, office365.com, live.com, msn.com, microsoftonline.com, msftconnecttest.com, windows.net, azureedge.net, msedge.net, skype.com, bing.com.cn]}
   - {id: wps, name: WPS, name_en: WPS, category: work,
      domains: [wps.cn, wps.com, kdocs.cn, kingsoft.com, ksord.com, wpscdn.cn]}
@@ -286,12 +287,12 @@ apps:
   - {id: evernote, name: 印象笔记/Evernote, name_en: Evernote, category: work, domains: [evernote.com, yinxiang.com]}
   - {id: tencent_meeting, name: 腾讯会议, name_en: Tencent Meeting, category: meeting,
      domains: [meeting.tencent.com, wemeet.qq.com, voovmeeting.com]}
-  - {id: zoom, name: Zoom, name_en: Zoom, category: meeting,
+  - {id: zoom, asns: [30103], name: Zoom, name_en: Zoom, category: meeting,
      domains: [zoom.us, zoom.com, zoom.com.cn, zoomgov.com]}
   - {id: teams, name: Microsoft Teams, name_en: Microsoft Teams, category: meeting, domains: [teams.microsoft.com, teams.live.com, teams.cdn.office.net]}
   - {id: webex, name: Webex, name_en: Webex, category: meeting, domains: [webex.com, wbx2.com, webex.com.cn]}
   - {id: google_meet, name: Google Meet, name_en: Google Meet, category: meeting, domains: [meet.google.com]}
-  - {id: github, name: GitHub, name_en: GitHub, category: dev,
+  - {id: github, asns: [36459], name: GitHub, name_en: GitHub, category: dev,
      domains: [github.com, githubusercontent.com, githubassets.com, github.io, ghcr.io, github.dev, copilot-proxy.githubusercontent.com]}
   - {id: docker, name: Docker Hub, name_en: Docker Hub, category: dev,
      domains: [docker.com, docker.io, registry-1.docker.io, production.cloudflare.docker.com, dockerhub.com]}
@@ -401,9 +402,9 @@ apps:
   - {id: intl_news, name: 国际媒体, name_en: International news, category: news, domains: [bbc.com, bbc.co.uk, bbci.co.uk, nytimes.com, nyt.com, cnn.com, reuters.com, theguardian.com, bloomberg.com]}
   - {id: wikipedia, name: Wikipedia, name_en: Wikipedia, category: news,
      domains: [wikipedia.org, wikimedia.org, wiki.wikipedia.org]}
-  - {id: baidu, name: 百度, name_en: Baidu, category: search,
+  - {id: baidu, asns: [55967, 38365], name: 百度, name_en: Baidu, category: search,
      domains: [baidu.com, bdstatic.com, bdimg.com, bcebos.com, bdydns.com, baidubce.com, baiduyun.com, shifen.com]}
-  - {id: google, name: Google, name_en: Google, category: search,
+  - {id: google, asns: [15169, 396982], name: Google, name_en: Google, category: search,
      domains: [google.com, googleapis.com, gstatic.com, google.com.hk, googleusercontent.com, ggpht.com, gvt2.com, recaptcha.net]}
   - {id: bing, name: Bing, name_en: Bing, category: search,
      domains: [bing.com, bing.net]}
@@ -437,7 +438,7 @@ apps:
   - {id: rtsp, name: RTSP 视频流, name_en: RTSP, category: camera, ports: [tcp/554]}
 
   # ================= 网络基础 =================
-  - {id: apple, name: Apple 服务, name_en: Apple services, category: system,
+  - {id: apple, asns: [714, 6185], name: Apple 服务, name_en: Apple services, category: system,
      domains: [apple.com, mzstatic.com, itunes.apple.com, apple.com.cn, push.apple.com, aaplimg.com, apple-dns.net, apple.news]}
   - {id: android_update, name: 安卓/手机厂商服务, name_en: Android vendor services, category: system,
      domains: [xiaomi.com, xiaomi.net, mi.com, miui.com, mi-img.com, hicloud.com, huawei.com, dbankcdn.com, vivo.com.cn, vivoglobal.com, oppo.com, heytapmobi.com, coloros.com, heytapdownload.com, oneplus.com, honor.com, hihonor.com, meizu.com, flyme.cn]}
@@ -449,26 +450,27 @@ apps:
   - {id: ntp, name: NTP, name_en: NTP, category: network, ports: [udp/123]}
   - {id: ftp, name: FTP, name_en: FTP, category: network, ports: [tcp/21, tcp/990]}
   - {id: icmp, name: ICMP (Ping), name_en: ICMP, category: network, protos: [1, 58]}
+  - {id: proxy_tunnel, name: 旁路代理隧道, name_en: Proxy gateway tunnel, category: proxy}
   - {id: vpn, name: VPN 隧道, name_en: VPN, category: proxy,
      ports: [udp/51820, udp/1194, tcp/1194, udp/500, udp/4500, tcp/1723, udp/1701], protos: [47, 50]}
   - {id: tailscale, name: Tailscale/ZeroTier, name_en: Tailscale/ZeroTier, category: proxy,
      domains: [tailscale.com, tailscale.io, ts.net, zerotier.com], ports: [udp/41641, udp/9993]}
   - {id: warp, name: Cloudflare WARP, name_en: Cloudflare WARP, category: proxy, domains: [cloudflareclient.com, warp.plus]}
-  - {id: cloudflare, name: Cloudflare, name_en: Cloudflare, category: cdn,
+  - {id: cloudflare, asns: [13335, 209242], name: Cloudflare, name_en: Cloudflare, category: cdn,
      domains: [cloudflare.com, cloudflareinsights.com, cloudflare.net, workers.dev, pages.dev, cdnjs.cloudflare.com]}
-  - {id: akamai, name: Akamai, name_en: Akamai, category: cdn,
+  - {id: akamai, asns: [20940, 16625], name: Akamai, name_en: Akamai, category: cdn,
      domains: [akamai.net, akamaiedge.net, akamaihd.net, akamaized.net, edgekey.net, edgesuite.net, akadns.net, akamaitechnologies.com]}
-  - {id: aliyun, name: 阿里云/CDN, name_en: Alibaba Cloud, category: cdn,
+  - {id: aliyun, asns: [37963, 45102], name: 阿里云/CDN, name_en: Alibaba Cloud, category: cdn,
      domains: [aliyun.com, aliyuncs.com, alikunlun.com, alikunlun.net, kunlunca.com, kunlunsl.com, kunlungr.com, kunlunle.com, alicloudccp.com, aliyundrive.cloud]}
-  - {id: tencent_cloud, name: 腾讯云/CDN, name_en: Tencent Cloud, category: cdn,
+  - {id: tencent_cloud, asns: [45090, 132203], name: 腾讯云/CDN, name_en: Tencent Cloud, category: cdn,
      domains: [myqcloud.com, qcloud.com, tencent-cloud.net, tencentcs.com, tencentcloud.com, cdntip.com, tdnsv5.com, tdnsv6.com, dnsv1.com, qcloudcdn.com, qcloudcdn.cn]}
   - {id: wangsu, name: 网宿 CDN, name_en: Wangsu CDN, category: cdn,
      domains: [wscdns.com, wsglb0.com, wsdvs.com, lxdns.com, chinanetcenter.com, wswebcdn.com, cdn20.com]}
-  - {id: huawei_cloud, name: 华为云/CDN, name_en: Huawei Cloud, category: cdn, domains: [huaweicloud.com, myhuaweicloud.com, hwcdn.net, cdnhwc1.com]}
+  - {id: huawei_cloud, asns: [136907, 55990], name: 华为云/CDN, name_en: Huawei Cloud, category: cdn, domains: [huaweicloud.com, myhuaweicloud.com, hwcdn.net, cdnhwc1.com]}
   - {id: volcengine, name: 火山引擎/CDN, name_en: Volcengine, category: cdn, domains: [volcengine.com, volccdn.com, bytegslb.com]}
   - {id: baishan, name: 白山云/其他国内CDN, name_en: Baishan & other CN CDN, category: cdn, domains: [bsgslb.cn, trpcdn.net, bsclink.cn, ccgslb.com, ccgslb.net, chinacache.net, qiniucdn.com, qiniu.com, clouddn.com, upaiyun.com]}
-  - {id: aws, name: AWS/CloudFront, name_en: AWS/CloudFront, category: cdn, domains: [amazonaws.com, cloudfront.net, awsstatic.com, aws.amazon.com]}
-  - {id: fastly, name: Fastly/jsDelivr, name_en: Fastly/jsDelivr, category: cdn, domains: [fastly.net, fastlylb.net, fastly.com, jsdelivr.net]}
+  - {id: aws, asns: [16509, 14618], name: AWS/CloudFront, name_en: AWS/CloudFront, category: cdn, domains: [amazonaws.com, cloudfront.net, awsstatic.com, aws.amazon.com]}
+  - {id: fastly, asns: [54113], name: Fastly/jsDelivr, name_en: Fastly/jsDelivr, category: cdn, domains: [fastly.net, fastlylb.net, fastly.com, jsdelivr.net]}
   - {id: azure, name: Azure, name_en: Azure, category: cdn, domains: [azurefd.net, azure.com, trafficmanager.net, azurewebsites.net]}
   - {id: security_360, name: 360 安全, name_en: 360 Security, category: security, domains: [360.cn, 360.com, qhimg.com, qihucdn.com, 360safe.com, qhres.com]}
   - {id: tencent_pcmgr, name: 腾讯电脑管家, name_en: Tencent PC Manager, category: security, domains: [guanjia.qq.com, pcmgr.qq.com]}

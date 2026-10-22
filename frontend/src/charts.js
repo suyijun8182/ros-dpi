@@ -72,7 +72,8 @@ function lineChart(lines, labels, kind, { area = false, compact = false } = {}) 
     },
     series: lines.map(l => ({
       name: l.name, type: 'line', data: l.data, smooth: false,
-      symbol: 'emptyCircle', symbolSize: 7, showSymbol: false,
+      // 只有几个点时把点画出来，不然一个点的线什么都看不见
+      symbol: 'emptyCircle', symbolSize: 7, showSymbol: l.data.length <= 3,
       lineStyle: { width: 1.6, color: l.color }, itemStyle: { color: l.color, borderWidth: 2 },
       areaStyle: area ? { color: l.color, opacity: 0.12 } : undefined,
       emphasis: { focus: 'none' },

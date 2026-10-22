@@ -24,34 +24,35 @@
           <thead>
             <tr>
               <th class="sort" @click="sortBy('name')">{{ t('common.name') }} {{ arrow('name') }}</th>
-              <th class="sort" @click="sortBy('ip')">{{ t('hosts.ip') }} {{ arrow('ip') }}</th>
-              <th>{{ t('hosts.mac') }}</th>
-              <th class="r sort" @click="sortBy('uptime')" v-if="tab === 'online'">{{ t('hosts.uptime') }} {{ arrow('uptime') }}</th>
-              <th class="r sort" @click="sortBy('conns')" :title="t('hosts.connsHint')">{{ t('hosts.conns') }} {{ arrow('conns') }}</th>
+              <th class="sort m-hide" @click="sortBy('ip')">{{ t('hosts.ip') }} {{ arrow('ip') }}</th>
+              <th class="m-hide">{{ t('hosts.mac') }}</th>
+              <th class="r sort m-hide" @click="sortBy('uptime')" v-if="tab === 'online'">{{ t('hosts.uptime') }} {{ arrow('uptime') }}</th>
+              <th class="r sort m-hide" @click="sortBy('conns')" :title="t('hosts.connsHint')">{{ t('hosts.conns') }} {{ arrow('conns') }}</th>
               <th class="r sort" @click="sortBy('rate')">{{ t('common.rate') }} {{ arrow('rate') }}</th>
               <th class="r sort" @click="sortBy('today')">{{ t('range.today') }} {{ arrow('today') }}</th>
-              <th class="r sort" @click="sortBy('week')">{{ t('range.week') }} {{ arrow('week') }}</th>
-              <th class="r sort" @click="sortBy('month')">{{ t('range.month') }} {{ arrow('month') }}</th>
-              <th>{{ t('hosts.topApp') }}</th>
-              <th class="sort" @click="sortBy('last')" v-if="tab === 'all'">{{ t('hosts.lastSeen') }} {{ arrow('last') }}</th>
+              <th class="r sort m-hide" @click="sortBy('week')">{{ t('range.week') }} {{ arrow('week') }}</th>
+              <th class="r sort m-hide" @click="sortBy('month')">{{ t('range.month') }} {{ arrow('month') }}</th>
+              <th class="m-hide">{{ t('hosts.topApp') }}</th>
+              <th class="sort m-hide" @click="sortBy('last')" v-if="tab === 'all'">{{ t('hosts.lastSeen') }} {{ arrow('last') }}</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="h in shown" :key="h.key" class="link" @click="$router.push(`/hosts/${enc(h.key)}`)">
               <td><span class="nm"><span class="dot" :class="{ on: h.online }" />{{ h.name }}
                 <span v-if="h.alias_by" class="pill grey by" :title="t('hosts.byHint.' + h.alias_by)">{{ h.alias_by.toUpperCase() }}</span>
-                <span class="faint hn" v-if="h.alias && h.hostname">{{ h.hostname }}</span>
-                <button class="btn sm ghost ren" :title="t('hosts.rename')" :aria-label="t('hosts.rename')" @click.stop="rename(h)"><Icon name="edit" :size="14" /></button></span></td>
-              <td class="addr">{{ h.ip }}</td>
-              <td class="addr faint">{{ h.mac || '-' }}</td>
-              <td class="r num" v-if="tab === 'online'">{{ h.online_since ? duration(now - h.online_since, locale === 'zh') : '-' }}</td>
-              <td class="r num">{{ h.conns || 0 }}</td>
+                <span class="faint hn m-hide" v-if="h.alias && h.hostname && h.hostname !== h.alias">{{ h.hostname }}</span>
+                <button class="btn sm ghost ren" :title="t('hosts.rename')" :aria-label="t('hosts.rename')" @click.stop="rename(h)"><Icon name="edit" :size="14" /></button></span>
+                <div class="m-only faint addr small">{{ h.ip }}<span v-if="h.top_app"> · {{ appName(h.top_app) }}</span></div></td>
+              <td class="addr m-hide">{{ h.ip }}</td>
+              <td class="addr faint m-hide">{{ h.mac || '-' }}</td>
+              <td class="r num m-hide" v-if="tab === 'online'">{{ h.online_since ? duration(now - h.online_since, locale === 'zh') : '-' }}</td>
+              <td class="r num m-hide">{{ h.conns || 0 }}</td>
               <td class="r num small"><span class="up">↑{{ rate(h.rate_up) }}</span><br /><span class="down">↓{{ rate(h.rate_down) }}</span></td>
               <td class="r num">{{ bytes(h.today.total) }}<span class="mini"><i :style="{ width: (h.today.total / maxToday * 100) + '%' }" /></span></td>
-              <td class="r num">{{ bytes(h.week.total) }}</td>
-              <td class="r num">{{ bytes(h.month.total) }}</td>
-              <td><span v-if="h.top_app" class="tag"><span class="chip" :style="{ background: catColor(h.top_app.category) }" />{{ appName(h.top_app) }}</span></td>
-              <td class="muted small" v-if="tab === 'all'">{{ ago(h.last_seen) }}</td>
+              <td class="r num m-hide">{{ bytes(h.week.total) }}</td>
+              <td class="r num m-hide">{{ bytes(h.month.total) }}</td>
+              <td class="m-hide"><span v-if="h.top_app" class="tag"><span class="chip" :style="{ background: catColor(h.top_app.category) }" />{{ appName(h.top_app) }}</span></td>
+              <td class="muted small m-hide" v-if="tab === 'all'">{{ ago(h.last_seen) }}</td>
             </tr>
           </tbody>
         </table>
@@ -76,17 +77,19 @@
       </div>
       <div class="tbl-wrap" v-if="dhcp && dhcp.enabled">
         <table class="tbl">
-          <thead><tr><th>{{ t('common.name') }}</th><th>{{ t('hosts.ip') }}</th><th>{{ t('hosts.mac') }}</th><th>{{ t('hosts.leaseType') }}</th>
-            <th>{{ t('hosts.leaseStatus') }}</th><th>{{ t('hosts.expires') }}</th><th>{{ t('hosts.server') }}</th></tr></thead>
+          <thead><tr><th>{{ t('common.name') }}</th><th>{{ t('hosts.ip') }}</th><th class="m-hide">{{ t('hosts.mac') }}</th><th class="m-hide">{{ t('hosts.leaseType') }}</th>
+            <th>{{ t('hosts.leaseStatus') }}</th><th class="m-hide">{{ t('hosts.expires') }}</th><th class="m-hide">{{ t('hosts.server') }}</th></tr></thead>
           <tbody>
             <tr v-for="l in leasesShown" :key="l.mac + l.address" :class="{ link: l.host_key }" @click="l.host_key && $router.push(`/hosts/${enc(l.host_key)}`)">
-              <td>{{ l.alias || l.comment || l.host_name || '-' }} <span class="faint hn" v-if="(l.alias || l.comment) && l.host_name">{{ l.host_name }}</span></td>
+              <td>{{ l.alias || l.comment || l.host_name || '-' }}
+                <span class="faint hn" v-if="(l.alias || l.comment) && l.host_name && l.host_name !== (l.alias || l.comment)">{{ l.host_name }}</span>
+                <div class="m-only faint addr small">{{ l.mac }}</div></td>
               <td class="addr">{{ l.address }}</td>
-              <td class="addr faint">{{ l.mac }}</td>
-              <td><span class="pill" :class="l.dynamic ? 'grey' : ''">{{ l.dynamic ? t('hosts.dynamic') : t('hosts.static') }}</span></td>
+              <td class="addr faint m-hide">{{ l.mac }}</td>
+              <td class="m-hide"><span class="pill" :class="l.dynamic ? 'grey' : ''">{{ l.dynamic ? t('hosts.dynamic') : t('hosts.static') }}</span></td>
               <td><span class="pill" :class="l.status === 'bound' ? 'ok' : 'grey'">{{ l.status || '-' }}</span></td>
-              <td class="num muted">{{ l.expires_after || '-' }}</td>
-              <td class="muted">{{ l.server }}</td>
+              <td class="num muted m-hide">{{ l.expires_after || '-' }}</td>
+              <td class="muted m-hide">{{ l.server }}</td>
             </tr>
           </tbody>
         </table>
@@ -284,5 +287,5 @@ tr:hover .ren, .ren:focus-visible { opacity: 1; }
 .nf .v { width: 200px; }
 .nf .n { width: 220px; }
 .nf .hint { flex-basis: 100%; }
-@media (max-width: 640px) { .search, .nf .v, .nf .n { width: 100%; } }
+@media (max-width: 640px) { .search, .nf .v, .nf .n { width: 100%; } .mini { display: none; } }
 </style>

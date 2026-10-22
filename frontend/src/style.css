@@ -192,8 +192,23 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .g-2-1 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
 .mt { margin-top: 14px; }
-@media (max-width: 1180px) { .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g-2-1, .g3 { grid-template-columns: 1fr; } }
-@media (max-width: 640px) { .g4, .g2 { grid-template-columns: 1fr; } }
+/* g2-wide：两块内容都比较宽（例如两张表），平板上改成上下排 */
+.g2-wide { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 1180px) { .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .g-2-1, .g2-wide { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .g4, .g2, .g3 { grid-template-columns: 1fr; } }
+
+/* 手机上的表格：次要列隐藏（m-hide），名称格里显示补充信息（m-only） */
+.m-only { display: none; }
+@media (max-width: 640px) {
+  .m-hide { display: none; }
+  .m-only { display: block; }
+  .tbl th, .tbl td { padding: 10px 8px; }
+  .tbl td:first-child, .tbl th:first-child { padding-left: 14px; }
+  .tbl td:last-child, .tbl th:last-child { padding-right: 14px; }
+  /* 子标签条不换行，横向滑动 */
+  .page-h .seg.tabs { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  .page-h .seg.tabs button { white-space: nowrap; }
+}
 
 /* ---------- 控件 ---------- */
 .btn {

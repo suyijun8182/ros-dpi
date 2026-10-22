@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import __version__, stats, timeutil
+from app import __version__, integrations, stats, timeutil
+from app.asn import asndb
 from app.classify import GENERIC_APPS
 from app.config import get_settings
 from app import database
@@ -112,6 +113,12 @@ def test_rule(domain: str):
 class SettingsIn(BaseModel):
     lan_cidrs: str | None = Field(None, max_length=2000)
     wan_interface: str | None = Field(None, max_length=64)
+    # 外部数据源（可选），每个人的地址不同，由用户填写；空字符串表示清除
+    singbox_url: str | None = Field(None, max_length=255)
+    singbox_secret: str | None = Field(None, max_length=255)
+    proxy_ips: str | None = Field(None, max_length=500)
+    mosdns_url: str | None = Field(None, max_length=255)
+    rules_auto_update: bool | None = None
 
 
 def _get(db, key, default=""):
@@ -142,7 +149,15 @@ def get_settings_api(db: Session = Depends(get_db)):
         "ports": {"http": s.http_port, "ipfix": s.ipfix_port, "tzsp": s.tzsp_port},
         "tz": s.tz,
         "database": _db_info(),
+        "integrations": _integrations(db),
     }
+
+
+def _integrations(db):
+    saved = {k: _get(db, k, None) for k in integrations.KEYS}
+    cfg = integrations.effective(saved)
+    return {"singbox_url": cfg["singbox_url"], "has_secret": bool(cfg["singbox_secret"]), "proxy_ips": cfg["proxy_ips"],
+            "mosdns_url": cfg["mosdns_url"], "proxy_auto": integrations.singbox.host_ip()}
 
 
 def _db_info():
@@ -163,6 +178,21 @@ def put_settings(req: SettingsIn, db: Session = Depends(get_db)):
             raise HTTPException(400, f"无效网段：{', '.join(bad)}")
         _put(db, "lan_cidrs", text)
         engine.set_lan(text)
+    changed = False
+    for k in integrations.KEYS:
+        v = getattr(req, k)
+        if v is None:
+            continue
+        v = v.strip()
+        if k.endswith("_url") and v and not v.startswith(("http://", "https://")):
+            raise HTTPException(400, "地址要以 http:// 或 https:// 开头，例如 http://192.168.1.2:9090")
+        _put(db, k, v)
+        changed = True
+    if changed:
+        db.flush()
+        integrations.apply({k: _get(db, k, None) for k in integrations.KEYS})
+    if req.rules_auto_update is not None:
+        _put(db, "rules_auto_update", "1" if req.rules_auto_update else "0")
     if req.wan_interface is not None:
         _put(db, "wan_interface", req.wan_interface.strip())
         poller.wan_override = req.wan_interface.strip()
@@ -195,8 +225,56 @@ def system():
         "match": dict(st["match"]),
         "router": poller.status(),
         "ros_check": poller.check(),
+        "singbox": integrations.singbox.status(),
+        "mosdns": integrations.mosdns.status(),
+        "asn": asndb.status(),
+        "proxied_skipped": st["proxied_skipped"], "dns_mosdns": st["dns_mosdns"],
         "generic_apps": sorted(GENERIC_APPS),
     }
+
+
+# ---------- 识别库：来源、版本、自动更新 ----------
+def _library(db):
+    from app.classify.updater import updater
+    c = engine.classifier
+    base_ids = {a["id"] for a in c._base_apps}
+    v2_apps = c._extra.get("apps", [])
+    v2_domains = sum(len(x.get("domains", [])) + len(x.get("full", [])) for x in v2_apps + c._extra.get("extend", []))
+    base_domains = sum(len(a.get("domains", [])) for a in c._base_apps)
+    return {
+        "auto": _get(db, "rules_auto_update", "1") != "0",
+        "total_apps": len(c.apps), "total_domains": len(c.domains) + len(c.full),
+        "sources": [
+            {"id": "curated", "apps": len(base_ids), "domains": base_domains, "version": __version__,
+             "license": "MIT", "url": "https://github.com/suyijun8182/ros-dpi"},
+            {"id": "v2fly", "apps": len(v2_apps), "domains": v2_domains, "license": "MIT",
+             "url": "https://github.com/v2fly/domain-list-community", **updater.status()},
+            {"id": "asn", "license": "PDDL v1.0", "url": "https://iptoasn.com", "asns": len(c.asn_apps), **asndb.status()},
+        ],
+    }
+
+
+@router.get("/library")
+def library(db: Session = Depends(get_db)):
+    return _library(db)
+
+
+@router.post("/library/update")
+def library_update(db: Session = Depends(get_db)):
+    """立即检查识别库更新（v2fly 规则 + ASN 库），返回最新状态"""
+    from app.classify.updater import updater
+    updater.check(force=True, reload=engine.reload_classifier)
+    if get_settings().asn_db:
+        asndb.update()
+    return _library(db)
+
+
+@router.post("/integrations/test")
+def integrations_test():
+    """立即读一次 sing-box 和 MosDNS，返回各自状态（用于“测试连接”按钮）"""
+    integrations.singbox.poll()
+    integrations.mosdns.poll()
+    return {"singbox": integrations.singbox.status(), "mosdns": integrations.mosdns.status()}
 
 
 @router.post("/ros/test")

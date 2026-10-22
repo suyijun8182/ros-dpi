@@ -20,14 +20,14 @@
         <div class="panel-h">{{ t('apps.usedBy') }}</div>
         <div class="tbl-wrap">
           <table class="tbl">
-            <thead><tr><th class="rk">#</th><th>{{ t('common.name') }}</th><th>{{ t('hosts.ip') }}</th><th class="r">{{ t('common.down') }}</th><th class="r">{{ t('common.up') }}</th><th class="r">{{ t('common.total') }}</th><th class="r">{{ t('common.share') }}</th></tr></thead>
+            <thead><tr><th class="rk m-hide">#</th><th>{{ t('common.name') }}</th><th class="m-hide">{{ t('hosts.ip') }}</th><th class="r m-hide">{{ t('common.down') }}</th><th class="r m-hide">{{ t('common.up') }}</th><th class="r">{{ t('common.total') }}</th><th class="r">{{ t('common.share') }}</th></tr></thead>
             <tbody>
               <tr v-for="(h, i) in d.hosts" :key="h.key" class="link" @click="$router.push(`/hosts/${enc(h.key)}`)">
-                <td class="rk num faint">{{ i + 1 }}</td>
+                <td class="rk num faint m-hide">{{ i + 1 }}</td>
                 <td><span class="nm"><span class="dot" :class="{ on: h.online }" />{{ h.name }}</span></td>
-                <td class="addr">{{ h.ip }}</td>
-                <td class="r num">{{ bytes(h.down) }}</td>
-                <td class="r num">{{ bytes(h.up) }}</td>
+                <td class="addr m-hide">{{ h.ip }}</td>
+                <td class="r num m-hide">{{ bytes(h.down) }}</td>
+                <td class="r num m-hide">{{ bytes(h.up) }}</td>
                 <td class="r num"><b>{{ bytes(h.total) }}</b></td>
                 <td class="r share"><span class="num muted">{{ pct(h.total / (d.range_total.total || 1)) }}</span>
                   <span class="bar"><i :style="{ width: (h.total / (d.hosts[0].total || 1) * 100) + '%' }" /></span></td>

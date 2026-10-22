@@ -23,5 +23,6 @@ services:
       ROS_USER: ""
       ROS_PASSWORD: ""
       ROS_VERIFY_TLS: "false"
+      # 旁路代理（sing-box）和内网 DNS（MosDNS）在网页 系统设置 → 外部数据源 里填写，不需要写在这里
     volumes:
       - ./data:/app/data      # 保存数据库连接配置，务必保留这个卷

@@ -72,8 +72,13 @@ class Engine:
                       "bytes_seen": 0, "last_flow": 0, "last_dns": 0, "exporters": {},
                       "sni_tls": 0, "sni_quic": 0, "last_sni": 0,
                       # 流量是靠什么认出域名的（字节数）：conn=本连接 SNI，pair=本终端的 DNS/SNI，ip=全网 IP 表
-                      "match": {"conn": 0, "pair": 0, "ip": 0, "none": 0}}
+                      "match": {"conn": 0, "pair": 0, "ip": 0, "proxy": 0, "none": 0},
+                      "proxied_skipped": 0, "dns_mosdns": 0}
         self.dns_servers: dict[str, list[int]] = {}  # 应答来源 DNS 服务器 -> [应答数, 最近时间]
+        # 旁路代理（sing-box）：代理自身的 IP，以及 FakeIP 地址段。接了 Clash API 时这两类路由器流量由 API 数据代替
+        self.proxy_ips: set[str] = set()
+        self.proxy_active = False
+        self.fakeip_nets = parse_cidrs(s.fakeip_cidrs)
 
     # ---------- 配置 ----------
     def set_lan(self, text: str):
@@ -81,10 +86,28 @@ class Engine:
         self.lan_nets = parse_cidrs(text)
         self._lan_cache.clear()
 
+    def set_proxy(self, ips: set, active: bool):
+        self.proxy_ips, self.proxy_active = set(ips), active
+
+    def is_fakeip(self, ip: str) -> bool:
+        try:
+            a = ipaddress.ip_address(ip)
+        except ValueError:
+            return False
+        return any(a.version == n.version and a in n for n in self.fakeip_nets)
+
     def set_auto_nets(self, nets: list):
         if set(map(str, nets)) != set(map(str, self.auto_nets)):
             self.auto_nets = nets
             self._lan_cache.clear()
+
+    def reload_classifier(self):
+        """识别库更新后热加载：建好新的识别器再整体替换，替换前后的流量都不会丢"""
+        new = Classifier()
+        with database.session() as db:
+            new.load_custom(db.scalars(select(CustomRule)).all())
+        with self.lock:
+            self.classifier = new
 
     def reload_rules(self):
         with database.session() as db:
@@ -150,15 +173,7 @@ class Engine:
             return
         qname, ips, cnames = parsed
         now = int(time.time())
-        self.stats["dns_answers"] += 1
-        self.stats["last_dns"] = now
-        self.dns.add(qname, ips, cnames)
-        if self.is_lan(client):
-            # 终端直接查询的应答：按 (终端, IP) 记一份，比全网共用的 IP 表更准
-            cname = cnames[-1] if cnames else None
-            with self.lock:
-                for ip, _ttl in ips:
-                    self.names.add_pair(client, ip, qname, cname, now)
+        self.add_dns_answer(client, qname, ips, cnames)
         # 记录应答来自哪台 DNS 服务器，方便在系统设置里确认嗅探到的是哪一段（终端↔DNS 还是 DNS↔上游）
         srv = self.dns_servers.get(server)
         if srv is None:
@@ -167,6 +182,46 @@ class Engine:
             srv = self.dns_servers[server] = [0, 0]
         srv[0] += 1
         srv[1] = now
+
+    def add_dns_answer(self, client: str, qname: str, ips: list, cnames: list, source: str = "sniff"):
+        """一条 DNS 应答（来自 TZSP 嗅探或 MosDNS 审计日志）：全网 IP 表 + 终端自己的 (终端, IP) 对应"""
+        now = int(time.time())
+        self.stats["dns_answers" if source == "sniff" else "dns_mosdns"] += 1
+        self.stats["last_dns"] = now
+        self.dns.add(qname, ips, cnames)
+        if self.is_lan(client):
+            # 终端直接查询的应答：按 (终端, IP) 记一份，比全网共用的 IP 表更准
+            cname = cnames[-1] if cnames else None
+            with self.lock:
+                for ip, _ttl in ips:
+                    self.names.add_pair(client, ip, qname, cname, now)
+
+    def add_proxy_conn(self, src, sport, host, dst, dport, network, up, down, chain, now):
+        """sing-box Clash API 的一条连接在这次轮询里新增的字节：按来源终端 + 域名记账"""
+        host_ip = src if self.is_lan(src) else next(iter(sorted(self.proxy_ips)), src)
+        if not host_ip:
+            return
+        proto = 17 if network == "udp" else 6
+        qname = host if host and not _is_ip(host) else None
+        remote = dst or host or "0.0.0.0"
+        with self.lock:
+            app = self.classifier.classify(dst or "0.0.0.0", proto, dport, qname, None)
+            key, mac = self.host_key(host_ip, None)
+            b = self._buf[(key, app)]
+            b[0] += up
+            b[1] += down
+            b[2] += 1
+            if qname:
+                self._dom[(key, qname, app)] += up + down
+            elif dst:
+                self._ipdest[(key, dst, app)] += up + down
+            if up:
+                self._track_session(key, host_ip, sport, remote, dport, proto, app, qname, "proxy", "up", up, now)
+            if down:
+                self._track_session(key, host_ip, sport, remote, dport, proto, app, qname, "proxy", "down", down, now)
+            self._seen[key] = (host_ip, mac, int(now))
+            self.stats["match"]["proxy"] += up + down
+            self.stats["bytes_seen"] += up + down
 
     def host_key(self, ip: str, mac: str | None) -> tuple[str, str | None]:
         m = self.ip2mac.get(ip)
@@ -202,6 +257,17 @@ class Engine:
             self.stats["flows_dropped"] += 1
             return None
 
+        # 旁路代理：接了 Clash API 时，代理自己的出口隧道和终端发往 FakeIP 的流量都由 API 数据代替，这里不再重复计
+        if self.proxy_ips and (host_ip in self.proxy_ips or self.is_fakeip(remote)):
+            if self.proxy_active:
+                self.stats["proxied_skipped"] += nbytes
+                self.stats["flows"] += 1
+                self.stats["last_flow"] = int(now)
+                return None
+            if host_ip in self.proxy_ips:
+                return self._count(host_ip, mac, remote, rport, hport, proto, "proxy_tunnel", None, "none",
+                                   direction, nbytes, now)
+
         # 域名来源由准到粗：这条连接的 SNI → 这台终端对该 IP 的 DNS/SNI → 全网 IP→域名 表
         hit = self.names.lookup(host_ip, hport, remote)
         if hit:
@@ -210,8 +276,12 @@ class Engine:
             names = self.dns.lookup(remote)
             qname, cname = names if names else (None, None)
             src_kind = "ip" if names else "none"
-        self.stats["match"][src_kind] += nbytes
         app = self.classifier.classify(remote, proto, rport, qname, cname)
+        return self._count(host_ip, mac, remote, rport, hport, proto, app, qname, src_kind, direction, nbytes, now)
+
+    def _count(self, host_ip, mac, remote, rport, hport, proto, app, qname, src_kind, direction, nbytes, now):
+        """调用方持有 self.lock"""
+        self.stats["match"][src_kind] += nbytes
         key, mac = self.host_key(host_ip, mac)
 
         b = self._buf[(key, app)]
@@ -372,6 +442,14 @@ class Engine:
 
     def is_generic(self, app: str) -> bool:
         return app in GENERIC_APPS
+
+
+def _is_ip(x: str) -> bool:
+    try:
+        ipaddress.ip_address(x)
+        return True
+    except ValueError:
+        return False
 
 
 def _chunks(seq, n):

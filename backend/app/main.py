@@ -7,7 +7,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import __version__, database
+from app import __version__, database, integrations
+from app.asn import asndb
 from app.collector import start_listeners
 from app.config import get_settings
 from app.engine import engine
@@ -35,7 +36,20 @@ def _on_db_ready():
     with database.session() as db:
         wan = db.get(Setting, "wan_interface")
         poller.wan_override = wan.value if wan and wan.value else ""
+        saved = {k: (db.get(Setting, k).value if db.get(Setting, k) else None) for k in integrations.KEYS}
+    integrations.apply(saved)
     print("[startup] 数据库已连接", flush=True)
+
+
+def _auto_update_rules():
+    """识别库自动更新（默认开启，可在识别规则页关闭）；更新器内部保证一天最多检查一次"""
+    if not database.is_configured():
+        return
+    from app.classify.updater import updater
+    with database.session() as db:
+        row = db.get(Setting, "rules_auto_update")
+    if row is None or row.value != "0":
+        updater.check(reload=engine.reload_classifier)
 
 
 def _reconnect():
@@ -59,16 +73,27 @@ async def lifespan(app: FastAPI):
     sched.add_job(_safe(engine.flush, "flush"), "cron", second=0, max_instances=1, coalesce=True)
     sched.add_job(_safe(engine.cleanup, "cleanup"), "cron", minute=17, max_instances=1)
     sched.add_job(_safe(_reconnect, "db-reconnect"), "interval", seconds=30, max_instances=1, coalesce=True)
+    # 外部数据源：没配置时 poll() 直接返回
+    sched.add_job(_safe(integrations.singbox.poll, "singbox"), "interval", seconds=5, max_instances=1, coalesce=True)
+    sched.add_job(_safe(integrations.mosdns.poll, "mosdns"), "interval", seconds=5, max_instances=1, coalesce=True)
+    sched.add_job(_safe(_auto_update_rules, "rules-update"), "interval", hours=6, max_instances=1, coalesce=True)
+    asyncio.get_running_loop().call_later(120, lambda: asyncio.get_running_loop().run_in_executor(
+        None, _safe(_auto_update_rules, "rules-update")))
+    if s.asn_db:
+        sched.add_job(_safe(asndb.update, "asn-db"), "interval", hours=6, max_instances=1, coalesce=True)
+        asyncio.get_running_loop().run_in_executor(None, _safe(asndb.update, "asn-db"))
     if poller.enabled:
         sched.add_job(_safe(poller.sample, "ros-rate"), "interval", seconds=max(s.ros_rate_seconds, 2),
                       max_instances=1, coalesce=True)
         sched.add_job(_safe(poller.poll, "ros-poll"), "interval", seconds=s.ros_poll_seconds,
                       max_instances=1, coalesce=True)
         asyncio.get_running_loop().run_in_executor(None, poller.poll)
-    sched.start()
+    if not os.environ.get("ROSDPI_NO_JOBS"):  # 测试里不跑后台任务，避免整点落库打乱测试数据
+        sched.start()
     print(f"[startup] ROS-DPI {__version__} 已启动，Web 端口 {s.http_port}", flush=True)
     yield
-    sched.shutdown(wait=False)
+    if sched.running:
+        sched.shutdown(wait=False)
     for t in transports:
         t.close()
     _safe(engine.flush, "flush")()

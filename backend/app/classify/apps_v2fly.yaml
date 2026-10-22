@@ -1,6 +1,7 @@
-# 由 scripts/import_v2fly.py 从 v2fly/domain-list-community 生成，请勿手工修改。
+# 由 v2fly/domain-list-community 自动转换（app/classify/v2fly.py），请勿手工修改。
 # 数据来源：https://github.com/v2fly/domain-list-community （MIT License，Copyright (c) 2019-present V2Fly Community）
 # extend: 给 apps.yaml 里已有应用补充域名；apps: 新应用。full = 精确匹配，domains = 后缀匹配。
+# source-commit: 5b6a77d14fb904a1255f02e2e1b2bcc36ed31f83 2026-10-22T04:26:03Z
 extend:
 - extend: activision
   domains: [callofdutyendowment.com, callofdutyendowment.org, callofdutyleague.com, callofdutymobile.com, crashbandicoot.com, demonware.net, highmoonstudios.com, infinityward.com, ravensoftware.com, sekirothegame.com,
