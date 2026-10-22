@@ -19,7 +19,13 @@
         <div class="alias">
           <span class="k">{{ t('hosts.alias') }}</span>
           <input class="input" v-model="alias" :placeholder="t('hosts.aliasPlaceholder')" @keyup.enter="saveAlias" />
-          <button class="btn sm" @click="saveAlias" :disabled="alias === (d.alias || '')">{{ saved ? t('common.saved') : t('common.save') }}</button>
+          <div class="seg by" role="radiogroup" :aria-label="t('hosts.nameBy')">
+            <button v-for="k in ['mac', 'ip']" :key="k" type="button" role="radio" :aria-checked="by === k" :class="{ on: by === k }"
+                    :disabled="k === 'mac' && !d.mac" :title="t('hosts.byHint.' + k)" @click="by = k">{{ t('hosts.by.' + k) }}</button>
+          </div>
+          <button class="btn sm" @click="saveAlias" :disabled="alias === (d.alias || '') && by === (d.alias_by || defBy)">{{ saved ? t('common.saved') : t('common.save') }}</button>
+          <span class="faint small hint">{{ t('hosts.byHint.' + by) }}</span>
+          <div class="err" v-if="aliasErr">{{ aliasErr }}</div>
         </div>
       </div>
 
@@ -30,24 +36,23 @@
         <Stat v-if="extraRange" :label="t('range.' + ui.range)" :value="bytes(d.range_total.total)" :up="d.range_total.up" :down="d.range_total.down" />
       </div>
 
-      <section class="mix mt">
-        <h2>{{ t('overview.mix') }}</h2>
-        <Spectrum :cats="d.categories" />
-      </section>
-
-      <div class="panel mt">
-        <div class="panel-h">{{ t('overview.trend') }}</div>
-        <div class="panel-b"><Chart :option="trendOpt" height="240px" /></div>
+      <div class="grid g-2-3 mt">
+        <div class="panel">
+          <div class="panel-h"><h2>{{ t('overview.mix') }}</h2></div>
+          <div class="panel-b"><Composition :groups="d.groups" compact clickable :active="openGroup" :center-label="t('range.' + ui.range)"
+                                            @pick="p => (openGroup = openGroup === p.group && !p.cat ? '' : p.group)" /></div>
+        </div>
+        <TrendPanel :title="t('overview.trend')" :sub="t('range.' + ui.range)" :points="d.trend" :groups="d.trend_groups" :gran="gran" height="260px" />
       </div>
 
       <div class="grid g2 mt">
         <div class="panel">
-          <div class="panel-h">{{ t('nav.apps') }}</div>
+          <div class="panel-h">{{ t('nav.apps') }}<button v-if="openGroup" class="btn sm" @click="openGroup = ''">{{ t('apps.showAll') }}</button></div>
           <div class="tbl-wrap">
             <table class="tbl">
               <thead><tr><th>{{ t('apps.app') }}</th><th>{{ t('common.category') }}</th><th class="r">{{ t('common.down') }}</th><th class="r">{{ t('common.up') }}</th><th class="r">{{ t('common.share') }}</th></tr></thead>
               <tbody>
-                <tr v-for="a in d.apps" :key="a.id" class="link" @click="$router.push(`/apps/${enc(a.id)}`)">
+                <tr v-for="a in appsShown" :key="a.id" class="link" @click="$router.push(`/apps/${enc(a.id)}`)">
                   <td>{{ appName(a) }}</td>
                   <td><span class="tag"><span class="chip" :style="{ background: catColor(a.category) }" />{{ catName(a) }}</span></td>
                   <td class="r num">{{ bytes(a.down) }}</td>
@@ -56,7 +61,7 @@
                 </tr>
               </tbody>
             </table>
-            <div v-if="!d.apps.length" class="empty">{{ t('common.empty') }}</div>
+            <div v-if="!appsShown.length" class="empty">{{ t('common.empty') }}</div>
           </div>
         </div>
         <div class="panel">
@@ -85,39 +90,47 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http, { enc } from '../api.js'
-import { trendOption } from '../charts.js'
-import Chart from '../components/Chart.vue'
+import Composition from '../components/Composition.vue'
 import RangeTabs from '../components/RangeTabs.vue'
-import Spectrum from '../components/Spectrum.vue'
 import Stat from '../components/Stat.vue'
+import TrendPanel from '../components/TrendPanel.vue'
 import { ago, appName, bytes, catColor, catName, datetime, pct, rate } from '../format.js'
 import { usePoll } from '../poll.js'
 import { ui } from '../state.js'
 
 // 参数不能叫 key（Vue 保留属性，不会作为 prop 传入）
 const props = defineProps({ hostKey: String })
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const d = ref(null)
 const alias = ref('')
+const by = ref('mac')
 const saved = ref(false)
+const aliasErr = ref('')
+const openGroup = ref('')
 
+const defBy = computed(() => (d.value && d.value.mac ? 'mac' : 'ip'))
 const { loading, error } = usePoll(async () => {
   const first = !d.value
   d.value = await http.get(`/hosts/${enc(props.hostKey)}/detail`, { params: { range: ui.range } })
-  if (first) alias.value = d.value.alias || ''
+  if (first) {
+    alias.value = d.value.alias || ''
+    by.value = d.value.alias_by || defBy.value
+  }
 }, 30000, () => [ui.range, props.hostKey])
 
 // 今日/本周/本月 已有固定卡片，只有选其他范围时才多显示一张
 const extraRange = computed(() => !['today', 'week', 'month'].includes(ui.range))
-const deps = () => [ui.theme, locale.value]
-const trendOpt = computed(() => (deps(), trendOption(d.value.trend, ['today', 'yesterday'].includes(ui.range) ? 'hour' : 'day')))
+const gran = computed(() => (['today', 'yesterday'].includes(ui.range) ? 'hour' : 'day'))
+const appsShown = computed(() => d.value.apps.filter(a => !openGroup.value || a.group === openGroup.value))
 
 async function saveAlias() {
-  await http.patch(`/hosts/${enc(props.hostKey)}`, { alias: alias.value })
-  d.value.alias = alias.value || null
-  d.value.name = alias.value || d.value.hostname || d.value.ip
-  saved.value = true
-  setTimeout(() => (saved.value = false), 1500)
+  aliasErr.value = ''
+  try {
+    const r = await http.patch(`/hosts/${enc(props.hostKey)}`, { alias: alias.value, by: by.value })
+    Object.assign(d.value, { alias: r.alias, alias_by: r.alias_by, name: r.name })
+    saved.value = true
+    setTimeout(() => (saved.value = false), 1500)
+  } catch (e) { aliasErr.value = e.message }
 }
 </script>
 
@@ -127,8 +140,15 @@ h1 { display: flex; align-items: center; gap: 10px; }
 .info { padding: 14px 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 20px; font-size: 13px; }
 .info > div { display: flex; gap: 10px; align-items: center; min-width: 0; }
 .k { color: var(--muted); flex: none; min-width: 64px; }
-.alias { grid-column: 1 / -1; max-width: 520px; }
+.alias { grid-column: 1 / -1; flex-wrap: wrap; }
+.alias .input { max-width: 280px; flex: 1 1 180px; }
+.by { border-bottom: 0; }
+.by button { padding: 4px 8px 6px; font-size: 13px; }
+.by button:disabled { opacity: .4; cursor: not-allowed; }
+.hint { flex-basis: 100%; padding-left: 74px; }
 .dom { max-height: 520px; overflow-y: auto; }
-.mix h2 { font: 600 17px/1.3 var(--cond); margin: 0 0 10px; }
+.g-2-3 { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
+@media (max-width: 1100px) { .g-2-3 { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .hint { padding-left: 0; } }
 .dn { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
 </style>

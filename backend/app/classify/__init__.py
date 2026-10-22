@@ -1,6 +1,7 @@
 """把一条流（远端 IP + 端口 + 域名）识别为应用。
 
-优先级：自定义规则 > 域名后缀（先查询名再 CNAME，最长后缀优先）> CIDR > 端口 > other。
+分三级：应用大类（group）→ 应用小类（category）→ 应用（app），与 Panabit 的应用分类方式一致。
+优先级：自定义规则 > 域名后缀（先查询名再 CNAME，最长后缀优先）> CIDR > 端口 > IP 协议号 > other。
 """
 import ipaddress
 import os
@@ -11,6 +12,8 @@ import yaml
 RULES_FILE = os.path.join(os.path.dirname(__file__), "apps.yaml")
 UNKNOWN_APP = "other"
 GENERIC_APPS = {"https", "quic", "http", UNKNOWN_APP}  # 这些应用下的域名算"未识别"
+# 只能说明协议或 CDN 厂商、说明不了具体应用的分类，不计入"应用识别率"
+UNIDENTIFIED_CATEGORIES = {"unknown", "web", "network", "cdn"}
 
 
 @dataclass
@@ -33,6 +36,7 @@ class Classifier:
     def __init__(self, rules_file: str = RULES_FILE):
         with open(rules_file, encoding="utf-8") as f:
             data = yaml.safe_load(f)
+        self.groups: dict[str, dict] = data["groups"]
         self.categories: dict[str, dict] = data["categories"]
         self._base_apps = data["apps"]
         self.load_custom([])
@@ -43,9 +47,12 @@ class Classifier:
         self.domains: dict[str, str] = {}
         self.nets: list[tuple[ipaddress._BaseNetwork, str]] = []
         self.ports: list[tuple[int, int, int, str]] = []
+        self.protos: dict[int, str] = {}
         for a in self._base_apps:
             self.apps[a["id"]] = App(a["id"], a["name"], a.get("name_en", a["name"]), a["category"])
             self._add(a["id"], a.get("domains", []), a.get("cidrs", []), a.get("ports", []), first_wins=True)
+            for p in a.get("protos", []):
+                self.protos.setdefault(int(p), a["id"])
         self.apps[UNKNOWN_APP] = App(UNKNOWN_APP, "其他", "Other", "unknown")
 
         custom_nets, custom_ports = [], []
@@ -84,6 +91,7 @@ class Classifier:
         if not name:
             return None
         parts = name.lower().strip(".").split(".")
+        # 从完整域名开始逐级去掉左边一段；单段名（如 dns.google 的 google）不参与匹配
         for i in range(len(parts) - 1):
             hit = self.domains.get(".".join(parts[i:]))
             if hit:
@@ -110,6 +118,8 @@ class Classifier:
                 if p == proto and lo <= port <= hi:
                     app = aid
                     break
+        if app is None:
+            app = self.protos.get(proto)
         app = app or UNKNOWN_APP
         if len(self._cache) > 200_000:
             self._cache.clear()
@@ -120,4 +130,7 @@ class Classifier:
         return self.apps.get(app_id) or App(app_id, app_id, app_id, "unknown")
 
     def category_info(self, cat: str) -> dict:
-        return self.categories.get(cat) or {"name": cat, "name_en": cat}
+        return self.categories.get(cat) or {"group": "unknown", "name": cat, "name_en": cat}
+
+    def group_info(self, group: str) -> dict:
+        return self.groups.get(group) or {"name": group, "name_en": group}

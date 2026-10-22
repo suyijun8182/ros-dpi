@@ -63,7 +63,7 @@ function open(p) {
   if (!n) return
   if (n.kind === 'host' && n.key) router.push(`/hosts/${enc(n.key)}`)
   else if (n.kind === 'app' && n.app) router.push(`/apps/${enc(n.app)}`)
-  else if (n.kind === 'category') router.push({ path: '/apps', query: { cat: n.category } })
+  else if (n.kind === 'group') router.push({ path: '/apps', query: { group: n.group } })
 }
 </script>
 

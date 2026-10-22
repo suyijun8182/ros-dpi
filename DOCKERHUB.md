@@ -8,6 +8,7 @@ Source & docs: https://github.com/suyijun8182/ros-dpi
 
 ## What's new
 
+- **0.1.4**: Panabit-style three-level app library (10 groups, 41 categories, 277 apps; CDN attribution via CNAME); redesigned charts (traffic-mix donut, trend stacked by app group, ranked lists, Sankey by group); name hosts by MAC or IP; DNS sniffer card shows which DNS servers answers come from.
 - **0.1.3**: fix the 500 error on the overview page when the RouterOS API (`ROS_URL`) is configured; clearer RouterOS connection errors.
 - **0.1.2**: first-run setup wizard: enter your MySQL connection in the browser, like EasySub. The compose file no longer needs database settings. A README guide covers creating the database.
 - **0.1.1**: full `docker-compose.yml` on this page (no `.env` needed), first-run notes, database auto-created on external MySQL.
@@ -16,7 +17,8 @@ Source & docs: https://github.com/suyijun8182/ros-dpi
 ## Features
 
 - IPFIX / NetFlow v9 collector (udp/2055), TZSP DNS sniffer (udp/37008), optional read-only RouterOS REST polling
-- 100+ built-in apps in 20+ categories; custom domain / CIDR / port rules
+- 277 built-in apps in 41 categories under 10 app groups (Panabit-style); custom domain / CIDR / port rules
+- Name hosts by MAC or by IP
 - Per-minute / hour / day aggregation in MySQL
 
 ## Quick start

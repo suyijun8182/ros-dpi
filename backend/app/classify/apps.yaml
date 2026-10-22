@@ -1,41 +1,84 @@
-# 应用识别规则库
+# 应用识别规则库（参照 Panabit 的 应用大类 → 应用小类 → 应用 三级结构）
 # domains: 后缀匹配（douyin.com 同时匹配 www.douyin.com）。先匹配终端查询的域名，再匹配 CNAME。
 # cidrs:   目的 IP 段（没有 DNS 记录时使用）
 # ports:   "tcp/443"、"udp/3478-3481" 形式，最后兜底
-# 欢迎通过 PR 补充；用户也可以在 设置 → 识别规则 里添加自定义规则（优先级最高）。
+# protos:  IP 协议号（1=ICMP、47=GRE、50=ESP、58=ICMPv6）
+# 欢迎通过 PR 补充；用户也可以在 识别规则 页添加自定义规则（优先级最高）。
+#
+# 已发布过的应用 ID 和分类 ID 不要删除或改名：历史流量按应用 ID 存储。
+# 应用不再使用时，保留条目、清空 domains 即可。
+
+groups:
+  media:    {name: 影音娱乐, name_en: Media}
+  game:     {name: 网络游戏, name_en: Gaming}
+  social:   {name: 社交通讯, name_en: Social & messaging}
+  transfer: {name: 下载更新, name_en: Downloads & updates}
+  work:     {name: 办公学习, name_en: Work & study}
+  life:     {name: 购物生活, name_en: Shopping & life}
+  info:     {name: 资讯阅读, name_en: News & reading}
+  iot:      {name: 智能设备, name_en: Smart devices}
+  base:     {name: 网络基础, name_en: Infrastructure}
+  unknown:  {name: 未识别,   name_en: Unknown}
 
 categories:
-  video:      {name: 视频,     name_en: Video}
-  short_video: {name: 短视频,  name_en: Short video}
-  live:       {name: 直播,     name_en: Live}
-  music:      {name: 音乐音频, name_en: Audio}
-  social:     {name: 社交社区, name_en: Social}
-  im:         {name: 即时通讯, name_en: Messaging}
-  game:       {name: 游戏,     name_en: Gaming}
-  shopping:   {name: 购物,     name_en: Shopping}
-  news:       {name: 资讯阅读, name_en: News}
-  search:     {name: 搜索门户, name_en: Search & portal}
-  cloud:      {name: 网盘存储, name_en: Cloud storage}
-  download:   {name: 下载P2P,  name_en: Download & P2P}
-  update:     {name: 系统更新, name_en: Software update}
-  ai:         {name: AI 工具,  name_en: AI}
-  work:       {name: 办公开发, name_en: Work & dev}
-  finance:    {name: 金融支付, name_en: Finance}
-  life:       {name: 生活出行, name_en: Lifestyle}
-  ads:        {name: 广告统计, name_en: Ads & analytics}
-  iot:        {name: 智能家居, name_en: Smart home}
-  network:    {name: 网络协议, name_en: Network protocol}
-  web:        {name: 通用网页, name_en: Web}
-  unknown:    {name: 未识别,   name_en: Unknown}
+  video:        {group: media,    name: 在线视频, name_en: Video}
+  short_video:  {group: media,    name: 短视频,   name_en: Short video}
+  live:         {group: media,    name: 直播,     name_en: Live streaming}
+  music:        {group: media,    name: 音乐音频, name_en: Music & audio}
+  game:         {group: game,     name: 游戏平台, name_en: Game platforms}
+  mobile_game:  {group: game,     name: 手机游戏, name_en: Mobile games}
+  console_game: {group: game,     name: 主机游戏, name_en: Console games}
+  game_tool:    {group: game,     name: 游戏加速, name_en: Game boosters}
+  im:           {group: social,   name: 即时通讯, name_en: Messaging}
+  social:       {group: social,   name: 社交社区, name_en: Social}
+  voip:         {group: social,   name: 语音通话, name_en: Voice & calls}
+  mail:         {group: social,   name: 电子邮件, name_en: Mail}
+  download:     {group: transfer, name: 下载P2P,  name_en: Download & P2P}
+  cloud:        {group: transfer, name: 网盘存储, name_en: Cloud storage}
+  update:       {group: transfer, name: 软件更新, name_en: Software update}
+  app_store:    {group: transfer, name: 应用商店, name_en: App stores}
+  work:         {group: work,     name: 办公协作, name_en: Office & collaboration}
+  meeting:      {group: work,     name: 视频会议, name_en: Meetings}
+  dev:          {group: work,     name: 开发工具, name_en: Developer}
+  remote:       {group: work,     name: 远程控制, name_en: Remote access}
+  ai:           {group: work,     name: AI 工具,  name_en: AI}
+  education:    {group: work,     name: 在线教育, name_en: Education}
+  shopping:     {group: life,     name: 网络购物, name_en: Shopping}
+  life:         {group: life,     name: 生活服务, name_en: Lifestyle}
+  travel:       {group: life,     name: 出行地图, name_en: Travel & maps}
+  finance:      {group: life,     name: 支付,     name_en: Payments}
+  bank:         {group: life,     name: 银行,     name_en: Banking}
+  stock:        {group: life,     name: 证券理财, name_en: Investing}
+  news:         {group: info,     name: 新闻资讯, name_en: News}
+  search:       {group: info,     name: 搜索门户, name_en: Search & portal}
+  reading:      {group: info,     name: 阅读漫画, name_en: Reading & comics}
+  iot:          {group: iot,      name: 智能家居, name_en: Smart home}
+  camera:       {group: iot,      name: 监控摄像, name_en: Cameras}
+  network:      {group: base,     name: 网络协议, name_en: Network protocol}
+  system:       {group: base,     name: 系统服务, name_en: OS services}
+  cdn:          {group: base,     name: CDN 云服务, name_en: CDN & cloud}
+  proxy:        {group: base,     name: 代理隧道, name_en: VPN & tunnels}
+  security:     {group: base,     name: 安全软件, name_en: Security}
+  ads:          {group: base,     name: 广告统计, name_en: Ads & analytics}
+  web:          {group: base,     name: 通用网页, name_en: Web}
+  unknown:      {group: unknown,  name: 未识别,   name_en: Unknown}
 
 apps:
-  # ---------- 短视频 / 视频 ----------
+  # ================= 影音娱乐 =================
+  # ---------- 短视频 ----------
   - {id: douyin, name: 抖音, name_en: Douyin, category: short_video,
      domains: [douyin.com, douyinpic.com, douyinvod.com, douyincdn.com, douyinstatic.com, iesdouyin.com, amemv.com, snssdk.com, bytecdn.cn, byteimg.com, pstatp.com, zjcdn.com, bytedance.com, bytegoofy.com, ibytedtos.com, volces.com]}
   - {id: kuaishou, name: 快手, name_en: Kuaishou, category: short_video,
      domains: [kuaishou.com, gifshow.com, ksapisrv.com, kwaicdn.com, kwimgs.com, yximgs.com, kspkg.com, kuaishouzt.com, ndcimgs.com]}
   - {id: tiktok, name: TikTok, name_en: TikTok, category: short_video,
      domains: [tiktok.com, tiktokv.com, tiktokcdn.com, tiktokcdn-us.com, musical.ly, byteoversea.com, ibyteimg.com, ttwstatic.com]}
+  - {id: wechat_channels, name: 微信视频号, name_en: WeChat Channels, category: short_video,
+     domains: [finder.video.qq.com, channels.weixin.qq.com]}
+  - {id: weishi, name: 微视, name_en: Weishi, category: short_video, domains: [weishi.qq.com]}
+  - {id: xigua, name: 西瓜视频, name_en: Xigua, category: short_video,
+     domains: [ixigua.com, ixiguavideo.com]}
+  - {id: haokan, name: 好看视频, name_en: Haokan, category: short_video, domains: [haokan.baidu.com, haokanvideo.com]}
+  # ---------- 在线视频 ----------
   - {id: bilibili, name: 哔哩哔哩, name_en: Bilibili, category: video,
      domains: [bilibili.com, bilivideo.com, bilivideo.cn, hdslb.com, biliapi.net, biliapi.com, bilicdn1.com, bilicdn2.com, b23.tv, acgvideo.com]}
   - {id: iqiyi, name: 爱奇艺, name_en: iQIYI, category: video,
@@ -46,25 +89,32 @@ apps:
      domains: [youku.com, ykimg.com, tudou.com, soku.com, cibntv.net, youku.tv]}
   - {id: mgtv, name: 芒果TV, name_en: Mango TV, category: video,
      domains: [mgtv.com, hitv.com, hunantv.com]}
-  - {id: xiaohongshu, name: 小红书, name_en: Xiaohongshu, category: social,
-     domains: [xiaohongshu.com, xhscdn.com, xhslink.com, xhscdn.net]}
+  - {id: sohu_video, name: 搜狐视频, name_en: Sohu Video, category: video, domains: [tv.sohu.com, film.sohu.com]}
+  - {id: migu_video, name: 咪咕视频, name_en: Migu Video, category: video, domains: [miguvideo.com, cmvideo.cn]}
+  - {id: cctv, name: 央视频/CCTV, name_en: CCTV, category: video, domains: [cctv.com, cntv.cn, cctvpic.com, yangshipin.cn]}
   - {id: youtube, name: YouTube, name_en: YouTube, category: video,
      domains: [youtube.com, googlevideo.com, ytimg.com, youtu.be, youtube-nocookie.com, yt3.ggpht.com, youtubei.googleapis.com]}
   - {id: netflix, name: Netflix, name_en: Netflix, category: video,
      domains: [netflix.com, nflxvideo.net, nflximg.net, nflxext.com, nflxso.net, nflximg.com]}
   - {id: disney, name: Disney+, name_en: Disney+, category: video,
      domains: [disneyplus.com, disney-plus.net, dssott.com, bamgrid.com, disneystreaming.com]}
+  - {id: prime_video, name: Prime Video, name_en: Prime Video, category: video,
+     domains: [primevideo.com, aiv-cdn.net, aiv-delivery.net, pv-cdn.net]}
+  - {id: hbo, name: HBO Max, name_en: HBO Max, category: video, domains: [max.com, hbomax.com, hbo.com]}
+  - {id: hulu, name: Hulu, name_en: Hulu, category: video, domains: [hulu.com, hulustream.com, huluim.com]}
   - {id: apple_tv, name: Apple TV+, name_en: Apple TV+, category: video,
      domains: [tv.apple.com, hls.itunes.apple.com, play-edge.itunes.apple.com, np-edge.itunes.apple.com]}
+  # ---------- 直播 ----------
   - {id: twitch, name: Twitch, name_en: Twitch, category: live,
      domains: [twitch.tv, ttvnw.net, jtvnw.net, twitchcdn.net]}
   - {id: huya, name: 虎牙直播, name_en: Huya, category: live,
      domains: [huya.com, msstatic.com, huyaimg.com, hy-cdn.com]}
   - {id: douyu, name: 斗鱼直播, name_en: Douyu, category: live,
      domains: [douyu.com, douyucdn.cn, douyucdn2.cn, douyuscdn.com]}
-  - {id: xigua, name: 西瓜视频, name_en: Xigua, category: video,
-     domains: [ixigua.com, ixiguavideo.com]}
-
+  - {id: bili_live, name: B站直播, name_en: Bilibili Live, category: live, domains: [live.bilibili.com, api.live.bilibili.com]}
+  - {id: yy, name: YY直播, name_en: YY Live, category: live, domains: [yy.com, yystatic.com, bigo.tv]}
+  - {id: inke, name: 映客/花椒, name_en: Inke/Huajiao, category: live, domains: [inke.cn, inke.com, huajiao.com]}
+  - {id: kick, name: Kick, name_en: Kick, category: live, domains: [kick.com]}
   # ---------- 音乐音频 ----------
   - {id: netease_music, name: 网易云音乐, name_en: NetEase Music, category: music,
      domains: [music.163.com, music.126.net, music.netease.com, iplay.163.com]}
@@ -72,47 +122,18 @@ apps:
      domains: [y.qq.com, music.qq.com, stream.qqmusic.qq.com, qqmusic.qq.com, ws.stream.qqmusic.qq.com]}
   - {id: kugou, name: 酷狗/酷我, name_en: Kugou/Kuwo, category: music,
      domains: [kugou.com, kgimg.com, kuwo.cn]}
+  - {id: migu_music, name: 咪咕音乐, name_en: Migu Music, category: music, domains: [music.migu.cn]}
   - {id: ximalaya, name: 喜马拉雅, name_en: Ximalaya, category: music,
      domains: [ximalaya.com, xmcdn.com]}
+  - {id: lizhi, name: 荔枝/蜻蜓FM, name_en: Lizhi/Qingting FM, category: music, domains: [lizhi.fm, lizhifm.com, qingting.fm, qtfm.cn]}
   - {id: spotify, name: Spotify, name_en: Spotify, category: music,
      domains: [spotify.com, scdn.co, spotifycdn.com, spotify.design, pscdn.co]}
   - {id: apple_music, name: Apple Music, name_en: Apple Music, category: music,
-     domains: [music.apple.com, aod.itunes.apple.com, audio-ssl.itunes.apple.com, mvod.itunes.apple.com]}
+     domains: [music.apple.com, aod.itunes.apple.com, audio-ssl.itunes.apple.com, mvod.itunes.apple.com, podcasts.apple.com]}
+  - {id: youtube_music, name: YouTube Music, name_en: YouTube Music, category: music, domains: [music.youtube.com]}
+  - {id: soundcloud, name: SoundCloud, name_en: SoundCloud, category: music, domains: [soundcloud.com, sndcdn.com]}
 
-  # ---------- 即时通讯 / 社交 ----------
-  - {id: wechat, name: 微信, name_en: WeChat, category: im,
-     domains: [weixin.qq.com, wechat.com, servicewechat.com, weixinbridge.com, wx.qq.com, qpic.cn, qlogo.cn, wxs.qq.com, mmbiz.qpic.cn, tenpay.com, wxapp.tc.qq.com, finder.video.qq.com, channels.weixin.qq.com, szextshort.weixin.qq.com, szshort.weixin.qq.com, szminorshort.weixin.qq.com, extshort.weixin.qq.com, short.weixin.qq.com, dns.weixin.qq.com]}
-  - {id: qq, name: QQ, name_en: QQ, category: im,
-     domains: [qq.com, qzone.qq.com, im.qq.com, idqqimg.com, gtimg.cn, qqmail.com, tencent.com, myqcloud.com, qcloud.com, tencent-cloud.net, tencentcs.com]}
-  - {id: dingtalk, name: 钉钉, name_en: DingTalk, category: work,
-     domains: [dingtalk.com, dingtalkapps.com, alicdn-dingtalk.com, dingtalk.cn]}
-  - {id: feishu, name: 飞书, name_en: Lark/Feishu, category: work,
-     domains: [feishu.cn, larksuite.com, feishucdn.com, larkoffice.com, feishu.net]}
-  - {id: wework, name: 企业微信, name_en: WeCom, category: work,
-     domains: [work.weixin.qq.com, wework.qpic.cn, qyapi.weixin.qq.com]}
-  - {id: weibo, name: 微博, name_en: Weibo, category: social,
-     domains: [weibo.com, weibo.cn, sinaimg.cn, weibocdn.com, sina.com.cn, sina.cn]}
-  - {id: zhihu, name: 知乎, name_en: Zhihu, category: social,
-     domains: [zhihu.com, zhimg.com, zhihu.cn]}
-  - {id: douban, name: 豆瓣, name_en: Douban, category: social,
-     domains: [douban.com, doubanio.com]}
-  - {id: tieba, name: 百度贴吧, name_en: Tieba, category: social,
-     domains: [tieba.baidu.com, tiebapic.baidu.com]}
-  - {id: telegram, name: Telegram, name_en: Telegram, category: im,
-     domains: [telegram.org, t.me, telegram.me, tdesktop.com, telesco.pe, telegra.ph],
-     cidrs: [91.108.4.0/22, 91.108.8.0/22, 91.108.12.0/22, 91.108.16.0/22, 91.108.56.0/22, 149.154.160.0/20, 95.161.64.0/20, "2001:b28:f23d::/48", "2001:b28:f23f::/48", "2001:67c:4e8::/48"]}
-  - {id: whatsapp, name: WhatsApp, name_en: WhatsApp, category: im,
-     domains: [whatsapp.com, whatsapp.net, wa.me]}
-  - {id: discord, name: Discord, name_en: Discord, category: im,
-     domains: [discord.com, discord.gg, discordapp.com, discordapp.net, discord.media]}
-  - {id: facebook, name: Facebook/Instagram, name_en: Meta, category: social,
-     domains: [facebook.com, fbcdn.net, instagram.com, cdninstagram.com, messenger.com, fb.com, threads.net]}
-  - {id: twitter, name: X/Twitter, name_en: X/Twitter, category: social,
-     domains: [twitter.com, x.com, twimg.com, t.co]}
-  - {id: reddit, name: Reddit, name_en: Reddit, category: social,
-     domains: [reddit.com, redd.it, redditmedia.com, redditstatic.com]}
-
-  # ---------- 游戏 ----------
+  # ================= 网络游戏 =================
   - {id: steam, name: Steam, name_en: Steam, category: game,
      domains: [steampowered.com, steamcommunity.com, steamstatic.com, steamcontent.com, steamserver.net, steamgames.com, steamusercontent.com, valvesoftware.com, steamchina.com, akamai.steamstatic.com]}
   - {id: epic, name: Epic Games, name_en: Epic Games, category: game,
@@ -121,62 +142,103 @@ apps:
      domains: [game.qq.com, gamesafe.qq.com, wegame.com, wegame.com.cn, gcloud.qq.com, pvp.qq.com, gp.qq.com, tgpa.qq.com, dlied1.qq.com, dlied5.qq.com, gamecenter.qq.com, tencentgames.com, levelinfinite.com]}
   - {id: netease_games, name: 网易游戏, name_en: NetEase Games, category: game,
      domains: [game.163.com, nie.netease.com, netease.gg, x19.update.netease.com, gdl.netease.com, update.netease.com]}
-  - {id: mihoyo, name: 米哈游, name_en: HoYoverse, category: game,
-     domains: [mihoyo.com, hoyoverse.com, yuanshen.com, genshinimpact.com, hoyolab.com, bhsr.com, starrails.com, mhyurl.cn]}
-  - {id: xbox, name: Xbox/Microsoft游戏, name_en: Xbox, category: game,
-     domains: [xbox.com, xboxlive.com, xboxservices.com, gamepass.com, assets1.xboxlive.com]}
-  - {id: playstation, name: PlayStation, name_en: PlayStation, category: game,
-     domains: [playstation.com, playstation.net, sonyentertainmentnetwork.com, np.dl.playstation.net, gs2.ww.prod.dl.playstation.net]}
-  - {id: nintendo, name: Nintendo, name_en: Nintendo, category: game,
-     domains: [nintendo.com, nintendo.net, nintendo.co.jp, nintendowifi.net]}
   - {id: blizzard, name: 暴雪战网, name_en: Battle.net, category: game,
      domains: [battle.net, blizzard.com, blizzard.cn, battlenet.com.cn, blzstatic.cn]}
   - {id: riot, name: Riot Games, name_en: Riot Games, category: game,
      domains: [riotgames.com, leagueoflegends.com, riotcdn.net, playvalorant.com]}
   - {id: ea, name: EA, name_en: EA, category: game,
      domains: [ea.com, origin.com, eaassets-a.akamaihd.net]}
+  - {id: ubisoft, name: Ubisoft, name_en: Ubisoft, category: game, domains: [ubisoft.com, ubi.com, ubisoftconnect.com]}
+  - {id: gog, name: GOG, name_en: GOG, category: game, domains: [gog.com, gog-statics.com]}
+  - {id: rockstar, name: Rockstar, name_en: Rockstar, category: game, domains: [rockstargames.com]}
+  - {id: activision, name: 动视, name_en: Activision, category: game, domains: [activision.com, callofduty.com]}
+  - {id: pubg, name: PUBG/Krafton, name_en: PUBG/Krafton, category: game, domains: [pubg.com, playbattlegrounds.com, krafton.com]}
+  - {id: minecraft, name: Minecraft, name_en: Minecraft, category: game, domains: [minecraft.net, mojang.com, minecraftservices.com]}
+  - {id: roblox, name: Roblox, name_en: Roblox, category: game, domains: [roblox.com, rbxcdn.com, roblox.cn]}
+  - {id: perfect_world, name: 完美世界, name_en: Perfect World, category: game, domains: [wanmei.com, pwrd.com, perfectworld.com]}
+  - {id: kingsoft_games, name: 西山居/盛趣/巨人, name_en: Seasun/Shengqu/Giant, category: game, domains: [xoyo.com, seasun.com, sdo.com, ztgame.com]}
+  - {id: game_4399, name: 4399, name_en: "4399", category: game, domains: [4399.com, img4399.com, 4399sj.com]}
+  - {id: mihoyo, name: 米哈游, name_en: HoYoverse, category: mobile_game,
+     domains: [mihoyo.com, hoyoverse.com, yuanshen.com, genshinimpact.com, hoyolab.com, bhsr.com, starrails.com, mhyurl.cn]}
+  - {id: hypergryph, name: 鹰角网络, name_en: Hypergryph, category: mobile_game, domains: [hypergryph.com, hycdn.cn]}
+  - {id: lilith, name: 莉莉丝, name_en: Lilith Games, category: mobile_game, domains: [lilith.com, lilithgame.com, lilithgames.com]}
+  - {id: papergames, name: 叠纸游戏, name_en: Papergames, category: mobile_game, domains: [papegames.com, papegames.cn]}
+  - {id: supercell, name: Supercell, name_en: Supercell, category: mobile_game, domains: [supercell.com, supercell.net]}
+  - {id: taptap, name: TapTap, name_en: TapTap, category: mobile_game, domains: [taptap.com, taptap.cn, tapimg.com, taptap.io]}
+  - {id: xbox, name: Xbox/Microsoft游戏, name_en: Xbox, category: console_game,
+     domains: [xbox.com, xboxlive.com, xboxservices.com, gamepass.com, assets1.xboxlive.com]}
+  - {id: playstation, name: PlayStation, name_en: PlayStation, category: console_game,
+     domains: [playstation.com, playstation.net, sonyentertainmentnetwork.com, np.dl.playstation.net, gs2.ww.prod.dl.playstation.net]}
+  - {id: nintendo, name: Nintendo, name_en: Nintendo, category: console_game,
+     domains: [nintendo.com, nintendo.net, nintendo.co.jp, nintendowifi.net]}
+  - {id: game_booster, name: 游戏加速器, name_en: Game boosters, category: game_tool,
+     domains: [uu.163.com, xunyou.com, leigod.com, qiyou.cn, biubiu001.com]}
 
-  # ---------- 购物 / 生活 / 金融 ----------
-  - {id: taobao, name: 淘宝/天猫, name_en: Taobao/Tmall, category: shopping,
-     domains: [taobao.com, tmall.com, alicdn.com, tbcdn.cn, taobaocdn.com, mmstat.com, tanx.com, alibaba.com, aliexpress.com, 1688.com, alipayobjects.com]}
-  - {id: jd, name: 京东, name_en: JD, category: shopping,
-     domains: [jd.com, 360buyimg.com, jd.hk, jdpay.com, jcloud.com, jdcloud.com, 3.cn]}
-  - {id: pinduoduo, name: 拼多多, name_en: Pinduoduo, category: shopping,
-     domains: [pinduoduo.com, yangkeduo.com, pddpic.com, pddugc.com, temu.com, kwcdn.com]}
-  - {id: meituan, name: 美团, name_en: Meituan, category: life,
-     domains: [meituan.com, meituan.net, dianping.com, dpfile.com, maoyan.com, sankuai.com]}
-  - {id: eleme, name: 饿了么, name_en: Ele.me, category: life,
-     domains: [ele.me, elemecdn.com, eleme.cn]}
-  - {id: didi, name: 滴滴出行, name_en: DiDi, category: life,
-     domains: [didiglobal.com, diditaxi.com.cn, didistatic.com, xiaojukeji.com]}
-  - {id: amap, name: 高德地图, name_en: Amap, category: life,
-     domains: [amap.com, autonavi.com, gaode.com]}
-  - {id: ctrip, name: 携程, name_en: Trip.com, category: life,
-     domains: [ctrip.com, trip.com, c-ctrip.com, ctripcorp.com, tripcdn.com]}
-  - {id: alipay, name: 支付宝, name_en: Alipay, category: finance,
-     domains: [alipay.com, alipay.cn, alipay-eco.com, antgroup.com, alipaydns.com, mybank.cn]}
-  - {id: amazon, name: Amazon, name_en: Amazon, category: shopping,
-     domains: [amazon.com, amazon.cn, media-amazon.com, ssl-images-amazon.com, amazon.co.jp]}
+  # ================= 社交通讯 =================
+  - {id: wechat, name: 微信, name_en: WeChat, category: im,
+     domains: [weixin.qq.com, wechat.com, servicewechat.com, weixinbridge.com, wx.qq.com, qpic.cn, qlogo.cn, wxs.qq.com, mmbiz.qpic.cn, tenpay.com, wxapp.tc.qq.com, szextshort.weixin.qq.com, szshort.weixin.qq.com, szminorshort.weixin.qq.com, extshort.weixin.qq.com, short.weixin.qq.com, dns.weixin.qq.com]}
+  - {id: qq, name: QQ, name_en: QQ, category: im,
+     domains: [qq.com, qzone.qq.com, im.qq.com, idqqimg.com, gtimg.cn, tencent.com]}
+  - {id: telegram, name: Telegram, name_en: Telegram, category: im,
+     domains: [telegram.org, t.me, telegram.me, tdesktop.com, telesco.pe, telegra.ph],
+     cidrs: [91.108.4.0/22, 91.108.8.0/22, 91.108.12.0/22, 91.108.16.0/22, 91.108.56.0/22, 149.154.160.0/20, 95.161.64.0/20, "2001:b28:f23d::/48", "2001:b28:f23f::/48", "2001:67c:4e8::/48"]}
+  - {id: whatsapp, name: WhatsApp, name_en: WhatsApp, category: im,
+     domains: [whatsapp.com, whatsapp.net, wa.me]}
+  - {id: discord, name: Discord, name_en: Discord, category: im,
+     domains: [discord.com, discord.gg, discordapp.com, discordapp.net, discord.media]}
+  - {id: line, name: LINE, name_en: LINE, category: im, domains: [line.me, line-apps.com, line-scdn.net, naver.jp]}
+  - {id: signal, name: Signal, name_en: Signal, category: im, domains: [signal.org, whispersystems.org, signal.art]}
+  - {id: kakao, name: KakaoTalk, name_en: KakaoTalk, category: im, domains: [kakao.com, kakaocdn.net]}
+  - {id: momo, name: 陌陌/探探, name_en: Momo/Tantan, category: im, domains: [immomo.com, momocdn.com, tantanapp.com]}
+  - {id: soul, name: Soul, name_en: Soul, category: im, domains: [soulapp.cn, soulapp.me]}
+  - {id: weibo, name: 微博, name_en: Weibo, category: social,
+     domains: [weibo.com, weibo.cn, sinaimg.cn, weibocdn.com]}
+  - {id: xiaohongshu, name: 小红书, name_en: Xiaohongshu, category: social,
+     domains: [xiaohongshu.com, xhscdn.com, xhslink.com, xhscdn.net]}
+  - {id: zhihu, name: 知乎, name_en: Zhihu, category: social,
+     domains: [zhihu.com, zhimg.com, zhihu.cn]}
+  - {id: douban, name: 豆瓣, name_en: Douban, category: social,
+     domains: [douban.com, doubanio.com]}
+  - {id: tieba, name: 百度贴吧, name_en: Tieba, category: social,
+     domains: [tieba.baidu.com, tiebapic.baidu.com]}
+  - {id: hupu, name: 虎扑, name_en: Hupu, category: social, domains: [hupu.com, hoopchina.com.cn, hupucdn.com]}
+  - {id: nga, name: NGA 玩家社区, name_en: NGA, category: social, domains: [nga.cn, ngabbs.com, 178.com, nga.178.com]}
+  - {id: jike, name: 即刻/脉脉, name_en: Jike/Maimai, category: social, domains: [okjike.com, maimai.cn, taou.com]}
+  - {id: facebook, name: Facebook/Instagram, name_en: Meta, category: social,
+     domains: [facebook.com, fbcdn.net, instagram.com, cdninstagram.com, messenger.com, fb.com, threads.net]}
+  - {id: twitter, name: X/Twitter, name_en: X/Twitter, category: social,
+     domains: [twitter.com, x.com, twimg.com, t.co]}
+  - {id: reddit, name: Reddit, name_en: Reddit, category: social,
+     domains: [reddit.com, redd.it, redditmedia.com, redditstatic.com]}
+  - {id: linkedin, name: LinkedIn, name_en: LinkedIn, category: social, domains: [linkedin.com, licdn.com]}
+  - {id: pinterest, name: Pinterest, name_en: Pinterest, category: social, domains: [pinterest.com, pinimg.com]}
+  - {id: snapchat, name: Snapchat, name_en: Snapchat, category: social, domains: [snapchat.com, sc-cdn.net, snap.com]}
+  - {id: bluesky, name: Bluesky/Mastodon, name_en: Bluesky/Mastodon, category: social, domains: [bsky.app, bsky.social, mastodon.social, joinmastodon.org]}
+  - {id: quora, name: Quora/Tumblr, name_en: Quora/Tumblr, category: social, domains: [quora.com, tumblr.com]}
+  - {id: stun, name: 音视频通话(STUN/RTP), name_en: Real-time media, category: voip, ports: [udp/3478-3481, udp/19302-19309]}
+  - {id: sip, name: SIP 电话, name_en: SIP, category: voip, ports: [udp/5060, tcp/5060, tcp/5061]}
+  - {id: mail, name: 邮件协议, name_en: Mail protocols, category: mail, ports: [tcp/25, tcp/465, tcp/587, tcp/993, tcp/995, tcp/143, tcp/110]}
+  - {id: qq_mail, name: QQ邮箱, name_en: QQ Mail, category: mail, domains: [mail.qq.com, exmail.qq.com, qqmail.com]}
+  - {id: netease_mail, name: 网易邮箱, name_en: NetEase Mail, category: mail, domains: [mail.163.com, mail.126.com, ym.163.com, qiye.163.com, mail.yeah.net]}
+  - {id: gmail, name: Gmail, name_en: Gmail, category: mail, domains: [mail.google.com, gmail.com, inbox.google.com]}
+  - {id: outlook, name: Outlook, name_en: Outlook, category: mail, domains: [outlook.com, outlook.live.com, outlook.office365.com, outlook.office.com, hotmail.com]}
+  - {id: proton, name: Proton, name_en: Proton, category: mail, domains: [proton.me, protonmail.com, protonmail.ch]}
 
-  # ---------- 搜索 / 门户 / 资讯 ----------
-  - {id: baidu, name: 百度, name_en: Baidu, category: search,
-     domains: [baidu.com, bdstatic.com, bdimg.com, bcebos.com, bdydns.com, baidubce.com, baiduyun.com, shifen.com]}
-  - {id: google, name: Google, name_en: Google, category: search,
-     domains: [google.com, googleapis.com, gstatic.com, google.com.hk, googleusercontent.com, ggpht.com, gvt1.com, gvt2.com, googlesyndication.com, google-analytics.com, googletagmanager.com, recaptcha.net]}
-  - {id: bing, name: Bing, name_en: Bing, category: search,
-     domains: [bing.com, bing.net]}
-  - {id: netease, name: 网易, name_en: NetEase, category: news,
-     domains: [163.com, 126.net, 127.net, netease.com, ydstatic.com]}
-  - {id: toutiao, name: 今日头条, name_en: Toutiao, category: news,
-     domains: [toutiao.com, toutiaocdn.com, toutiaoimg.cn]}
-  - {id: wikipedia, name: Wikipedia, name_en: Wikipedia, category: news,
-     domains: [wikipedia.org, wikimedia.org, wiki.wikipedia.org]}
-
-  # ---------- 网盘 / 下载 / 更新 ----------
+  # ================= 下载更新 =================
+  - {id: thunder, name: 迅雷, name_en: Xunlei, category: download,
+     domains: [xunlei.com, sandai.net, n0808.com, xlcdn.com, xluser.com],
+     ports: [tcp/6881-6889, udp/6881-6889]}
+  - {id: bittorrent, name: BT/P2P, name_en: BitTorrent, category: download,
+     domains: [tracker.opentrackr.org, bt.byr.cn, open.stealth.si]}
   - {id: baidu_pan, name: 百度网盘, name_en: Baidu Netdisk, category: cloud,
      domains: [pan.baidu.com, pcs.baidu.com, d.pcs.baidu.com, baidupcs.com, nd.baidu.com]}
   - {id: aliyun_drive, name: 阿里云盘/夸克, name_en: Aliyun Drive/Quark, category: cloud,
      domains: [aliyundrive.com, alipan.com, aliyundrive.net, quark.cn, quarkpan.com, uc.cn, ucweb.com]}
+  - {id: pan_115, name: 115网盘, name_en: 115 Cloud, category: cloud, domains: [115.com, 115cdn.com, 115cdn.net]}
+  - {id: tianyi_cloud, name: 天翼云盘/和彩云, name_en: Tianyi/Caiyun, category: cloud, domains: [cloud.189.cn, yun.139.com, caiyun.feixin.10086.cn]}
+  - {id: pan_123, name: 123云盘/蓝奏云, name_en: 123Pan/Lanzou, category: cloud, domains: [123pan.com, 123pan.cn, lanzou.com, lanzoui.com, lanzoux.com]}
+  - {id: jianguoyun, name: 坚果云, name_en: Nutstore, category: cloud, domains: [jianguoyun.com]}
+  - {id: pikpak, name: PikPak, name_en: PikPak, category: cloud, domains: [mypikpak.com]}
   - {id: onedrive, name: OneDrive, name_en: OneDrive, category: cloud,
      domains: [onedrive.com, onedrive.live.com, 1drv.com, 1drv.ms, sharepoint.com, storage.live.com]}
   - {id: icloud, name: iCloud, name_en: iCloud, category: cloud,
@@ -185,70 +247,234 @@ apps:
      domains: [drive.google.com, docs.google.com, drive.usercontent.google.com]}
   - {id: dropbox, name: Dropbox, name_en: Dropbox, category: cloud,
      domains: [dropbox.com, dropboxapi.com, dropboxusercontent.com, db.tt]}
-  - {id: thunder, name: 迅雷, name_en: Xunlei, category: download,
-     domains: [xunlei.com, sandai.net, n0808.com, xlcdn.com, xluser.com],
-     ports: [tcp/6881-6889, udp/6881-6889]}
-  - {id: bittorrent, name: BT/P2P, name_en: BitTorrent, category: download,
-     domains: [tracker.opentrackr.org, bt.byr.cn, open.stealth.si]}
-  - {id: apple_update, name: Apple 更新/商店, name_en: Apple updates/App Store, category: update,
-     domains: [swcdn.apple.com, swdist.apple.com, updates.cdn-apple.com, mesu.apple.com, appldnld.apple.com, oscdn.apple.com, iosapps.itunes.apple.com, osxapps.itunes.apple.com, apps.apple.com, gdmf.apple.com]}
-  - {id: apple, name: Apple 服务, name_en: Apple services, category: update,
-     domains: [apple.com, mzstatic.com, itunes.apple.com, apple.com.cn, push.apple.com, aaplimg.com, apple-dns.net, apple.news]}
+  - {id: mega, name: MEGA, name_en: MEGA, category: cloud, domains: [mega.nz, mega.co.nz, mega.io]}
+  - {id: synology, name: 群晖 QuickConnect, name_en: Synology QuickConnect, category: cloud, domains: [quickconnect.to, quickconnect.cn, synology.com, synology.cn]}
+  - {id: apple_update, name: Apple 更新, name_en: Apple updates, category: update,
+     domains: [swcdn.apple.com, swdist.apple.com, updates.cdn-apple.com, mesu.apple.com, appldnld.apple.com, oscdn.apple.com, gdmf.apple.com]}
   - {id: windows_update, name: Windows 更新, name_en: Windows Update, category: update,
      domains: [windowsupdate.com, update.microsoft.com, delivery.mp.microsoft.com, dl.delivery.mp.microsoft.com, tlu.dl.delivery.mp.microsoft.com, download.windowsupdate.com, wustat.windows.com]}
-  - {id: microsoft, name: Microsoft 服务, name_en: Microsoft services, category: work,
-     domains: [microsoft.com, office.com, office.net, office365.com, live.com, msn.com, outlook.com, microsoftonline.com, msftconnecttest.com, windows.net, azureedge.net, msedge.net, skype.com, teams.microsoft.com, bing.com.cn]}
-  - {id: android_update, name: 安卓/手机厂商, name_en: Android vendor services, category: update,
-     domains: [xiaomi.com, xiaomi.net, mi.com, miui.com, mi-img.com, hicloud.com, huawei.com, dbankcdn.com, vivo.com.cn, vivoglobal.com, oppo.com, heytapmobi.com, coloros.com, heytapdownload.com, oneplus.com, honor.com, hihonor.com, meizu.com, flyme.cn]}
-  - {id: app_market, name: 应用商店下载, name_en: App store downloads, category: update,
-     domains: [play.googleapis.com, appstore.huawei.com, app.mi.com, apkpure.com, wandoujia.com, pp.cn, myapp.com, sj.qq.com]}
+  - {id: chrome_update, name: Chrome/Google 更新, name_en: Chrome updates, category: update,
+     domains: [dl.google.com, update.googleapis.com, gvt1.com, edgedl.me.gvt1.com]}
+  - {id: firefox, name: Firefox/Mozilla, name_en: Firefox/Mozilla, category: update, domains: [mozilla.org, mozilla.net, firefox.com, mozilla.com]}
+  - {id: driver_update, name: 显卡/硬件驱动, name_en: Drivers, category: update,
+     domains: [nvidia.com, nvidia.cn, geforce.com, geforce.cn, amd.com, intel.com, intel.cn, lenovo.com, lenovo.com.cn, dell.com, hp.com]}
+  - {id: app_store_apple, name: App Store, name_en: App Store, category: app_store,
+     domains: [iosapps.itunes.apple.com, osxapps.itunes.apple.com, apps.apple.com, apps.mzstatic.com]}
+  - {id: app_market, name: 安卓应用商店, name_en: Android app stores, category: app_store,
+     domains: [play.googleapis.com, play.google.com, appstore.huawei.com, appgallery.huawei.com, app.mi.com, apkpure.com, wandoujia.com, pp.cn, myapp.com, sj.qq.com, appstore.vivo.com.cn, store.heytap.com]}
 
-  # ---------- AI / 开发 / 办公 ----------
+  # ================= 办公学习 =================
+  - {id: dingtalk, name: 钉钉, name_en: DingTalk, category: work,
+     domains: [dingtalk.com, dingtalkapps.com, alicdn-dingtalk.com, dingtalk.cn]}
+  - {id: feishu, name: 飞书, name_en: Lark/Feishu, category: work,
+     domains: [feishu.cn, larksuite.com, feishucdn.com, larkoffice.com, feishu.net]}
+  - {id: wework, name: 企业微信, name_en: WeCom, category: work,
+     domains: [work.weixin.qq.com, wework.qpic.cn, qyapi.weixin.qq.com]}
+  - {id: microsoft, name: Microsoft 365, name_en: Microsoft 365, category: work,
+     domains: [microsoft.com, office.com, office.net, office365.com, live.com, msn.com, microsoftonline.com, msftconnecttest.com, windows.net, azureedge.net, msedge.net, skype.com, bing.com.cn]}
+  - {id: wps, name: WPS, name_en: WPS, category: work,
+     domains: [wps.cn, wps.com, kdocs.cn, kingsoft.com, ksord.com, wpscdn.cn]}
+  - {id: tencent_docs, name: 腾讯文档, name_en: Tencent Docs, category: work, domains: [docs.qq.com]}
+  - {id: notion, name: Notion, name_en: Notion, category: work, domains: [notion.so, notion.site, notion.com]}
+  - {id: yuque, name: 语雀/石墨, name_en: Yuque/Shimo, category: work, domains: [yuque.com, shimo.im]}
+  - {id: slack, name: Slack, name_en: Slack, category: work, domains: [slack.com, slack-edge.com, slack-msgs.com, slack-imgs.com]}
+  - {id: atlassian, name: Atlassian, name_en: Atlassian, category: work, domains: [atlassian.net, atlassian.com, bitbucket.org, trello.com]}
+  - {id: figma, name: Figma/Canva, name_en: Figma/Canva, category: work, domains: [figma.com, canva.com, canva.cn, mastergo.com, js.design]}
+  - {id: adobe, name: Adobe, name_en: Adobe, category: work, domains: [adobe.com, adobe.io, adobelogin.com, adobecc.com, typekit.net]}
+  - {id: evernote, name: 印象笔记/Evernote, name_en: Evernote, category: work, domains: [evernote.com, yinxiang.com]}
+  - {id: tencent_meeting, name: 腾讯会议, name_en: Tencent Meeting, category: meeting,
+     domains: [meeting.tencent.com, wemeet.qq.com, voovmeeting.com]}
+  - {id: zoom, name: Zoom, name_en: Zoom, category: meeting,
+     domains: [zoom.us, zoom.com, zoom.com.cn, zoomgov.com]}
+  - {id: teams, name: Microsoft Teams, name_en: Microsoft Teams, category: meeting, domains: [teams.microsoft.com, teams.live.com, teams.cdn.office.net]}
+  - {id: webex, name: Webex, name_en: Webex, category: meeting, domains: [webex.com, wbx2.com, webex.com.cn]}
+  - {id: google_meet, name: Google Meet, name_en: Google Meet, category: meeting, domains: [meet.google.com]}
+  - {id: github, name: GitHub, name_en: GitHub, category: dev,
+     domains: [github.com, githubusercontent.com, githubassets.com, github.io, ghcr.io, github.dev, copilot-proxy.githubusercontent.com]}
+  - {id: docker, name: Docker Hub, name_en: Docker Hub, category: dev,
+     domains: [docker.com, docker.io, registry-1.docker.io, production.cloudflare.docker.com, dockerhub.com]}
+  - {id: dev_mirrors, name: 开发镜像源, name_en: Package mirrors, category: dev,
+     domains: [pypi.org, pythonhosted.org, npmjs.org, npmjs.com, npmmirror.com, yarnpkg.com, crates.io, golang.org, go.dev, maven.org, mirrors.aliyun.com, mirrors.tuna.tsinghua.edu.cn, mirrors.ustc.edu.cn, debian.org, ubuntu.com, archlinux.org, alpinelinux.org, fedoraproject.org, centos.org]}
+  - {id: gitlab, name: GitLab/Gitee, name_en: GitLab/Gitee, category: dev, domains: [gitlab.com, gitee.com, gitee.io]}
+  - {id: stackoverflow, name: Stack Overflow, name_en: Stack Overflow, category: dev, domains: [stackoverflow.com, sstatic.net, stackexchange.com]}
+  - {id: csdn, name: CSDN/掘金/博客园, name_en: CSDN/Juejin/Cnblogs, category: dev, domains: [csdn.net, juejin.cn, cnblogs.com, oschina.net]}
+  - {id: jetbrains, name: JetBrains, name_en: JetBrains, category: dev, domains: [jetbrains.com, jetbrains.com.cn]}
+  - {id: vscode, name: VS Code, name_en: VS Code, category: dev, domains: [vscode.dev, visualstudio.com, vsassets.io, vscode-cdn.net, vscode-unpkg.net]}
+  - {id: cursor, name: Cursor, name_en: Cursor, category: dev, domains: [cursor.sh, cursor.com, cursorapi.com]}
+  - {id: ssh, name: SSH/远程桌面协议, name_en: SSH/RDP/VNC, category: remote, ports: [tcp/22, tcp/3389, udp/3389, tcp/5900]}
+  - {id: todesk, name: ToDesk, name_en: ToDesk, category: remote, domains: [todesk.com, todesk.cn]}
+  - {id: sunlogin, name: 向日葵, name_en: Sunlogin, category: remote, domains: [oray.com, oray.net, sunlogin.oray.com, orayimg.com]}
+  - {id: teamviewer, name: TeamViewer, name_en: TeamViewer, category: remote, domains: [teamviewer.com, teamviewer.cn], ports: [tcp/5938, udp/5938]}
+  - {id: anydesk, name: AnyDesk/RustDesk, name_en: AnyDesk/RustDesk, category: remote, domains: [anydesk.com, rustdesk.com], ports: [tcp/7070]}
+  - {id: parsec, name: Parsec, name_en: Parsec, category: remote, domains: [parsec.app, parsecgaming.com]}
   - {id: chatgpt, name: ChatGPT, name_en: ChatGPT, category: ai,
      domains: [openai.com, chatgpt.com, oaistatic.com, oaiusercontent.com]}
   - {id: claude, name: Claude, name_en: Claude, category: ai,
      domains: [claude.ai, anthropic.com, claude.com, claudeusercontent.com]}
   - {id: gemini, name: Gemini, name_en: Gemini, category: ai,
      domains: [gemini.google.com, generativelanguage.googleapis.com, aistudio.google.com]}
-  - {id: cn_ai, name: 国产大模型, name_en: Chinese AI, category: ai,
-     domains: [deepseek.com, kimi.moonshot.cn, moonshot.cn, kimi.com, doubao.com, yiyan.baidu.com, tongyi.aliyun.com, qianwen.com, chatglm.cn, zhipuai.cn, yuanbao.tencent.com, hunyuan.tencent.com, minimaxi.com, hailuoai.com]}
-  - {id: github, name: GitHub, name_en: GitHub, category: work,
-     domains: [github.com, githubusercontent.com, githubassets.com, github.io, ghcr.io, github.dev, copilot-proxy.githubusercontent.com]}
-  - {id: docker, name: Docker Hub, name_en: Docker Hub, category: work,
-     domains: [docker.com, docker.io, registry-1.docker.io, production.cloudflare.docker.com, dockerhub.com]}
-  - {id: dev_mirrors, name: 开发镜像源, name_en: Package mirrors, category: work,
-     domains: [pypi.org, pythonhosted.org, npmjs.org, npmjs.com, npmmirror.com, yarnpkg.com, crates.io, golang.org, go.dev, maven.org, mirrors.aliyun.com, mirrors.tuna.tsinghua.edu.cn, mirrors.ustc.edu.cn, debian.org, ubuntu.com, archlinux.org, alpinelinux.org, fedoraproject.org, centos.org]}
-  - {id: wps, name: WPS, name_en: WPS, category: work,
-     domains: [wps.cn, wps.com, kdocs.cn, kingsoft.com, ksord.com, wpscdn.cn]}
-  - {id: tencent_meeting, name: 腾讯会议, name_en: Tencent Meeting, category: work,
-     domains: [meeting.tencent.com, wemeet.qq.com, voovmeeting.com]}
-  - {id: zoom, name: Zoom, name_en: Zoom, category: work,
-     domains: [zoom.us, zoom.com, zoom.com.cn, zoomgov.com]}
-  - {id: cloudflare, name: Cloudflare, name_en: Cloudflare, category: web,
-     domains: [cloudflare.com, cloudflare-dns.com, cloudflareinsights.com, cloudflare.net, workers.dev, pages.dev]}
+  - {id: copilot, name: Microsoft Copilot, name_en: Microsoft Copilot, category: ai, domains: [copilot.microsoft.com]}
+  - {id: grok, name: Grok, name_en: Grok, category: ai, domains: [grok.com, x.ai]}
+  - {id: perplexity, name: Perplexity/Poe, name_en: Perplexity/Poe, category: ai, domains: [perplexity.ai, poe.com]}
+  - {id: midjourney, name: Midjourney, name_en: Midjourney, category: ai, domains: [midjourney.com]}
+  - {id: huggingface, name: Hugging Face, name_en: Hugging Face, category: ai, domains: [huggingface.co, hf.co, hf-mirror.com]}
+  - {id: deepseek, name: DeepSeek, name_en: DeepSeek, category: ai, domains: [deepseek.com]}
+  - {id: kimi, name: Kimi, name_en: Kimi, category: ai, domains: [kimi.moonshot.cn, moonshot.cn, kimi.com]}
+  - {id: doubao, name: 豆包, name_en: Doubao, category: ai, domains: [doubao.com]}
+  - {id: yuanbao, name: 腾讯元宝, name_en: Yuanbao, category: ai, domains: [yuanbao.tencent.com, hunyuan.tencent.com]}
+  - {id: tongyi, name: 通义千问, name_en: Qwen, category: ai, domains: [tongyi.aliyun.com, qianwen.com, tongyi.com]}
+  - {id: wenxin, name: 文心一言, name_en: ERNIE Bot, category: ai, domains: [yiyan.baidu.com]}
+  - {id: zhipu, name: 智谱清言, name_en: Zhipu GLM, category: ai, domains: [chatglm.cn, zhipuai.cn, bigmodel.cn]}
+  - {id: cn_ai, name: 其他国产大模型, name_en: Other Chinese AI, category: ai,
+     domains: [minimaxi.com, hailuoai.com, xinghuo.xfyun.cn, tiangong.cn, baichuan-ai.com, stepfun.com]}
+  - {id: chaoxing, name: 学习通/雨课堂, name_en: Chaoxing/Yuketang, category: education, domains: [chaoxing.com, yuketang.cn]}
+  - {id: icourse, name: 中国大学MOOC, name_en: iCourse MOOC, category: education, domains: [icourse163.org]}
+  - {id: k12, name: 作业帮/猿辅导/学而思, name_en: K12 tutoring, category: education, domains: [zuoyebang.com, zybang.com, yuanfudao.com, fenbi.com, xueersi.com, xueersi.cn]}
+  - {id: youdao, name: 网易有道, name_en: Youdao, category: education, domains: [youdao.com, ydstatic.com]}
+  - {id: cnki, name: 知网/学术, name_en: CNKI & papers, category: education, domains: [cnki.net, wanfangdata.com.cn, cqvip.com, arxiv.org, sciencedirect.com, springer.com, ieee.org]}
+  - {id: coursera, name: Coursera/Duolingo, name_en: Coursera/Duolingo, category: education, domains: [coursera.org, duolingo.com, khanacademy.org, udemy.com]}
 
-  # ---------- 广告统计 ----------
-  - {id: ads, name: 广告与统计, name_en: Ads & analytics, category: ads,
-     domains: [doubleclick.net, googleadservices.com, adnxs.com, umeng.com, umengcloud.com, cnzz.com, growingio.com, talkingdata.com, gdt.qq.com, e.qq.com, pangolin-sdk-toutiao.com, pglstatp-toutiao.com, ads.tiktok.com, adkwai.com, app-measurement.com, crashlytics.com, sentry.io, bugly.qq.com, appsflyer.com, adjust.com, branch.io, mixpanel.com, segment.io, hotjar.com, miaozhen.com, admaster.com.cn, scorecardresearch.com]}
+  # ================= 购物生活 =================
+  - {id: taobao, name: 淘宝/天猫, name_en: Taobao/Tmall, category: shopping,
+     domains: [taobao.com, tmall.com, alicdn.com, tbcdn.cn, taobaocdn.com, mmstat.com, tanx.com, alibaba.com, aliexpress.com, 1688.com, alipayobjects.com, goofish.com]}
+  - {id: jd, name: 京东, name_en: JD, category: shopping,
+     domains: [jd.com, 360buyimg.com, jd.hk, jdpay.com, jcloud.com, jdcloud.com, 3.cn]}
+  - {id: pinduoduo, name: 拼多多, name_en: Pinduoduo, category: shopping,
+     domains: [pinduoduo.com, yangkeduo.com, pddpic.com, pddugc.com, temu.com, kwcdn.com]}
+  - {id: vipshop, name: 唯品会, name_en: Vipshop, category: shopping, domains: [vip.com, vipstatic.com, vipglobal.hk]}
+  - {id: dewu, name: 得物, name_en: Dewu, category: shopping, domains: [dewu.com, poizon.com, dewucdn.com]}
+  - {id: suning, name: 苏宁/当当, name_en: Suning/Dangdang, category: shopping, domains: [suning.com, suning.cn, dangdang.com, ddimg.cn]}
+  - {id: smzdm, name: 什么值得买, name_en: SMZDM, category: shopping, domains: [smzdm.com, zdmimg.com]}
+  - {id: amazon, name: Amazon, name_en: Amazon, category: shopping,
+     domains: [amazon.com, amazon.cn, media-amazon.com, ssl-images-amazon.com, amazon.co.jp]}
+  - {id: ebay, name: eBay/SHEIN, name_en: eBay/SHEIN, category: shopping, domains: [ebay.com, ebaystatic.com, ebayimg.com, shein.com, ltwebstatic.com]}
+  - {id: meituan, name: 美团/大众点评, name_en: Meituan/Dianping, category: life,
+     domains: [meituan.com, meituan.net, dianping.com, dpfile.com, maoyan.com, sankuai.com]}
+  - {id: eleme, name: 饿了么, name_en: Ele.me, category: life,
+     domains: [ele.me, elemecdn.com, eleme.cn]}
+  - {id: city58, name: 58同城/赶集, name_en: 58.com, category: life, domains: [58.com, 58cdn.com.cn, ganji.com]}
+  - {id: house, name: 贝壳/链家/安居客, name_en: Real estate, category: life, domains: [ke.com, lianjia.com, anjuke.com, ljcdn.com]}
+  - {id: jobs, name: 招聘求职, name_en: Jobs, category: life, domains: [zhipin.com, zhaopin.com, 51job.com, liepin.com]}
+  - {id: amap, name: 高德地图, name_en: Amap, category: travel,
+     domains: [amap.com, autonavi.com, gaode.com]}
+  - {id: baidu_map, name: 百度地图, name_en: Baidu Maps, category: travel, domains: [map.baidu.com, api.map.baidu.com, map.bdimg.com]}
+  - {id: tencent_map, name: 腾讯地图, name_en: Tencent Maps, category: travel, domains: [map.qq.com, apis.map.qq.com]}
+  - {id: google_maps, name: Google Maps, name_en: Google Maps, category: travel, domains: [maps.google.com, maps.googleapis.com, maps.gstatic.com]}
+  - {id: didi, name: 滴滴出行, name_en: DiDi, category: travel,
+     domains: [didiglobal.com, diditaxi.com.cn, didistatic.com, xiaojukeji.com]}
+  - {id: ctrip, name: 携程, name_en: Trip.com, category: travel,
+     domains: [ctrip.com, trip.com, c-ctrip.com, ctripcorp.com, tripcdn.com]}
+  - {id: rail12306, name: 铁路12306, name_en: China Railway 12306, category: travel, domains: [12306.cn]}
+  - {id: fliggy, name: 飞猪/去哪儿/同程, name_en: Fliggy/Qunar/LY, category: travel, domains: [fliggy.com, alitrip.com, qunar.com, qunarzz.com, ly.com, 17u.cn, umetrip.com]}
+  - {id: hellobike, name: 哈啰/Uber, name_en: Hellobike/Uber, category: travel, domains: [hellobike.com, uber.com]}
+  - {id: alipay, name: 支付宝, name_en: Alipay, category: finance,
+     domains: [alipay.com, alipay.cn, alipay-eco.com, antgroup.com, alipaydns.com, mybank.cn]}
+  - {id: unionpay, name: 云闪付/银联, name_en: UnionPay, category: finance, domains: [95516.com, unionpay.com, unionpayintl.com]}
+  - {id: paypal, name: PayPal, name_en: PayPal, category: finance, domains: [paypal.com, paypalobjects.com, paypal.cn]}
+  - {id: cmb, name: 招商银行, name_en: China Merchants Bank, category: bank, domains: [cmbchina.com, cmbimg.com, cmbchina.cn]}
+  - {id: icbc, name: 工商银行, name_en: ICBC, category: bank, domains: [icbc.com.cn, icbc.com]}
+  - {id: ccb, name: 建设银行, name_en: CCB, category: bank, domains: [ccb.com, ccb.cn]}
+  - {id: abc_bank, name: 农业银行, name_en: ABC, category: bank, domains: [abchina.com, abchina.com.cn]}
+  - {id: boc, name: 中国银行, name_en: Bank of China, category: bank, domains: [boc.cn, bankofchina.com]}
+  - {id: bocom, name: 交通/邮储银行, name_en: BoCom/PSBC, category: bank, domains: [bankcomm.com, psbc.com]}
+  - {id: other_bank, name: 其他银行, name_en: Other banks, category: bank,
+     domains: [pingan.com, pingan.com.cn, spdb.com.cn, citicbank.com, cib.com.cn, cmbc.com.cn, webank.com, cebbank.com, hxb.com.cn, cgbchina.com.cn]}
+  - {id: ths, name: 同花顺, name_en: 10jqka, category: stock, domains: [10jqka.com.cn, hexin.cn, 10jqka.com]}
+  - {id: eastmoney, name: 东方财富/天天基金, name_en: East Money, category: stock, domains: [eastmoney.com, dfcfw.com, 1234567.com.cn]}
+  - {id: xueqiu, name: 雪球, name_en: Xueqiu, category: stock, domains: [xueqiu.com, xqdoc.imedao.com, imedao.com]}
+  - {id: futu, name: 富途/老虎, name_en: Futu/Tiger, category: stock, domains: [futunn.com, futuhk.com, futu5.com, futuholdings.com, itiger.com, tigerbrokers.com]}
+  - {id: securities, name: 券商行情, name_en: Brokers, category: stock, domains: [htsc.com.cn, tdx.com.cn, gw.com.cn, gtja.com, citics.com, cmschina.com]}
 
-  # ---------- 智能家居 ----------
+  # ================= 资讯阅读 =================
+  - {id: toutiao, name: 今日头条, name_en: Toutiao, category: news,
+     domains: [toutiao.com, toutiaocdn.com, toutiaoimg.cn]}
+  - {id: tencent_news, name: 腾讯新闻, name_en: Tencent News, category: news, domains: [news.qq.com, inews.qq.com, new.qq.com]}
+  - {id: netease, name: 网易, name_en: NetEase, category: news,
+     domains: [163.com, 126.net, 127.net, netease.com]}
+  - {id: sina, name: 新浪, name_en: Sina, category: news, domains: [sina.com.cn, sina.cn, sina.com]}
+  - {id: sohu, name: 搜狐, name_en: Sohu, category: news, domains: [sohu.com, sohucs.com]}
+  - {id: ifeng, name: 凤凰网, name_en: iFeng, category: news, domains: [ifeng.com, ifengimg.com]}
+  - {id: cn_media, name: 官方媒体, name_en: State media, category: news, domains: [thepaper.cn, people.com.cn, xinhuanet.com, news.cn, chinanews.com.cn, chinadaily.com.cn]}
+  - {id: tech_news, name: 科技资讯, name_en: Tech news, category: news, domains: [ithome.com, 36kr.com, huxiu.com, sspai.com, geekpark.net]}
+  - {id: intl_news, name: 国际媒体, name_en: International news, category: news, domains: [bbc.com, bbc.co.uk, bbci.co.uk, nytimes.com, nyt.com, cnn.com, reuters.com, theguardian.com, bloomberg.com]}
+  - {id: wikipedia, name: Wikipedia, name_en: Wikipedia, category: news,
+     domains: [wikipedia.org, wikimedia.org, wiki.wikipedia.org]}
+  - {id: baidu, name: 百度, name_en: Baidu, category: search,
+     domains: [baidu.com, bdstatic.com, bdimg.com, bcebos.com, bdydns.com, baidubce.com, baiduyun.com, shifen.com]}
+  - {id: google, name: Google, name_en: Google, category: search,
+     domains: [google.com, googleapis.com, gstatic.com, google.com.hk, googleusercontent.com, ggpht.com, gvt2.com, recaptcha.net]}
+  - {id: bing, name: Bing, name_en: Bing, category: search,
+     domains: [bing.com, bing.net]}
+  - {id: sogou, name: 搜狗/360搜索, name_en: Sogou/360 Search, category: search, domains: [sogou.com, sogoucdn.com, so.com]}
+  - {id: duckduckgo, name: DuckDuckGo/Yandex, name_en: DuckDuckGo/Yandex, category: search, domains: [duckduckgo.com, yandex.ru, yandex.net, yandex.com]}
+  - {id: weread, name: 微信读书, name_en: WeRead, category: reading, domains: [weread.qq.com]}
+  - {id: yuewen, name: 起点/阅文, name_en: Qidian/Yuewen, category: reading, domains: [qidian.com, yuewen.com, qdmm.com, hongxiu.com]}
+  - {id: fanqie, name: 番茄/七猫小说, name_en: Fanqie/Qimao, category: reading, domains: [fanqienovel.com, qimao.com, wtzw.com]}
+  - {id: zhangyue, name: 掌阅/晋江, name_en: iReader/JJWXC, category: reading, domains: [zhangyue.com, ireader.com, jjwxc.net]}
+  - {id: dedao, name: 得到/樊登, name_en: Dedao, category: reading, domains: [dedao.cn, igetget.com, dushu365.com]}
+  - {id: comics, name: 漫画, name_en: Comics, category: reading, domains: [kuaikanmanhua.com, manga.bilibili.com, ac.qq.com, pixiv.net, pximg.net]}
+
+  # ================= 智能设备 =================
   - {id: mijia, name: 米家, name_en: Mi Home, category: iot,
      domains: [io.mi.com, iot.mi.com, miot-spec.org, mijia.tech, xiaomiyoupin.com, mi-iot.com]}
   - {id: tuya, name: 涂鸦智能, name_en: Tuya, category: iot,
      domains: [tuyacn.com, tuyaus.com, tuyaeu.com, tuya.com, tuyacloud.com]}
   - {id: homeassistant, name: Home Assistant, name_en: Home Assistant, category: iot,
      domains: [home-assistant.io, nabucasa.com, ui.nabu.casa]}
-  - {id: ezviz, name: 萤石/摄像头, name_en: Ezviz/Cameras, category: iot,
-     domains: [ezvizlife.com, ys7.com, hik-connect.com, hikvision.com, imoulife.com, dahuatech.com]}
+  - {id: smart_speaker, name: 智能音箱, name_en: Smart speakers, category: iot,
+     domains: [aligenie.com, xiaodu.baidu.com, dueros.baidu.com, amazonalexa.com, alexa.amazon.com]}
+  - {id: appliances, name: 家电云(美的/海尔/格力), name_en: Appliance clouds, category: iot,
+     domains: [midea.com, msmartlife.cn, smartmidea.net, haier.com, haier.net, gree.com, coolkit.cc, ewelink.cc]}
+  - {id: intl_iot, name: Hue/SmartThings/Nest, name_en: Hue/SmartThings/Nest, category: iot,
+     domains: [meethue.com, smartthings.com, nest.com, home.google.com]}
+  - {id: mqtt, name: MQTT, name_en: MQTT, category: iot, ports: [tcp/1883, tcp/8883]}
+  - {id: ezviz, name: 萤石/海康, name_en: Ezviz/Hikvision, category: camera,
+     domains: [ezvizlife.com, ys7.com, hik-connect.com, hikvision.com]}
+  - {id: imou, name: 乐橙/大华, name_en: Imou/Dahua, category: camera, domains: [imoulife.com, lechange.cn, dahuatech.com, easy4ip.com]}
+  - {id: tplink_cloud, name: TP-Link 云, name_en: TP-Link cloud, category: camera, domains: [tplinkcloud.com, tplinkcloud.com.cn, tp-link.com, tp-link.com.cn]}
+  - {id: rtsp, name: RTSP 视频流, name_en: RTSP, category: camera, ports: [tcp/554]}
 
-  # ---------- 网络协议（按端口兜底） ----------
+  # ================= 网络基础 =================
+  - {id: apple, name: Apple 服务, name_en: Apple services, category: system,
+     domains: [apple.com, mzstatic.com, itunes.apple.com, apple.com.cn, push.apple.com, aaplimg.com, apple-dns.net, apple.news]}
+  - {id: android_update, name: 安卓/手机厂商服务, name_en: Android vendor services, category: system,
+     domains: [xiaomi.com, xiaomi.net, mi.com, miui.com, mi-img.com, hicloud.com, huawei.com, dbankcdn.com, vivo.com.cn, vivoglobal.com, oppo.com, heytapmobi.com, coloros.com, heytapdownload.com, oneplus.com, honor.com, hihonor.com, meizu.com, flyme.cn]}
+  - {id: connectivity, name: 联网检测, name_en: Connectivity checks, category: system,
+     domains: [connectivitycheck.gstatic.com, captive.apple.com, connect.rom.miui.com, connectivitycheck.platform.hicloud.com, www.msftncsi.com]}
   - {id: dns, name: DNS, name_en: DNS, category: network, ports: [udp/53, tcp/53, tcp/853, udp/853]}
+  - {id: doh, name: 加密 DNS (DoH), name_en: Encrypted DNS (DoH), category: network,
+     domains: [dns.google, cloudflare-dns.com, dns.alidns.com, doh.pub, dot.pub, dns.quad9.net, dns.adguard-dns.com, doh.360.cn, dns.nextdns.io]}
   - {id: ntp, name: NTP, name_en: NTP, category: network, ports: [udp/123]}
-  - {id: vpn, name: VPN 隧道, name_en: VPN, category: network,
-     ports: [udp/51820, udp/1194, tcp/1194, udp/500, udp/4500, tcp/1723, udp/1701]}
-  - {id: ssh, name: SSH/远程, name_en: SSH/remote, category: network, ports: [tcp/22, tcp/3389, udp/3389, tcp/5900]}
-  - {id: mail, name: 邮件, name_en: Mail, category: work, ports: [tcp/25, tcp/465, tcp/587, tcp/993, tcp/995, tcp/143, tcp/110]}
-  - {id: stun, name: 音视频通话(STUN/RTP), name_en: Real-time media, category: im, ports: [udp/3478-3481, udp/19302-19309]}
+  - {id: ftp, name: FTP, name_en: FTP, category: network, ports: [tcp/21, tcp/990]}
+  - {id: icmp, name: ICMP (Ping), name_en: ICMP, category: network, protos: [1, 58]}
+  - {id: vpn, name: VPN 隧道, name_en: VPN, category: proxy,
+     ports: [udp/51820, udp/1194, tcp/1194, udp/500, udp/4500, tcp/1723, udp/1701], protos: [47, 50]}
+  - {id: tailscale, name: Tailscale/ZeroTier, name_en: Tailscale/ZeroTier, category: proxy,
+     domains: [tailscale.com, tailscale.io, ts.net, zerotier.com], ports: [udp/41641, udp/9993]}
+  - {id: warp, name: Cloudflare WARP, name_en: Cloudflare WARP, category: proxy, domains: [cloudflareclient.com, warp.plus]}
+  - {id: cloudflare, name: Cloudflare, name_en: Cloudflare, category: cdn,
+     domains: [cloudflare.com, cloudflareinsights.com, cloudflare.net, workers.dev, pages.dev, cdnjs.cloudflare.com]}
+  - {id: akamai, name: Akamai, name_en: Akamai, category: cdn,
+     domains: [akamai.net, akamaiedge.net, akamaihd.net, akamaized.net, edgekey.net, edgesuite.net, akadns.net, akamaitechnologies.com]}
+  - {id: aliyun, name: 阿里云/CDN, name_en: Alibaba Cloud, category: cdn,
+     domains: [aliyun.com, aliyuncs.com, alikunlun.com, alikunlun.net, kunlunca.com, kunlunsl.com, kunlungr.com, kunlunle.com, alicloudccp.com, aliyundrive.cloud]}
+  - {id: tencent_cloud, name: 腾讯云/CDN, name_en: Tencent Cloud, category: cdn,
+     domains: [myqcloud.com, qcloud.com, tencent-cloud.net, tencentcs.com, tencentcloud.com, cdntip.com, tdnsv5.com, tdnsv6.com, dnsv1.com, qcloudcdn.com, qcloudcdn.cn]}
+  - {id: wangsu, name: 网宿 CDN, name_en: Wangsu CDN, category: cdn,
+     domains: [wscdns.com, wsglb0.com, wsdvs.com, lxdns.com, chinanetcenter.com, wswebcdn.com, cdn20.com]}
+  - {id: huawei_cloud, name: 华为云/CDN, name_en: Huawei Cloud, category: cdn, domains: [huaweicloud.com, myhuaweicloud.com, hwcdn.net, cdnhwc1.com]}
+  - {id: volcengine, name: 火山引擎/CDN, name_en: Volcengine, category: cdn, domains: [volcengine.com, volccdn.com, bytegslb.com]}
+  - {id: baishan, name: 白山云/其他国内CDN, name_en: Baishan & other CN CDN, category: cdn, domains: [bsgslb.cn, trpcdn.net, bsclink.cn, ccgslb.com, ccgslb.net, chinacache.net, qiniucdn.com, qiniu.com, clouddn.com, upaiyun.com]}
+  - {id: aws, name: AWS/CloudFront, name_en: AWS/CloudFront, category: cdn, domains: [amazonaws.com, cloudfront.net, awsstatic.com, aws.amazon.com]}
+  - {id: fastly, name: Fastly/jsDelivr, name_en: Fastly/jsDelivr, category: cdn, domains: [fastly.net, fastlylb.net, fastly.com, jsdelivr.net]}
+  - {id: azure, name: Azure, name_en: Azure, category: cdn, domains: [azurefd.net, azure.com, trafficmanager.net, azurewebsites.net]}
+  - {id: security_360, name: 360 安全, name_en: 360 Security, category: security, domains: [360.cn, 360.com, qhimg.com, qihucdn.com, 360safe.com, qhres.com]}
+  - {id: tencent_pcmgr, name: 腾讯电脑管家, name_en: Tencent PC Manager, category: security, domains: [guanjia.qq.com, pcmgr.qq.com]}
+  - {id: huorong, name: 火绒, name_en: Huorong, category: security, domains: [huorong.cn]}
+  - {id: antivirus, name: 卡巴斯基/ESET/Avast, name_en: Antivirus, category: security,
+     domains: [kaspersky.com, kaspersky-labs.com, eset.com, avast.com, avcdn.net, mcafee.com, norton.com, bitdefender.com]}
+  - {id: ads, name: 广告与统计, name_en: Ads & analytics, category: ads,
+     domains: [doubleclick.net, googleadservices.com, googlesyndication.com, google-analytics.com, googletagmanager.com, adnxs.com, umeng.com, umengcloud.com, cnzz.com, growingio.com, talkingdata.com, gdt.qq.com, e.qq.com, pangolin-sdk-toutiao.com, pglstatp-toutiao.com, ads.tiktok.com, adkwai.com, app-measurement.com, crashlytics.com, sentry.io, bugly.qq.com, appsflyer.com, adjust.com, branch.io, mixpanel.com, segment.io, hotjar.com, miaozhen.com, admaster.com.cn, scorecardresearch.com]}
   - {id: https, name: HTTPS 网页, name_en: HTTPS, category: web, ports: [tcp/443, tcp/8443]}
   - {id: quic, name: QUIC 网页, name_en: QUIC, category: web, ports: [udp/443]}
   - {id: http, name: HTTP 网页, name_en: HTTP, category: web, ports: [tcp/80, tcp/8080]}

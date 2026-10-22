@@ -27,6 +27,7 @@ _APPID_RE = re.compile(r"^[a-z0-9_]{1,48}$")
 def meta():
     c = engine.classifier
     return {
+        "groups": [{"id": k, **v} for k, v in c.groups.items()],
         "categories": [{"id": k, **v} for k, v in c.categories.items()],
         "apps": sorted(({"id": a.id, "name": a.name, "name_en": a.name_en, "category": a.category,
                          "custom": a.custom} for a in c.apps.values()), key=lambda a: a["id"]),
@@ -184,7 +185,10 @@ def system():
             "flow_ok": bool(st["last_flow"] and now - st["last_flow"] < 180),
         },
         "dns": {"packets": st["dns_packets"], "answers": st["dns_answers"], "last": st["last_dns"],
-                "entries": len(engine.dns), "ok": bool(st["last_dns"] and now - st["last_dns"] < 600)},
+                "entries": len(engine.dns), "ok": bool(st["last_dns"] and now - st["last_dns"] < 600),
+                "servers": sorted(({"ip": ip, "answers": n, "last": ts, "lan": engine.is_lan(ip)}
+                                   for ip, (n, ts) in list(engine.dns_servers.items())),
+                                  key=lambda x: x["answers"], reverse=True)[:8]},
         "router": poller.status(),
         "generic_apps": sorted(GENERIC_APPS),
     }

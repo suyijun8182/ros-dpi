@@ -12,12 +12,14 @@
 
 ### 能做什么
 
-- **全网概览**：今日 / 本周 / 本月流量，此刻的上下行速率，流量构成（按应用分类），Top 应用与 Top 终端，24 小时与 30 天趋势。
-- **主机监控**：所有终端的 IP、MAC、主机名、在线状态、当前速率、今日 / 本周 / 本月流量，可以给设备起备注名；详情页可看该终端的应用排行、分类占比和访问过的域名。
-- **应用统计**：100 多个内置应用（抖音、B 站、微信、Steam、Apple 更新、ChatGPT……）分 20 多个类别，可以查看每个应用被哪些终端使用。
-- **流量流向**：桑基图展示 终端 → 应用分类 → 应用 的流向。
+- **全网概览**：今日 / 本周 / 本月流量，此刻的上下行速率，流量构成环图（应用大类 → 小类），按应用大类堆叠的流量趋势，Top 应用与 Top 终端排行。
+- **主机监控**：所有终端的 IP、MAC、主机名、在线状态、当前速率、今日 / 本周 / 本月流量，可以按 MAC 或按 IP 给设备命名（也能提前给还没上线的设备命名）；详情页可看该终端的应用排行、应用构成、按大类的趋势和访问过的域名。
+- **应用统计**：参照 Panabit 分三级（应用大类 → 小类 → 应用）：10 个大类、41 个小类、270 多个内置应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……）。识别不出具体应用的流量，会按 CDN 的 CNAME 归到阿里云 / 腾讯云 / Akamai 等厂商。可以查看每个应用被哪些终端使用。
+- **流量流向**：桑基图展示 终端 → 应用大类 → 应用 的流向。
 - **识别规则**：按域名后缀、IP 段、端口自定义识别规则；列出“未识别域名 Top”，一键归类。
 - 中英双语，深浅色主题，手机可用。
+
+![应用统计](docs/images/apps-light.png)
 
 ![流量流向](docs/images/flow-light.png)
 
@@ -37,7 +39,9 @@ RouterOS ◀─REST 只读（可选）── 主机名、IP↔MAC、WAN 口速�
 - 应用识别靠 DNS：终端访问 `v26.douyinvod.com` 时，路由器把 DNS 应答镜像一份过来，之后发往该 IP 的流量就归到“抖音”。查不到域名时，依次按 IP 段、端口兜底（HTTPS / QUIC 等）。
 - 终端用 MAC 区分（来自 ROS 的 ARP / DHCP，或流记录中的源 MAC），IP 变化不影响统计。
 
-**已知局限**：终端使用 DoH / DoT 加密 DNS，或者在路由器之外解析 DNS 时，这部分流量只能识别为 HTTPS / QUIC。可以在终端或路由器上禁用加密 DNS 来提高识别率。
+**已知局限**：终端使用 DoH / DoT 加密 DNS 时，这部分流量只能识别为 HTTPS / QUIC。可以在终端或路由器上禁用加密 DNS 来提高识别率。
+
+**内网有自己的 DNS 服务器（AdGuard Home / Pi-hole 等）时**：DNS 嗅探照样能用。终端查询内网 DNS 走的是交换机，路由器看不到；但内网 DNS 向上游（如 223.5.5.5）查询时，应答要经过路由器，会被 `forward` 那条规则嗅探到，同样能得到“IP → 域名”的对应关系。前提是内网 DNS 的上游用普通 DNS（udp/53）；上游设成 DoH / DoT 时路由器看不到域名，可以把上游改成普通 DNS，或者改成路由器地址。**系统设置 → DNS 嗅探** 里的“应答来源”会显示应答来自哪台 DNS 服务器。
 
 ### 部署
 
@@ -189,16 +193,16 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
 
 **ROS-DPI** shows per-device traffic and per-application usage (today / this week / this month) for networks behind a MikroTik RouterOS router, in the spirit of Panabit-style DPI dashboards.
 
-- **Overview**: totals, live rate, traffic mix by category, top apps and hosts, trends.
-- **Hosts**: every device with IP, MAC, hostname, online state, live rate and daily / weekly / monthly totals; per-host app breakdown and visited domains.
-- **Applications**: 100+ built-in apps in 20+ categories.
-- **Flows**: a Sankey diagram from hosts through categories to apps.
+- **Overview**: totals, live rate, a two-ring traffic-mix donut (app group → category), trends stacked by app group, ranked top apps and hosts.
+- **Hosts**: every device with IP, MAC, hostname, online state, live rate and daily / weekly / monthly totals; name devices by MAC or by IP (even before they appear); per-host app breakdown and visited domains.
+- **Applications**: a Panabit-style three-level library: 10 app groups, 41 categories, 270+ built-in apps. Traffic that can't be tied to an app is attributed to its CDN (Alibaba Cloud, Tencent Cloud, Akamai, Cloudflare…) via CNAME.
+- **Flows**: a Sankey diagram from hosts through app groups to apps.
 - **Rules**: custom domain / CIDR / port rules, and a list of top unidentified domains to classify.
 - Chinese and English UI, light and dark themes, works on phones.
 
 **How it works.** RouterOS exports IPFIX (`/ip traffic-flow`) for byte counts, and mirrors DNS answers via `sniff-tzsp` so each remote IP can be mapped back to the domain the client looked up. A rule library maps domains to apps. An optional read-only REST user provides hostnames, IP-to-MAC, WAN rate and LAN prefixes. Data is aggregated per minute, hour and day into MySQL.
 
-**Limitations.** Clients using DoH/DoT (or resolving DNS elsewhere) show up as generic HTTPS/QUIC.
+**Limitations.** Clients using DoH/DoT show up as generic HTTPS/QUIC. A LAN DNS server (AdGuard Home, Pi-hole…) works fine as long as its upstream is plain DNS on udp/53: its upstream answers pass through the router and are sniffed by the `forward` rule.
 
 **Deploy.** ROS-DPI stores data in **MySQL** (5.7 / 8.x) and assumes you already have one. Create a database and user for it:
 

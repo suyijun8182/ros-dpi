@@ -41,30 +41,28 @@
         </div>
       </section>
 
-      <section class="mix">
-        <div class="mix-h"><h2>{{ t('overview.mix') }}</h2></div>
-        <Spectrum :cats="d.categories" clickable :height="18" @pick="c => $router.push({ path: '/apps', query: { cat: c } })" />
-      </section>
-
-      <div class="grid g-2-1 mt">
+      <div class="grid g-3-2">
         <div class="panel">
-          <div class="panel-h"><h2>{{ t('overview.trend') }}</h2><span class="faint small">{{ t('range.' + ui.range) }}</span></div>
-          <div class="panel-b"><Chart :option="trendOpt" height="260px" /></div>
+          <div class="panel-h"><h2>{{ t('overview.mix') }}</h2><span class="faint small">{{ t('overview.mixHint', { n: d.apps_count }) }}</span>
+            <span class="sp" /><router-link to="/apps" class="small link">{{ t('common.allApps') }}</router-link></div>
+          <div class="panel-b"><Composition :groups="d.groups" clickable @pick="p => $router.push({ path: '/apps', query: p.cat ? { cat: p.cat } : { group: p.group } })" /></div>
         </div>
         <div class="panel">
-          <div class="panel-h"><h2>{{ t('overview.realtime') }}</h2></div>
-          <div class="panel-b"><Chart :option="rtOpt" height="260px" /></div>
+          <div class="panel-h"><h2>{{ t('overview.realtime') }}</h2><span class="faint small">{{ t('overview.realtimeHint') }}</span></div>
+          <div class="panel-b"><Chart :option="rtOpt" height="320px" /></div>
         </div>
       </div>
+
+      <TrendPanel class="mt" :title="t('overview.trend')" :sub="t('range.' + ui.range)" :points="d.trend" :groups="d.trend_groups" :gran="gran" />
 
       <div class="grid g2 mt">
         <div class="panel">
           <div class="panel-h"><h2>{{ t('overview.topApps') }}</h2><span class="sp" /><router-link to="/apps" class="small link">{{ t('common.allApps') }}</router-link></div>
-          <div class="panel-b"><BarList :items="appItems" /></div>
+          <div class="panel-b"><BarList :items="appItems" :total="d.range_total.total" /></div>
         </div>
         <div class="panel">
           <div class="panel-h"><h2>{{ t('overview.topHosts') }}</h2><span class="sp" /><router-link to="/hosts" class="small link">{{ t('common.allHosts') }}</router-link></div>
-          <div class="panel-b"><BarList :items="hostItems" /></div>
+          <div class="panel-b"><BarList :items="hostItems" :total="d.range_total.total" /></div>
         </div>
       </div>
 
@@ -90,9 +88,10 @@ import http, { enc } from '../api.js'
 import { trendOption } from '../charts.js'
 import BarList from '../components/BarList.vue'
 import Chart from '../components/Chart.vue'
+import Composition from '../components/Composition.vue'
 import RangeTabs from '../components/RangeTabs.vue'
-import Spectrum from '../components/Spectrum.vue'
-import { appName, bytes, catColor, catName, pct, rate } from '../format.js'
+import TrendPanel from '../components/TrendPanel.vue'
+import { appName, bytes, catColor, catName, groupName, pct, rate } from '../format.js'
 import { usePoll } from '../poll.js'
 import { ui } from '../state.js'
 
@@ -114,11 +113,10 @@ const big = computed(() => {
 
 const gran = computed(() => (['today', 'yesterday'].includes(ui.range) ? 'hour' : 'day'))
 const deps = () => [ui.theme, locale.value]
-const trendOpt = computed(() => (deps(), trendOption(d.value.trend, gran.value)))
 const rtOpt = computed(() => (deps(), trendOption(d.value.realtime, 'minute', true)))
 
 const appItems = computed(() => d.value.top_apps.map(a => ({
-  key: a.id, label: appName(a), sub: catName(a), value: a.total, up: a.up, down: a.down,
+  key: a.id, label: appName(a), sub: `${groupName(a)} · ${catName(a)}`, value: a.total, up: a.up, down: a.down,
   color: catColor(a.category), to: `/apps/${enc(a.id)}`,
 })))
 const hostItems = computed(() => d.value.top_hosts.map(h => ({
@@ -130,7 +128,7 @@ const hostItems = computed(() => d.value.top_hosts.map(h => ({
 <style scoped>
 .nodata { padding: 14px 18px; margin-bottom: 20px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; border-left: 3px solid var(--warn); }
 
-.hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px 48px; align-items: end; padding: 4px 0 26px; }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px 48px; align-items: end; padding: 4px 0 26px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
 .hero-lbl { color: var(--muted); font-size: 14.5px; display: flex; align-items: center; gap: 8px; }
 .hero-num { font-size: clamp(64px, 9vw, 112px); font-weight: 600; line-height: .92; letter-spacing: -.035em; margin: 10px 0 14px; }
 .unit { font-size: .36em; font-weight: 500; letter-spacing: 0; margin-left: .18em; color: var(--muted); }
@@ -152,8 +150,8 @@ const hostItems = computed(() => d.value.top_hosts.map(h => ({
 .pulse { animation: pulse 2.4s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .3; } }
 
-.mix { padding: 18px 0 8px; border-top: 1px solid var(--line); }
-.mix-h h2 { font: 600 17px/1.3 var(--cond); margin: 0 0 12px; }
+.g-3-2 { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+@media (max-width: 1100px) { .g-3-2 { grid-template-columns: 1fr; } }
 
 .link { color: var(--pair-blue); }
 .link:hover { text-decoration: underline; text-underline-offset: 3px; }

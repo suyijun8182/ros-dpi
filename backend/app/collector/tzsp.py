@@ -10,7 +10,8 @@ QTYPE_AAAA = 28
 
 @dataclass
 class DnsAnswer:
-    client: str                    # 收到响应的终端（UDP 目的地址）
+    client: str                    # 收到响应的一方（UDP 目的地址）
+    server: str                    # 发出响应的 DNS 服务器（UDP 源地址）
     qname: str                     # 终端查询的名字
     ips: list[tuple[str, int]] = field(default_factory=list)  # (ip, ttl)
     cnames: list[str] = field(default_factory=list)
@@ -142,7 +143,7 @@ def parse_tzsp_dns(data: bytes) -> DnsAnswer | None:
     udp = ethernet_udp(frame)
     if udp is None:
         return None
-    _src, dst, sport, _dport, payload = udp
+    src, dst, sport, _dport, payload = udp
     if sport != 53:
         return None
     try:
@@ -152,4 +153,4 @@ def parse_tzsp_dns(data: bytes) -> DnsAnswer | None:
     if parsed is None:
         return None
     qname, ips, cnames = parsed
-    return DnsAnswer(client=dst, qname=qname, ips=ips, cnames=cnames)
+    return DnsAnswer(client=dst, server=src, qname=qname, ips=ips, cnames=cnames)

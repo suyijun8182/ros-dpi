@@ -48,12 +48,53 @@ export function catName(a) {
   return i18n.global.locale.value === 'zh' ? a.name : (a.name_en || a.name)
 }
 
-// 分类固定配色，所有图表保持一致
-export const CAT_COLORS = {
-  video: '#d9485f', short_video: '#e2638f', live: '#b65fc8', music: '#8a63d2', social: '#6d7be0',
-  im: '#2f9a57', game: '#e07a2e', shopping: '#d4a72c', news: '#7fa83a', search: '#2a9d8f', cloud: '#3c8fd0',
-  download: '#c0533a', update: '#7b8794', ai: '#1fa7b8', work: '#2c6bc9', finance: '#3aa57a', life: '#c98a3c',
-  ads: '#8b5e3c', iot: '#4bb3a0', network: '#a3aeb0', web: '#5f78b8', unknown: '#b5bec0',
+export function groupName(g) {
+  if (!g) return '-'
+  if (g.id === '__other') return i18n.global.t('common.otherGroups')
+  if ('group_name' in g) return i18n.global.locale.value === 'zh' ? g.group_name : g.group_name_en
+  return i18n.global.locale.value === 'zh' ? g.name : (g.name_en || g.name)
 }
 
-export const catColor = c => CAT_COLORS[c] || '#64748b'
+/*
+ * 配色按"应用大类"：8 个有意义的大类各占一个固定色相（style.css 的 --g-*，已用 dataviz 校验脚本验证色盲区分度），
+ * 网络基础与未识别用中性灰。大类下的小类用同一色相的深浅区分，名字始终和色块一起出现。
+ * 顺序 = 小类在大类内的深浅次序；新增分类时必须同步（后端测试会检查与 apps.yaml 一致）。
+ */
+export const CAT_GROUP = {
+  video: 'media', short_video: 'media', live: 'media', music: 'media',
+  game: 'game', mobile_game: 'game', console_game: 'game', game_tool: 'game',
+  im: 'social', social: 'social', voip: 'social', mail: 'social',
+  download: 'transfer', cloud: 'transfer', update: 'transfer', app_store: 'transfer',
+  work: 'work', meeting: 'work', dev: 'work', remote: 'work', ai: 'work', education: 'work',
+  shopping: 'life', life: 'life', travel: 'life', finance: 'life', bank: 'life', stock: 'life',
+  news: 'info', search: 'info', reading: 'info',
+  iot: 'iot', camera: 'iot',
+  network: 'base', system: 'base', cdn: 'base', proxy: 'base', security: 'base', ads: 'base', web: 'base',
+  unknown: 'unknown',
+}
+export const GROUPS = ['media', 'game', 'social', 'transfer', 'work', 'life', 'info', 'iot', 'base', 'unknown']
+
+// 小类深浅：与面板底色混合的比例
+const SHADES = [100, 76, 58, 44, 34, 26, 20]
+const shadeOf = cat => {
+  const g = CAT_GROUP[cat]
+  return g ? SHADES[Object.keys(CAT_GROUP).filter(k => CAT_GROUP[k] === g).indexOf(cat)] ?? 20 : 100
+}
+
+/** 模板里用：返回 CSS 颜色表达式，随深浅主题自动切换 */
+export const groupColor = g => (GROUPS.includes(g) ? `var(--g-${g})` : 'var(--line-strong)')
+export function catColor(cat) {
+  const base = groupColor(CAT_GROUP[cat] || 'unknown')
+  const p = shadeOf(cat)
+  return p >= 100 ? base : `color-mix(in srgb, ${base} ${p}%, var(--panel))`
+}
+
+// ECharts 需要真实色值：从 CSS 变量读出后自己混色
+const cssVar = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim()
+const hex2rgb = h => { const n = parseInt(h.replace('#', ''), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255] }
+function mix(a, b, p) {
+  const x = hex2rgb(a), y = hex2rgb(b)
+  return '#' + x.map((v, i) => Math.round(v * p + y[i] * (1 - p)).toString(16).padStart(2, '0')).join('')
+}
+export const groupHex = g => cssVar(GROUPS.includes(g) ? `--g-${g}` : '--line-strong')
+export const catHex = cat => mix(groupHex(CAT_GROUP[cat] || 'unknown'), cssVar('--panel'), shadeOf(cat) / 100)

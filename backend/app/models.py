@@ -58,6 +58,18 @@ class Host(Base):
     last_seen = Column(BigInteger)
 
 
+class HostName(Base):
+    """终端命名：按 MAC（跟着设备走）或按 IP（跟着地址走）。同时命中时 MAC 优先。
+
+    旧版本把备注名存在 hosts.alias（按终端 key），启动时会迁移到这里。
+    """
+    __tablename__ = "host_names"
+    kind = Column(String(8), primary_key=True)    # mac | ip
+    value = Column(String(45), primary_key=True)  # 大写冒号格式的 MAC，或规范化后的 IP
+    name = Column(String(128), nullable=False)
+    updated = Column(BigInteger)
+
+
 class DnsCache(Base):
     __tablename__ = "dns_cache"
     ip = Column(String(45), primary_key=True)

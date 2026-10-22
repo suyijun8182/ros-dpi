@@ -11,7 +11,7 @@ from app.classify import GENERIC_APPS, Classifier
 from app.collector.ipfix import FlowDecoder
 from app.collector.tzsp import parse_tzsp_dns
 from app.config import get_settings
-from app import database
+from app import database, hostnames
 from app.database import upsert_add
 from app.dnsmap import DnsMap
 from app.models import (CustomRule, DnsCache, Host, HostDomainDay, Setting, TrafficDay, TrafficHour,
@@ -57,6 +57,7 @@ class Engine:
         self.total_rate = (0.0, 0.0)
         self.stats = {"flows": 0, "flows_dropped": 0, "dns_packets": 0, "dns_answers": 0,
                       "bytes_seen": 0, "last_flow": 0, "last_dns": 0, "exporters": {}}
+        self.dns_servers: dict[str, list[int]] = {}  # 应答来源 DNS 服务器 -> [应答数, 最近时间]
 
     # ---------- 配置 ----------
     def set_lan(self, text: str):
@@ -108,9 +109,18 @@ class Engine:
         ans = parse_tzsp_dns(data)
         if ans is None:
             return
+        now = int(time.time())
         self.stats["dns_answers"] += 1
-        self.stats["last_dns"] = int(time.time())
+        self.stats["last_dns"] = now
         self.dns.add(ans.qname, ans.ips, ans.cnames)
+        # 记录应答来自哪台 DNS 服务器，方便在系统设置里确认嗅探到的是哪一段（终端↔DNS 还是 DNS↔上游）
+        srv = self.dns_servers.get(ans.server)
+        if srv is None:
+            if len(self.dns_servers) >= 64:
+                del self.dns_servers[min(self.dns_servers, key=lambda k: self.dns_servers[k][1])]
+            srv = self.dns_servers[ans.server] = [0, 0]
+        srv[0] += 1
+        srv[1] = now
 
     def host_key(self, ip: str, mac: str | None) -> tuple[str, str | None]:
         m = self.ip2mac.get(ip)
@@ -234,6 +244,7 @@ class Engine:
             rows = db.execute(select(DnsCache.ip, DnsCache.name, DnsCache.cname, DnsCache.expires)
                               .where(DnsCache.expires > now)).all()
             lan = db.get(Setting, "lan_cidrs")
+            hostnames.migrate_aliases(db)
         self.dns.load(rows)
         if lan and lan.value:
             self.set_lan(lan.value)

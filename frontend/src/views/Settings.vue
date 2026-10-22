@@ -19,6 +19,9 @@
           <div class="kv"><span>{{ t('settings.dnsAnswers') }}</span><b class="num">{{ sys.dns.answers.toLocaleString() }}</b></div>
           <div class="kv"><span>{{ t('settings.dnsEntries') }}</span><span class="num">{{ sys.dns.entries.toLocaleString() }}</span></div>
           <div class="kv"><span>{{ t('settings.last') }}</span><span>{{ ago(sys.dns.last) }}</span></div>
+          <div class="kv" v-if="sys.dns.servers && sys.dns.servers.length"><span>{{ t('settings.dnsServers') }}</span>
+            <span class="srv"><span v-for="x in sys.dns.servers.slice(0, 4)" :key="x.ip" class="num">{{ x.ip }} <span class="faint">{{ x.lan ? t('settings.dnsLan') : t('settings.dnsUpstream') }} · {{ x.answers.toLocaleString() }}</span></span></span></div>
+          <p class="faint small what">{{ t('settings.dnsWhat') }}</p>
         </div>
         <div class="st">
           <div class="st-h"><span class="dot" :class="!sys.router.enabled ? '' : sys.router.ok ? 'on' : 'bad'" />{{ t('settings.ros') }}
@@ -139,7 +142,10 @@ const guide = computed(() => {
 /ip traffic-flow set enabled=yes interfaces=all active-flow-timeout=1m inactive-flow-timeout=15s
 /ip traffic-flow target add dst-address=${ip} port=${p.ipfix} version=ipfix
 
-# 2. DNS 嗅探（应用识别）：路由器自身 DNS 的应答 + 终端直连外部 DNS 的应答
+# 2. DNS 嗅探（应用识别）：只镜像 DNS 应答，用来知道"远端 IP 是哪个域名"
+#    output：路由器自己当 DNS 服务器时发给终端的应答
+#    forward：终端直连外部 DNS 的应答；内网自建 DNS（AdGuard/Pi-hole 等）向上游查询拿到的应答也走这里
+#    内网自建 DNS 的上游必须是普通 DNS（udp/53），上游用 DoH/DoT 时路由器看不到域名
 /ip firewall mangle add chain=output protocol=udp src-port=53 action=sniff-tzsp sniff-target=${ip} sniff-target-port=${p.tzsp} comment=ROSDPI-DNS
 /ip firewall mangle add chain=forward protocol=udp src-port=53 action=sniff-tzsp sniff-target=${ip} sniff-target-port=${p.tzsp} comment=ROSDPI-DNS
 
@@ -164,6 +170,8 @@ async function copy() {
 .st-h { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 4px; }
 .kv { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); }
 .kv > :last-child { color: var(--text); text-align: right; overflow: hidden; text-overflow: ellipsis; }
+.srv { display: flex; flex-direction: column; align-items: flex-end; }
+.what { margin: 6px 0 0; line-height: 1.5; }
 .form { display: flex; flex-direction: column; gap: 8px; }
 .form label { font-size: 13px; color: var(--muted); margin-top: 4px; }
 .guide { margin: 0 0 10px; }

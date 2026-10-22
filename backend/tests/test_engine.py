@@ -22,6 +22,37 @@ def test_classifier_longest_suffix_and_cname():
     assert c.classify("91.108.4.5", 6, 443, None, None) == "telegram"
     assert c.classify("9.9.9.9", 17, 443, None, None) == "quic"
     assert c.classify("9.9.9.9", 6, 12345, None, None) == "other"
+    assert c.classify("9.9.9.9", 1, 0, None, None) == "icmp"
+    assert c.classify("9.9.9.9", 50, 0, None, None) == "vpn"
+    # 未识别的站点经 CDN 的 CNAME 至少能归到 CDN 厂商
+    assert c.classify("1.1.1.1", 6, 443, "img.some-site.cn", "x.kunlunsl.com") == "aliyun"
+    assert c.classify("1.1.1.1", 6, 443, "finder.video.qq.com", None) == "wechat_channels"
+
+
+def test_rules_library_consistent():
+    """规则库自洽：分类都有大类、应用都有分类，已发布的应用/分类 ID 没被删掉。"""
+    c = Classifier()
+    assert all(v["group"] in c.groups for v in c.categories.values())
+    assert all(a.category in c.categories for a in c.apps.values())
+    released = {"douyin", "bilibili", "wechat", "qq", "steam", "apple_update", "apple", "microsoft", "cn_ai",
+                "android_update", "app_market", "cloudflare", "ads", "ezviz", "dns", "vpn", "ssh", "mail", "stun",
+                "https", "quic", "http"}
+    assert released <= set(c.apps)
+    assert {"video", "short_video", "live", "music", "social", "im", "game", "shopping", "news", "search",
+            "cloud", "download", "update", "ai", "work", "finance", "life", "ads", "iot", "network", "web",
+            "unknown"} <= set(c.categories)
+
+
+def test_frontend_colors_cover_categories():
+    """前端按大类配色（format.js 的 CAT_GROUP），新增分类时要同步。"""
+    import os
+    import re
+    js = open(os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "src", "format.js"), encoding="utf-8").read()
+    block = js[js.index("CAT_GROUP"):]
+    block = block[:block.index("}")]
+    mapping = dict(re.findall(r"(\w+):\s*'(\w+)'", block))
+    c = Classifier()
+    assert mapping == {k: v["group"] for k, v in c.categories.items()}
 
 
 def test_custom_rule_overrides():
@@ -41,6 +72,7 @@ def _engine():
 def test_direction_dns_and_mac_learning():
     e = _engine()
     e.on_tzsp(tzsp_dns("192.168.88.10", "www.bilibili.com", ["5.5.5.5"]))
+    assert list(e.dns_servers) and e.dns_servers[next(iter(e.dns_servers))][0] == 1
     now = time.time()
     up = e.add_flow(dict(src="192.168.88.10", dst="5.5.5.5", sport=1, dport=443, proto=6, bytes=100,
                          src_mac="AA:00:00:00:00:01"), now)

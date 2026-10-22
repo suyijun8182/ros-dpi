@@ -16,7 +16,7 @@
             <button type="button" :class="{ on: newApp }" @click="newApp = true">{{ t('rules.newApp') }}</button>
           </div>
           <select v-if="!newApp" class="input" v-model="f.app_id">
-            <optgroup v-for="c in meta.categories" :key="c.id" :label="catName(c)">
+            <optgroup v-for="c in meta.categories" :key="c.id" :label="catLabel(c)">
               <option v-for="a in meta.apps.filter(x => x.category === c.id)" :key="a.id" :value="a.id">{{ appName(a) }}</option>
             </optgroup>
           </select>
@@ -24,7 +24,7 @@
             <input class="input" v-model="f.app_id" :placeholder="t('rules.appId')" />
             <input class="input" v-model="f.app_name" :placeholder="t('rules.appName')" />
             <select class="input" v-model="f.category">
-              <option v-for="c in meta.categories" :key="c.id" :value="c.id">{{ catName(c) }}</option>
+              <option v-for="c in meta.categories" :key="c.id" :value="c.id">{{ catLabel(c) }}</option>
             </select>
           </template>
           <div class="err" v-if="formErr">{{ formErr }}</div>
@@ -82,11 +82,11 @@ import { onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http from '../api.js'
 import RangeTabs from '../components/RangeTabs.vue'
-import { appName, bytes, catName } from '../format.js'
+import { appName, bytes, catName, groupName } from '../format.js'
 import { ui } from '../state.js'
 
 const { t } = useI18n()
-const meta = ref({ categories: [], apps: [] })
+const meta = ref({ groups: [], categories: [], apps: [] })
 const rules = ref([])
 const unknown = ref([])
 const newApp = ref(false)
@@ -105,6 +105,9 @@ async function loadUnknown() {
 }
 onMounted(() => { load(); loadUnknown() })
 watch(() => ui.range, loadUnknown)
+
+// 下拉框里分类带上所属大类，例如"影音娱乐 · 短视频"
+const catLabel = c => `${groupName(meta.value.groups.find(g => g.id === c.group))} · ${catName(c)}`
 
 function appLabel(id) {
   const a = meta.value.apps.find(x => x.id === id)

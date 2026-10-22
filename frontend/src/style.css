@@ -27,6 +27,18 @@
   --accent: var(--pair-blue);
   --focus: #2c6bc9;
 
+  /* 应用大类配色（dataviz validate_palette.js 校验：白底 CVD 相邻 ΔE ≥ 9.1；三色对比度 < 3:1，故图表一律带图例与数值表） */
+  --g-media: #2a78d6;
+  --g-game: #eb6834;
+  --g-social: #1baf7a;
+  --g-transfer: #eda100;
+  --g-work: #e87ba4;
+  --g-life: #008300;
+  --g-info: #6250d6;
+  --g-iot: #e34948;
+  --g-base: #8d9a9d;
+  --g-unknown: #c6ced0;
+
   --r-sm: 5px;
   --r: 8px;
 
@@ -51,6 +63,16 @@
     --pair-brown: #b88660;
     --alert: #ef6158;
     --focus: #7aaaf0;
+    --g-media: #3987e5;
+    --g-game: #d95926;
+    --g-social: #199e70;
+    --g-transfer: #c98500;
+    --g-work: #d55181;
+    --g-life: #008300;
+    --g-info: #9085e9;
+    --g-iot: #e66767;
+    --g-base: #6b797c;
+    --g-unknown: #3e494c;
     color-scheme: dark;
   }
 }
@@ -70,6 +92,16 @@
   --pair-brown: #b88660;
   --alert: #ef6158;
   --focus: #7aaaf0;
+  --g-media: #3987e5;
+  --g-game: #d95926;
+  --g-social: #199e70;
+  --g-transfer: #c98500;
+  --g-work: #d55181;
+  --g-life: #008300;
+  --g-info: #9085e9;
+  --g-iot: #e66767;
+  --g-base: #6b797c;
+  --g-unknown: #3e494c;
   color-scheme: dark;
 }
 

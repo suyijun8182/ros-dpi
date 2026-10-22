@@ -23,6 +23,8 @@ SITES = [
     ("img.alicdn.com", 8, .03), ("www.zhihu.com", 3, .08), ("xiaohongshu.com", 9, .05),
     ("cdn.example-unknown.net", 6, .1), ("static.some-cdn.io", 4, .1), ("io.mi.com", .2, .5),
     ("tuyacn.com", .1, .5), ("www.netflix.com", 2, .05), ("ipv4-c001.nflxvideo.net", 70, .01),
+    ("www.toutiao.com", 5, .05), ("weread.qq.com", 1, .1), ("mbank.cmbchina.com", .6, .2), ("kimi.moonshot.cn", 1, .3),
+    ("finder.video.qq.com", 25, .02), ("open.ys7.com", 3, .6),
 ]
 DEVICES = ["iPhone", "MacBook", "iPad", "小米电视", "Win 台式机", "Switch", "安卓手机", "NAS", "摄像头", "扫地机"]
 
