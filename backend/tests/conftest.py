@@ -15,6 +15,8 @@ os.environ["ASN_DB"] = "false"
 os.environ["OUI_DB"] = "false"  # 测试不下载 MAC 厂商库  # 测试不下载 ASN 库
 os.environ["CHINA_DB"] = "false"   # 测试不下载国内域名 / IP 段库
 os.environ["IPLIST_DB"] = "false"  # 测试不下载官方 IP 段库
+for _k in ("BM7_DB", "HAGEZI_DB", "UT1_DB"):  # 测试不下载第三方规则库
+    os.environ[_k] = "false"
 os.environ["ROSDPI_NO_JOBS"] = "1"  # 不启动后台定时任务（每分钟落库会打乱测试里的计数）
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

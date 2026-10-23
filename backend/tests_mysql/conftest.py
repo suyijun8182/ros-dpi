@@ -13,6 +13,8 @@ os.environ["IPFIX_PORT"] = "0"
 os.environ["TZSP_PORT"] = "0"
 os.environ["ROS_URL"] = ""
 os.environ["ADMIN_PASSWORD"] = ""
+for _k in ("BM7_DB", "HAGEZI_DB", "UT1_DB"):  # 不在 CI 里下载第三方规则库
+    os.environ[_k] = "false"
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 if not os.environ.get("MYSQL_HOST"):

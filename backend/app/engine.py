@@ -597,7 +597,11 @@ class Engine:
                               .where(DnsCache.expires > now)).all()
             lan = db.get(Setting, "lan_cidrs")
             hostnames.migrate_aliases(db)
-            self._backfill_base(db)
+        try:
+            with database.session() as db:
+                self._backfill_base(db)
+        except Exception as e:  # noqa: BLE001  回填失败不能挡住后面恢复规则和设置
+            print(f"[db] 主域名回填失败：{type(e).__name__}: {e}", flush=True)
         self.dns.load(rows)
         if lan and lan.value:
             self.set_lan(lan.value)
@@ -608,9 +612,10 @@ class Engine:
         """升级回填：给旧版本写入的 host_domain_day 行补上主域名（访问目标按主域名合并在 SQL 侧做）。"""
         from app.stats import base_domain
         doms = db.execute(select(HostDomainDay.domain).distinct().where(HostDomainDay.base.is_(None))).scalars().all()
-        for chunk in _chunks(doms, 500):
-            db.execute(update(HostDomainDay.__table__).where(HostDomainDay.__table__.c.domain.in_(chunk))
-                       .values(base=bindparam("b")), [{"b": base_domain(d)} for d in chunk])
+        t = HostDomainDay.__table__
+        stmt = update(t).where(t.c.domain == bindparam("d_")).values(base=bindparam("b_"))
+        for chunk in _chunks(doms, 500):   # 每个域名一行参数（executemany），按块提交
+            db.execute(stmt, [{"d_": d, "b_": base_domain(d)} for d in chunk])
         if doms:
             db.commit()
             print(f"[db] 已回填 {len(doms)} 个域名的主域名列", flush=True)

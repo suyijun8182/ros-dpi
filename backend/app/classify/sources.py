@@ -164,6 +164,7 @@ class Sources:
         self.china: set[str] = set()
         self.ips = _Ranges()
         self.state: dict[str, dict] = {}   # 来源 id -> {count, updated, error}
+        self.version = 0                   # 每次重新加载 +1，分类器据此清掉缓存
 
     def _data_dir(self) -> str:
         return os.environ.get("DATA_DIR", "data")
@@ -204,6 +205,7 @@ class Sources:
         ips.build()
         with self.lock:
             self.china, self.ips, self.state = china, ips, state
+            self.version += 1
 
     # ---------- 更新 ----------
     def update(self, force: bool = False) -> bool:
@@ -275,6 +277,7 @@ class Sources:
         """测试用：清空内存数据。"""
         with self.lock:
             self.china, self.ips, self.state = set(), _Ranges(), {}
+            self.version += 1
 
 
 sources = Sources()

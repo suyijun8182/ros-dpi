@@ -14,7 +14,7 @@
 
 - **全网概览**：路由器状态、**网络健康指数**（逐项扣分和改进建议）、在线终端、**DHCP 地址池**、每条 **WAN 线路**的状态和速率；流量构成饼图（应用大类 → 小类）；实时流量、历史流量、历史在线终端数；Top 应用与 Top 终端排行。
 - **主机监控**：在线终端 / 全部终端 / DHCP 租约 / 命名管理四个标签。每台终端的类型（手机、电脑、电视、摄像头……自动识别）、IP、MAC、主机名、归属人、在线时长、连接数、当前速率、今日 / 本周 / 本月流量，可导出 CSV；可以按 MAC 或按 IP 给设备命名。详情页有应用排行与构成、按大类的趋势、访问过的域名、访问日志和上网时间线。
-- **应用统计**：参照 Panabit / 维盟分三级（应用大类 → 小类 → 应用，逐级“查看详情”下钻）。大类和小类固定列出，每级显示上传 / 下载速度和数据及占比；应用构成用矩形树图一眼看两层。共 10 个大类、43 个小类、2800 多个内置应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……，其中约 2500 个来自 v2fly 开源域名库）。识别不出具体应用的流量，会按 CDN 的 CNAME 归到阿里云 / 腾讯云 / Akamai 等厂商。
+- **应用统计**：参照 Panabit / 维盟分三级（应用大类 → 小类 → 应用，逐级“查看详情”下钻）。大类和小类固定列出，每级显示上传 / 下载速度和数据及占比；应用构成用矩形树图一眼看两层。共 10 个大类、44 个小类、2900 多个应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……，其中约 2500 个来自 v2fly 开源域名库，约 100 个来自运行时下载的 blackmatrix7 规则；另有 Hagezi、UT1 分类列表兜底认出网站类别）。识别不出具体应用的流量，会按 CDN 的 CNAME 归到阿里云 / 腾讯云 / Akamai 等厂商。
 - **流量流向**：**实时连接**（此刻哪台终端连到哪个域名 / IP、什么应用、多快；走 sing-box 的连接显示策略组和出口节点）、**访问目标排行**（流量最大的远端域名和 IP；流向图从本地飞向各国，看流量去了哪些国家 / 地区；可按主域名合并，看是哪些终端在访问）、**代理分流**（sing-box 各策略组、各节点的流量和主要应用）。
 - **家庭成员 / 员工**：把一个人的手机、平板、电脑归到一起，按人统计流量、在线时长、常用应用，以及最近 7 天的行为标签（附依据）。使用场景在 **系统设置 → 场景与网络** 全局切换，菜单、称呼、默认时间段、标签和审计模板跟着变：
   - **家庭**：菜单显示“家庭成员”，按分组管理；关注孩子的上网健康，包括每日屏幕时间、游戏和短视频时长上限，熬夜，不良内容，学习时间玩娱乐应用。
@@ -222,6 +222,9 @@ MySQL 第一次初始化需要 20～60 秒。
 | `ASN_DB` | `true` | 自动下载 IP→ASN 库；没有外网时设为 `false` |
 | `CHINA_DB` | `true` | 自动下载国内域名列表（dnsmasq-china-list，约 11 万条）与国内 IP 段：规则库没认出的域名归「国内网站」，没有域名的国内流量归「国内网络」 |
 | `IPLIST_DB` | `true` | 自动下载 Google / Cloudflare / AWS / GitHub 官方发布的 IP 段（含 Apple 的 17.0.0.0/8）：没有域名的流量按 IP 认出归属 |
+| `BM7_DB` | `true` | 自动下载 [blackmatrix7](https://github.com/blackmatrix7/ios_rule_script) 按应用整理的规则（GPL-2.0，每周）：给已有应用补域名和 IP 段，另新增约 100 个应用 |
+| `HAGEZI_DB` | `true` | 自动下载 [Hagezi](https://github.com/hagezi/dns-blocklists) 分类列表（GPL-3.0，每天）：成人、博彩、VPN/代理、社交、广告、设备遥测 |
+| `UT1_DB` | `true` | 自动下载 [UT1](https://dsi.ut-capitole.fr/blacklists/) 分类列表（CC BY-SA 4.0，每天）：游戏、购物、新闻、求职、银行等 20 多类 |
 | `OUI_DB` | `true` | 自动下载 IEEE MAC 厂商库（识别终端类型，每 30 天更新）；没有外网时设为 `false` |
 | `WAN_INTERFACE` | 自动 | WAN 接口名，默认按默认路由识别 |
 | `TZ` | `Asia/Shanghai` | 统计用时区，每周从周一开始 |
@@ -259,7 +262,7 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
 
 - **Overview**: router status, a network health score with fixes, DHCP pool usage, WAN line status, online-host history, live rate, a traffic-mix pie (app group → category), and top apps and hosts.
 - **Hosts**: every device with its detected type (phone, computer, TV, camera…), IP, MAC, hostname, owner, online state, live rate and daily / weekly / monthly totals. Name devices by MAC or by IP. Each device has an app breakdown, visited domains, an access log and a daily timeline.
-- **Applications**: a three-level drill-down (app group → category → app) with fixed groups and categories, upload/download rates and totals with shares at each level, and a treemap of the mix. It covers 10 groups, 43 categories and 2800+ built-in apps (about 2500 converted from v2fly/domain-list-community). Traffic that can't be tied to an app is attributed to its CDN via CNAME.
+- **Applications**: a three-level drill-down (app group → category → app) with fixed groups and categories, upload/download rates and totals with shares at each level, and a treemap of the mix. It covers 10 groups, 44 categories and 2900+ apps (about 2500 converted from v2fly/domain-list-community, about 100 from blackmatrix7 rules downloaded at runtime, with Hagezi / UT1 category lists as a fallback). Traffic that can't be tied to an app is attributed to its CDN via CNAME.
 - **Flows**: live connections (sing-box connections show their policy group and outbound node), top destinations with a flow map from your location to each country, and proxy routing (traffic and top apps per sing-box policy group and node).
 - **Family members / Employees**: pick the Home or Business scenario under **Settings → Scenario & network**; menus, wording, default hours, tags and audit templates follow it. Group each person's devices and see their traffic, online time, top apps and behaviour tags for the last 7 days, with the evidence behind each tag.
   - **Home**: daily screen-time, gaming and short-video limits, late nights, adult content, and leisure during homework time.
@@ -294,10 +297,17 @@ Save the `docker-compose.yml` shown above (or `curl -O https://raw.githubusercon
 
 No MySQL yet? Use [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml): it starts MySQL 8.4 alongside and is pre-configured, so the database step is skipped. Rename it to `docker-compose.yml`, create a `.env` next to it with `MYSQL_PASSWORD` and `MYSQL_ROOT_PASSWORD` (compose refuses to start without them), set `LAN_CIDRS`, and run `docker compose up -d`.
 
-**First run.** Open `http://<host>:8080`. A two-step setup wizard asks for (1) the MySQL host, port, user, password and database, with a connection test, and (2) the admin password. Tables are created automatically and the connection is saved to `./data/db_config.json`. If MySQL runs on the same machine, use its LAN IP, not `127.0.0.1`. To change databases later, delete that file and restart. Setting `DATABASE_URL` skips the wizard. RouterOS commands are listed above and in **Settings → Setup & check**. Then choose the scenario under **People → Settings**, add people and assign their devices, and set up notification channels under **Audit → Notifications**.
+**First run.** Open `http://<host>:8080`. A two-step setup wizard asks for (1) the MySQL host, port, user, password and database, with a connection test, and (2) the admin password. Tables are created automatically and the connection is saved to `./data/db_config.json`. If MySQL runs on the same machine, use its LAN IP, not `127.0.0.1`. To change databases later, delete that file and restart. Setting `DATABASE_URL` skips the wizard. RouterOS commands are listed above and in **Settings → Setup & check**. Then choose the scenario (Home / Business) under **Settings → Scenario & network**, add people and assign their devices, and set up notification channels under **Audit → Notifications**.
 
 ## License
 
 [MIT](LICENSE)
 
 `backend/app/classify/apps_v2fly.yaml` is generated from [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) (MIT License, Copyright (c) 2019-present V2Fly Community).
+
+These data sources are **not** included in this repository or the Docker image; the container downloads them at runtime into its data directory, and each keeps its own license / 以下数据不在仓库和镜像里，由容器运行时下载，各自沿用原许可证：
+
+- [blackmatrix7/ios_rule_script](https://github.com/blackmatrix7/ios_rule_script) — GPL-2.0 (`BM7_DB`). `backend/app/classify/bm7_map.yaml` only maps its directory names to ROS-DPI apps.
+- [Hagezi DNS blocklists](https://github.com/hagezi/dns-blocklists) — GPL-3.0 (`HAGEZI_DB`).
+- [UT1 blacklists](https://dsi.ut-capitole.fr/blacklists/), Université Toulouse Capitole, via the [olbat/ut1-blacklists](https://github.com/olbat/ut1-blacklists) mirror — CC BY-SA 4.0 (`UT1_DB`).
+- [dnsmasq-china-list](https://github.com/felixonmars/dnsmasq-china-list) — WTFPL; [chnroutes2](https://github.com/misakaio/chnroutes2) — CC BY-SA 4.0; [iptoasn](https://iptoasn.com) — PDDL; IEEE OUI; official Google / Cloudflare / AWS / GitHub IP range feeds.

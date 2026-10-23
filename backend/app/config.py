@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     asn_db: bool = True          # 自动下载 iptoasn 的 IP→ASN 库（公有领域，每天更新）
     china_db: bool = True        # 自动下载国内域名列表（dnsmasq-china-list）与国内 IP 段（每天更新）
     iplist_db: bool = True       # 自动下载 Google/Cloudflare/AWS/GitHub 官方 IP 段（每天更新）
+    bm7_db: bool = True          # 自动下载 blackmatrix7 按应用整理的规则（GPL-2.0，每周更新）：给已有应用补域名、新增应用
+    hagezi_db: bool = True       # 自动下载 Hagezi 分类列表（GPL-3.0，每天更新）：成人、博彩、VPN/代理、广告、设备遥测
+    ut1_db: bool = True          # 自动下载 UT1 分类列表（CC BY-SA 4.0，每天更新）：游戏、购物、新闻、求职等 20 多类
 
     tz: str = "Asia/Shanghai"
 

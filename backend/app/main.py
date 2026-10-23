@@ -34,15 +34,23 @@ def _safe(fn, name):
     return run
 
 
-def _on_db_ready():
-    """数据库连接成功后（启动时或安装向导保存后）执行。"""
-    ensure_admin()
-    engine.load_state()
+def _apply_saved():
     with database.session() as db:
         wan = db.get(Setting, "wan_interface")
         poller.wan_override = wan.value if wan and wan.value else ""
         saved = {k: (db.get(Setting, k).value if db.get(Setting, k) else None) for k in integrations.KEYS}
     integrations.apply(saved)
+
+
+def _on_db_ready():
+    """数据库连接成功后（启动时或安装向导保存后）执行。各步互不依赖：一步出错只记日志，不挡住后面的
+    （0.6.0 / 0.6.1 的主域名回填出错时，后面的外部数据源配置、自定义规则都没加载，外部数据源显示“未启用”）"""
+    ensure_admin()   # 建管理员失败要报出来（安装向导靠这个提示）
+    for name, fn in (("load_state", engine.load_state), ("apply_settings", _apply_saved)):
+        try:
+            fn()
+        except Exception as e:  # noqa: BLE001
+            print(f"[startup] {name} 失败：{type(e).__name__}: {e}", flush=True)
     print("[startup] 数据库已连接", flush=True)
 
 
@@ -116,6 +124,12 @@ async def lifespan(app: FastAPI):
         sched.add_job(_safe(_auto_update_db(extra_sources.update), "extra-db"), "interval", hours=6,
                       max_instances=1, coalesce=True)
         asyncio.get_running_loop().run_in_executor(None, _safe(extra_sources.update, "extra-db"))
+    # 第三方规则库：blackmatrix7（应用级）、Hagezi / UT1（分类级），见 classify/lists.py
+    from app.classify.lists import lists as rule_lists
+    if s.bm7_db or s.hagezi_db or s.ut1_db:
+        sched.add_job(_safe(_auto_update_db(rule_lists.update), "rule-lists"), "interval", hours=6,
+                      max_instances=1, coalesce=True)
+        asyncio.get_running_loop().run_in_executor(None, _safe(rule_lists.update, "rule-lists"))
     if poller.enabled:
         sched.add_job(_safe(poller.sample, "ros-rate"), "interval", seconds=max(s.ros_rate_seconds, 2),
                       max_instances=1, coalesce=True)

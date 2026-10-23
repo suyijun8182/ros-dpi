@@ -236,6 +236,7 @@ def system():
 
 # ---------- 识别库：来源、版本、自动更新 ----------
 def _library(db):
+    from app.classify.lists import lists
     from app.classify.sources import sources
     from app.classify.updater import updater
     c = engine.classifier
@@ -243,15 +244,20 @@ def _library(db):
     v2_apps = c._extra.get("apps", [])
     v2_domains = sum(len(x.get("domains", [])) + len(x.get("full", [])) for x in v2_apps + c._extra.get("extend", []))
     base_domains = sum(len(a.get("domains", [])) for a in c._base_apps)
+    third = {r["id"]: r for r in lists.rows()}
     return {
         "auto": _get(db, "rules_auto_update", "1") != "0",
-        "total_apps": len(c.apps), "total_domains": len(c.domains) + len(c.full),
+        "total_apps": len(c.apps),
+        "total_domains": len(c.domains) + len(c.full) + len(lists.bm7_suffix) + len(lists.bm7_full) + len(lists.cat),
+        # 按识别顺序排列（前端给每行编号）
         "sources": [
             {"id": "curated", "apps": len(base_ids), "domains": base_domains, "version": __version__,
              "license": "MIT", "url": "https://github.com/suyijun8182/ros-dpi"},
             {"id": "v2fly", "apps": len(v2_apps), "domains": v2_domains, "license": "MIT",
              "url": "https://github.com/v2fly/domain-list-community", **updater.status()},
+            *[third[k] for k in ("bm7",) if k in third],
             {"id": "asn", "license": "PDDL v1.0", "url": "https://iptoasn.com", "asns": len(c.asn_apps), **asndb.status()},
+            *[third[k] for k in ("hagezi", "ut1") if k in third],
             *sources.rows(),
         ],
     }
@@ -271,6 +277,8 @@ def library_update(request: Request, user: str = Depends(current_user), db: Sess
     if get_settings().asn_db:
         asndb.update()
     sources.update(force=True)
+    from app.classify.lists import lists
+    lists.update(force=True)
     oplog.log(db, request, user, "library_update", {"result": updater.state.get("result")})
     return _library(db)
 

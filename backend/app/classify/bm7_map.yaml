@@ -1,0 +1,564 @@
+# blackmatrix7/ios_rule_script 规则目录 → ROS-DPI 应用（对应关系由 ROS-DPI 维护，MIT）。
+# 规则数据本身是 GPL-2.0，只在运行时下载到数据目录，不进仓库。
+# extend：并入已有应用（只补内置库和 v2fly 里还没有的域名）；apps：新应用及其分类。
+# 没列出的目录不使用：China、Global、Advertising 这类汇总列表，以及 Tencent、Google 这种公司级大杂烩。
+extend:
+  "115": pan_115
+  "12306": rail12306
+  "1337x": v2_1337x
+  "178": nga
+  "17zuoye": k12
+  "2KGames": v2_2kgames
+  "360": security_360
+  "36kr": tech_news
+  "3dm": v2_3dm
+  "4399": game_4399
+  "4chan": v2_4chan
+  "51Job": jobs
+  "51nod": v2_olympiad_in_informatics
+  "56": sohu_video
+  "58TongCheng": v2_58tongcheng
+  "6park": v2_6park
+  "8btc": v2_8btc
+  "9News": v2_9news
+  "9to5": v2_9to5
+  "Accuweather": v2_accuweather
+  "Acer": v2_acer
+  "AcFun": v2_acfun
+  "Acplay": v2_dandanplay
+  "Actalis": v2_actalis
+  "AdColony": ads
+  "Addthis": v2_addthis
+  "AddToAny": v2_addtoany
+  "Adidas": v2_adidas
+  "Adobe": adobe
+  "AdobeActivation": adobe
+  "Aerogard": v2_aerogard
+  "Afdian": v2_afdian
+  "AFP": v2_afp
+  "Agora": v2_agora
+  "AiQiCha": v2_aiqicha
+  "AirChina": v2_airchina
+  "AirWick": v2_airwick
+  "aiXcoder": v2_aixcoder
+  "Akamai": akamai
+  "AliPay": alipay
+  "ALJazeera": v2_aljazeera
+  "AmazonCN": amazon
+  "AmazonPrimeVideo": prime_video
+  "AmazonTrust": v2_amazontrust
+  "AMD": v2_amd
+  "Americasvoice": intl_news
+  "AMP": v2_amp
+  "Anaconda": v2_anaconda
+  "AnandTech": v2_anandtech
+  "Android": google
+  "Anjuke": house
+  "Anonv": v2_anon_v
+  "Anthropic": claude
+  "Apifox": v2_apifox
+  "APKCombo": v2_apkcombo
+  "Apkpure": v2_apkpure
+  "AppleDaily": v2_appledaily
+  "AppleDev": apple
+  "AppleFirmware": apple
+  "AppleHardware": apple
+  "AppleID": apple
+  "AppleMail": icloud
+  "AppleMedia": apple
+  "AppleMusic": apple_music
+  "AppleNews": apple
+  "AppleProxy": apple
+  "AppleTV": apple_tv
+  "AppLovin": ads
+  "AppStore": app_store_apple
+  "Arphic": v2_arphic
+  "Asahi": v2_asahi
+  "Atlassian": atlassian
+  "Atomdata": ads
+  "ATTWatchTV": v2_attwatchtv
+  "Bahamut": v2_bahamut
+  "BaiDuTieBa": baidu
+  "BaiShanYunKeJi": baishan
+  "BardAI": google
+  "Battle": blizzard
+  "BBC": intl_news
+  "Beats": v2_beats
+  "Bestbuy": v2_bestbuy
+  "BeStore": v2_bestore
+  "BesTV": v2_bestv
+  "BiliBili": bilibili
+  "BiliBiliIntl": bilibili
+  "Binance": v2_binance
+  "Bing": bing
+  "Blizzard": blizzard
+  "Bloomberg": v2_bloomberg
+  "BMW": v2_bmw
+  "BOC": boc
+  "BOCOM": bocom
+  "Bootcss": v2_bootcdn
+  "BoXun": v2_boxun
+  "BrightCove": v2_brightcove
+  "Buypass": v2_buypass
+  "CableTV": v2_cabletv
+  "CaiNiao": v2_cainiao
+  "CaiXinChuanMei": cn_media
+  "Canon": v2_canon
+  "CBS": v2_cbs
+  "CCB": ccb
+  "CCTV": cctv
+  "CEB": v2_everbright
+  "CGB": other_bank
+  "ChinaMobile": v2_chinamobile
+  "ChinaNews": v2_chinanews
+  "ChinaUnicom": v2_chinaunicom
+  "CHT": v2_hinet
+  "ChunYou": game_4399
+  "Cisco": v2_cisco
+  "Claude": claude
+  "Cloudflare": cloudflare
+  "Cloudflarecn": v2_cloudflare_cn
+  "Clubhouse": v2_clubhouse
+  "ClubhouseIP": v2_agora
+  "CMB": cmb
+  "Cnet": v2_cnet
+  "CNKI": cnki
+  "CNN": v2_cnn
+  "Collabora": v2_collabora
+  "Contentful": v2_contentful
+  "Coolapk": v2_coolapk
+  "Copilot": copilot
+  "CSDN": csdn
+  "CyberTrust": v2_cybertrust
+  "Dailymail": v2_dailymail
+  "Dailymotion": v2_dailymotion
+  "Dandanplay": v2_dandanplay
+  "DanDanZan": v2_dandanzan
+  "DangDang": suning
+  "Dedao": dedao
+  "Deepin": v2_deepin
+  "Deezer": v2_deezer
+  "Dell": v2_vmware
+  "DiDi": didi
+  "DigiCert": v2_digicert
+  "DigitalOcean": v2_digitalocean
+  "DiLianWangLuo": v2_dwion
+  "DingTalk": dingtalk
+  "Discord": discord
+  "Disney": disney
+  "Disqus": v2_disqus
+  "Docker": docker
+  "Domob": ads
+  "DouBan": douban
+  "DouYin": douyin
+  "Douyu": douyu
+  "Dropbox": dropbox
+  "Duckduckgo": duckduckgo
+  "Duolingo": coursera
+  "Dynu": v2_dynu
+  "EA": ea
+  "EastMoney": eastmoney
+  "eBay": ebay
+  "EHGallery": v2_ehentai
+  "Electron": v2_electron
+  "Eleme": eleme
+  "Embl": v2_embl
+  "Emojipedia": v2_emojipedia
+  "Entrust": v2_entrust
+  "Epic": epic
+  "Espn": v2_espn
+  "Faronics": v2_faronics
+  "FeiZhu": taobao
+  "FengHuangWang": ifeng
+  "Figma": figma
+  "FindMy": icloud
+  "FitnessPlus": apple
+  "Flurry": ads
+  "Fox": v2_fox
+  "FOXNOW": v2_fox
+  "FreeCodeCamp": v2_freecodecamp
+  "Funshion": v2_fengxing
+  "GaoDe": amap
+  "Gemini": google
+  "Gettyimages": v2_gettyimages
+  "Gigabyte": v2_gigabyte
+  "GitBook": v2_gitbook
+  "Gitee": gitlab
+  "GitHub": github
+  "GitLab": gitlab
+  "GlobalSign": v2_globalsign
+  "Gog": gog
+  "GoogleDrive": google_drive
+  "GoogleEarth": google
+  "GoogleFCM": google
+  "GoogleVoice": google
+  "Gucci": v2_gucci
+  "HaiNanHangKong": v2_hainanairlines
+  "HamiVideo": v2_hamivideo
+  "HanYi": v2_hanyi
+  "HashiCorp": v2_hashicorp
+  "Haveibeenpwned": v2_haveibeenpwned
+  "HBO": hbo
+  "HBOAsia": hbo
+  "HBOHK": hbo
+  "HBOUSA": hbo
+  "HeMa": taobao
+  "Heroku": v2_heroku
+  "Himalaya": ximalaya
+  "HKBN": v2_hkbn
+  "HKedcity": v2_hkedcity
+  "Hkgolden": v2_hkgolden
+  "HKOpenTV": v2_cabletv
+  "HoYoverse": mihoyo
+  "HP": v2_hp
+  "HuanJu": yy
+  "HuaShuTV": v2_wasu
+  "Huffpost": v2_huffpost
+  "Hulu": hulu
+  "HuluJP": hulu
+  "HuluUSA": hulu
+  "HunanTV": mgtv
+  "Hupu": hupu
+  "HuYa": huya
+  "IBM": v2_ibm
+  "ICBC": icbc
+  "iCloud": icloud
+  "Identrust": v2_identrust
+  "ifanr": tech_news
+  "IKEA": v2_ikea
+  "IMDB": v2_imdb
+  "Imgur": v2_imgur
+  "Instagram": facebook
+  "Intel": v2_intel
+  "Intercom": v2_intercom
+  "iQIYI": iqiyi
+  "iQIYIIntl": iqiyi
+  "Japonx": v2_japonx
+  "Jetbrains": jetbrains
+  "Jfrog": v2_jfrog
+  "JianGuoYun": jianguoyun
+  "JianShu": v2_jianshu
+  "JiGuangTuiSong": v2_jiguang
+  "JingDong": jd
+  "JOOX": v2_entertainment
+  "Jquery": v2_jquery
+  "Jsdelivr": v2_jsdelivr
+  "JueJin": douyin
+  "Jwplayer": v2_jwplayer
+  "KakaoTalk": kakao
+  "Keep": v2_keep
+  "Kingsoft": wps
+  "KKBOX": v2_kkbox
+  "KKTV": v2_kktv
+  "KuaiDi100": v2_kuaidi100
+  "KuaiShou": kuaishou
+  "KugouKuwo": kugou
+  "KuKeMusic": v2_kuke
+  "LanZouYun": pan_123
+  "LastPass": v2_lastpass
+  "LeJu": house
+  "Lenovo": v2_lenovo
+  "LeTV": v2_le
+  "Limelight": v2_limelight
+  "Line": line
+  "Linguee": v2_linguee
+  "LinkedIn": linkedin
+  "Linux": v2_linux
+  "LiTV": v2_litv
+  "LivePerson": v2_liveperson
+  "Logitech": v2_logitech
+  "LondonReal": v2_londonreal
+  "Mailru": v2_mailru_group
+  "Manorama": v2_manorama
+  "Maocloud": v2_maocloud
+  "McDonalds": v2_mcdonalds
+  "MEGA": mega
+  "MeiTu": v2_meitu
+  "MeiTuan": meituan
+  "MicrosoftEdge": microsoft
+  "Migu": migu_video
+  "MIUIPrivacy": android_update
+  "Mogujie": v2_mogujie
+  "Mojitianqi": v2_moji
+  "MOMOShop": momo
+  "Movefree": v2_movefree
+  "Mozilla": firefox
+  "Naver": line
+  "NaverTV": v2_naver
+  "NetEase": netease
+  "NetEaseMusic": netease_music
+  "Netflix": netflix
+  "NGA": nga
+  "Niconico": v2_niconico
+  "Nike": v2_nike
+  "Nikkei": v2_nikkei
+  "Nintendo": nintendo
+  "NivodTV": v2_mudvod
+  "Notion": notion
+  "NowE": v2_now
+  "Npmjs": dev_mirrors
+  "NTPService": ntp
+  "Nvidia": v2_nvidia
+  "NYPost": v2_nypost
+  "NYTimes": intl_news
+  "OKX": v2_okx
+  "Olevod": v2_olevod
+  "OneDrive": onedrive
+  "OnePlus": v2_oneplus
+  "OP": v2_op
+  "OpenAI": chatgpt
+  "OPPO": v2_oppo
+  "Oracle": v2_oracle
+  "Oreilly": v2_oreilly
+  "Origin": ea
+  "Overcast": v2_entertainment
+  "ParamountPlus": v2_cbs
+  "Patreon": v2_patreon
+  "PayPal": paypal
+  "PBS": v2_pbs
+  "PChome": v2_pchome_2
+  "PChomeTW": v2_pchome_2
+  "Peacock": v2_nbcuniversal
+  "Picacg": v2_picacg
+  "Picsee": v2_picsee
+  "PikPak": thunder
+  "Pinduoduo": pinduoduo
+  "Pinterest": pinterest
+  "Pixiv": comics
+  "Pixnet": v2_pixnet
+  "PlayStation": playstation
+  "PrimeVideo": prime_video
+  "Protonmail": proton
+  "PSBC": bocom
+  "Pubmatic": v2_pubmatic
+  "Purikonejp": v2_purikonejp
+  "Python": dev_mirrors
+  "QingCloud": v2_qingcloud
+  "Qualcomm": v2_qualcomm_2
+  "QuickConnect": synology
+  "Rakuten": v2_rakuten
+  "Rarbg": v2_rarbg
+  "Razer": v2_razer
+  "Reabble": v2_reabble
+  "Reddit": reddit
+  "Riot": riot
+  "Rockstar": rockstar
+  "RuanMei": v2_ruanmei
+  "Salesforce": v2_salesforce
+  "Samsung": v2_samsung
+  "Scaleflex": v2_scaleflex
+  "SFExpress": v2_sf_express
+  "ShangHaiJuXiao": ads
+  "Sharethis": v2_sharethis
+  "ShiJiChaoXing": chaoxing
+  "Shopee": v2_shopee
+  "Shopify": v2_shopify
+  "Sina": sina
+  "Siri": apple
+  "Slack": slack
+  "SlideShare": v2_slideshare
+  "Sling": v2_sling
+  "SmarTone": v2_smartone
+  "SMZDM": smzdm
+  "Snap": snapchat
+  "Sohu": sogou
+  "Sony": v2_sony
+  "SouFang": house
+  "SoundCloud": soundcloud
+  "SourceForge": v2_sourceforge
+  "Spotify": spotify
+  "Stackexchange": stackoverflow
+  "Starbucks": v2_starbucks
+  "Steam": steam
+  "SteamCN": steam
+  "SuNing": suning
+  "Supercell": supercell
+  "Synology": synology
+  "TaiheMusic": v2_taihe
+  "TaiWanGood": v2_hinet
+  "TapTap": taptap
+  "Teambition": v2_teambition
+  "Teams": teams
+  "TeamViewer": teamviewer
+  "Telegram": telegram
+  "TencentVideo": tencent_video
+  "TeraBox": v2_terabox
+  "Tesla": v2_tesla
+  "TestFlight": apple
+  "ThomsonReuters": v2_thomsonreuters
+  "Threads": facebook
+  "TIDAL": v2_tidal
+  "TigerFintech": v2_itiger
+  "TikTok": tiktok
+  "Tmdb": v2_tmdb
+  "TongCheng": v2_tongcheng
+  "TrustWave": v2_trustwave
+  "TruthSocial": v2_social_media_cn
+  "Tumblr": quora
+  "TVB": v2_tvb
+  "TVer": v2_tver
+  "Twitch": twitch
+  "Twitter": twitter
+  "U17": comics
+  "UBI": ubisoft
+  "Ubisoft": v2_ubisoft_connect
+  "UCloud": v2_ucloud
+  "Udacity": v2_udacity
+  "UnionPay": unionpay
+  "UPYun": v2_upai
+  "Vancl": v2_vancl
+  "Vercel": v2_vercel
+  "Verisign": v2_verisign
+  "Verizon": v2_yahoo
+  "Vimeo": v2_vimeo
+  "VipShop": vipshop
+  "VISA": v2_visa
+  "VK": v2_vk
+  "VOA": v2_voanews
+  "Voxmedia": v2_voxmedia
+  "W3schools": v2_w3schools
+  "Wanfang": v2_wanfang
+  "WangSuKeJi": wangsu
+  "WanMeiShiJie": perfect_world
+  "WeChat": wechat
+  "Weibo": weibo
+  "WenJuanXing": v2_wjx
+  "Westerndigital": v2_westerndigital
+  "WeTV": qq
+  "WeType": wechat
+  "Whatsapp": whatsapp
+  "Wikimedia": v2_wikimedia
+  "Wikipedia": v2_wikimedia
+  "WildRift": riot
+  "WIX": v2_wix
+  "WoLai": v2_wolai
+  "Wordpress": v2_wordpress
+  "Wteam": ads
+  "Xbox": xbox
+  "XiamiMusic": taobao
+  "XiaoHongShu": xiaohongshu
+  "XieCheng": ctrip
+  "XingKongWuXian": v2_xingkongwuxianmedia
+  "XueErSi": v2_xueersi
+  "XueQiu": xueqiu
+  "Xunlei": thunder
+  "Yandex": duckduckgo
+  "YiChe": v2_bitauto
+  "Youku": youku
+  "YouMengChuangXiang": ads
+  "YouTube": youtube
+  "YouTubeMusic": youtube_music
+  "YouZan": v2_youzan
+  "YuanFuDao": k12
+  "ZDNS": v2_zdns
+  "Zee": v2_zee
+  "ZeeTV": v2_zeetv
+  "Zendesk": v2_zendesk
+  "ZhangYue": zhangyue
+  "Zhihu": zhihu
+  "ZhihuAds": zhihu
+  "ZhiYinManKe": comics
+  "ZhongGuoShiHua": v2_sinopec
+  "ZhongXingTongXun": v2_zte
+  "ZhuanZhuan": v2_58tongcheng
+  "Zoho": v2_zoho
+apps:
+  bm7_17173: {category: game, name: "17173 游戏网", name_en: "17173", lists: ["17173"]}
+  bm7_4paradigm: {category: ai, name: "第四范式", name_en: "4Paradigm", lists: ["4Paradigm", "DiSiFanShi"]}
+  bm7_6cn: {category: live, name: "六间房", name_en: "6.cn", lists: ["6JianFang"]}
+  bm7_abc: {category: video, name: "ABC 电视", name_en: "ABC", lists: ["ABC"]}
+  bm7_abema: {category: video, name: "AbemaTV", name_en: "AbemaTV", lists: ["Abema", "AbemaTV"]}
+  bm7_ali213: {category: game, name: "游侠网", name_en: "Ali213", lists: ["Ali213"]}
+  bm7_all4: {category: video, name: "Channel 4", name_en: "All 4", lists: ["All4"]}
+  bm7_antiy: {category: security, name: "安天", name_en: "Antiy", lists: ["AnTianKeJi"]}
+  bm7_aol: {category: news, name: "AOL", name_en: "AOL", lists: ["AOL"]}
+  bm7_aqara: {category: iot, name: "绿米 Aqara", name_en: "Aqara", lists: ["LvMiLianChuang"]}
+  bm7_baofeng: {category: video, name: "暴风影音", name_en: "Baofeng", lists: ["BaoFengYingYin"]}
+  bm7_bianfeng: {category: game, name: "边锋游戏", name_en: "Bianfeng", lists: ["BianFeng"]}
+  bm7_blued: {category: social, name: "Blued", name_en: "Blued", lists: ["Blued"]}
+  bm7_britbox: {category: video, name: "BritBox", name_en: "BritBox", lists: ["BritboxUK"]}
+  bm7_cake: {category: education, name: "Cake 英语", name_en: "Cake", lists: ["Cake"]}
+  bm7_camera360: {category: life, name: "Camera360", name_en: "Camera360", lists: ["Camera360"]}
+  bm7_cas: {category: education, name: "中国科学院", name_en: "CAS", lists: ["CAS"]}
+  bm7_cetv: {category: education, name: "中国教育电视台", name_en: "CETV", lists: ["CETV"]}
+  bm7_chinatelecom: {category: life, name: "中国电信", name_en: "China Telecom", lists: ["ChinaTelecom"]}
+  bm7_chuangkit: {category: work, name: "创客贴", name_en: "Chuangkit", lists: ["ChuangKeTie"]}
+  bm7_cibn: {category: video, name: "CIBN 互联网电视", name_en: "CIBN", lists: ["CIBN"]}
+  bm7_civitai: {category: ai, name: "Civitai", name_en: "Civitai", lists: ["Civitai"]}
+  bm7_cnnic: {category: network, name: "CNNIC", name_en: "CNNIC", lists: ["CNNIC"]}
+  bm7_comodo: {category: security, name: "Comodo", name_en: "Comodo", lists: ["Comodo"]}
+  bm7_ctfile: {category: cloud, name: "城通网盘", name_en: "ctfile", lists: ["ChengTongWangPan"]}
+  bm7_cw: {category: video, name: "The CW", name_en: "The CW", lists: ["CWSeed"]}
+  bm7_damai: {category: life, name: "大麦", name_en: "Damai", lists: ["DaMai"]}
+  bm7_dazn: {category: video, name: "DAZN", name_en: "DAZN", lists: ["DAZN"]}
+  bm7_ddns: {category: network, name: "动态域名 DDNS", name_en: "Dynamic DNS", lists: ["DtDNS", "DynDNS", "NaSDDNS"]}
+  bm7_discovery: {category: video, name: "Discovery+", name_en: "Discovery+", lists: ["DiscoveryPlus"]}
+  bm7_dmm: {category: video, name: "DMM", name_en: "DMM", lists: ["DMM"]}
+  bm7_dood: {category: video, name: "DoodStream", name_en: "DoodStream", lists: ["Dood"]}
+  bm7_duowan: {category: game, name: "多玩", name_en: "Duowan", lists: ["DuoWan"]}
+  bm7_dxy: {category: life, name: "丁香园", name_en: "DXY", lists: ["DingXiangYuan"]}
+  bm7_emby: {category: video, name: "Emby", name_en: "Emby", lists: ["Emby"]}
+  bm7_fanfou: {category: social, name: "饭否", name_en: "Fanfou", lists: ["FanFou"]}
+  bm7_flipboard: {category: news, name: "Flipboard", name_en: "Flipboard", lists: ["FlipBoard"]}
+  bm7_founder: {category: work, name: "方正电子", name_en: "Founder", lists: ["FangZhengDianZi"]}
+  bm7_foxplus: {category: video, name: "FOX+", name_en: "FOX+", lists: ["FOXPlus"]}
+  bm7_friday: {category: video, name: "friDay 影音", name_en: "friDay Video", lists: ["friDay"]}
+  bm7_fubo: {category: video, name: "fuboTV", name_en: "fuboTV", lists: ["FuboTV"]}
+  bm7_garena: {category: game, name: "Garena", name_en: "Garena", lists: ["Garena"]}
+  bm7_geely: {category: iot, name: "吉利汽车", name_en: "Geely", lists: ["Geely"]}
+  bm7_hiby: {category: music, name: "海贝音乐", name_en: "HiBy Music", lists: ["HibyMusic"]}
+  bm7_hpplay: {category: iot, name: "乐播投屏", name_en: "Hpplay", lists: ["Hpplay"]}
+  bm7_iflytek: {category: ai, name: "科大讯飞", name_en: "iFlytek", lists: ["iFlytek"]}
+  bm7_italkbb: {category: voip, name: "iTalkBB", name_en: "iTalkBB", lists: ["iTalkBB"]}
+  bm7_itrus: {category: security, name: "天威诚信", name_en: "iTrusChina", lists: ["TianWeiChengXin"]}
+  bm7_itv: {category: video, name: "ITV", name_en: "ITV", lists: ["ITV"]}
+  bm7_jjwxc: {category: reading, name: "晋江文学城", name_en: "JJWXC", lists: ["JinJiangWenXue"]}
+  bm7_kingsmith: {category: iot, name: "金史密斯", name_en: "KingSmith", lists: ["KingSmith"]}
+  bm7_ku6: {category: video, name: "酷6", name_en: "Ku6", lists: ["Ku6"]}
+  bm7_lastfm: {category: music, name: "Last.fm", name_en: "Last.fm", lists: ["LastFM"]}
+  bm7_lg: {category: iot, name: "LG", name_en: "LG", lists: ["LG"]}
+  bm7_linetv: {category: video, name: "LINE TV", name_en: "LINE TV", lists: ["LineTV"]}
+  bm7_ludashi: {category: security, name: "鲁大师", name_en: "Ludashi", lists: ["LuDaShi"]}
+  bm7_majsoul: {category: game, name: "雀魂", name_en: "Mahjong Soul", lists: ["Majsoul"]}
+  bm7_megvii: {category: ai, name: "旷视", name_en: "Megvii", lists: ["KuangShi"]}
+  bm7_meizu: {category: system, name: "魅族服务", name_en: "Meizu", lists: ["MeiZu"]}
+  bm7_mewatch: {category: video, name: "meWATCH", name_en: "meWATCH", lists: ["MeWatch"]}
+  bm7_moov: {category: music, name: "MOOV", name_en: "MOOV", lists: ["MOOV"]}
+  bm7_my5: {category: video, name: "My5", name_en: "My5", lists: ["My5"]}
+  bm7_nbc: {category: video, name: "NBC", name_en: "NBC", lists: ["NBC"]}
+  bm7_pandora: {category: music, name: "Pandora", name_en: "Pandora", lists: ["Pandora"]}
+  bm7_pandoratv: {category: video, name: "Pandora TV", name_en: "Pandora TV", lists: ["PandoraTV"]}
+  bm7_pccw: {category: video, name: "Now TV", name_en: "Now TV", lists: ["PCCW"]}
+  bm7_pingan: {category: finance, name: "中国平安", name_en: "Ping An", lists: ["PingAn"]}
+  bm7_pptv: {category: video, name: "PP 视频", name_en: "PPTV", lists: ["PPTV"]}
+  bm7_privaterelay: {category: proxy, name: "iCloud 专用代理", name_en: "iCloud Private Relay", lists: ["iCloudPrivateRelay"]}
+  bm7_qiniu: {category: cdn, name: "七牛云", name_en: "Qiniu", lists: ["QiNiuYun"]}
+  bm7_qobuz: {category: music, name: "Qobuz", name_en: "Qobuz", lists: ["Qobuz"]}
+  bm7_rthk: {category: news, name: "香港电台", name_en: "RTHK", lists: ["RTHK"]}
+  bm7_sectigo: {category: security, name: "Sectigo", name_en: "Sectigo", lists: ["Sectigo"]}
+  bm7_shenma: {category: search, name: "神马搜索", name_en: "Shenma", lists: ["ShenMa"]}
+  bm7_skygo: {category: video, name: "Sky Go", name_en: "Sky Go", lists: ["SkyGO"]}
+  bm7_smg: {category: video, name: "SMG 上海文广", name_en: "SMG", lists: ["SMG"]}
+  bm7_speedtest: {category: network, name: "Speedtest 测速", name_en: "Speedtest", lists: ["Speedtest"]}
+  bm7_sublime: {category: dev, name: "Sublime Text", name_en: "Sublime Text", lists: ["SublimeText"]}
+  bm7_taikang: {category: finance, name: "泰康", name_en: "Taikang", lists: ["TaiKang"]}
+  bm7_tcl: {category: iot, name: "TCL", name_en: "TCL", lists: ["TCL"]}
+  bm7_terabox: {category: cloud, name: "TeraBox", name_en: "TeraBox", lists: ["Dubox"]}
+  bm7_tianya: {category: social, name: "天涯社区", name_en: "Tianya", lists: ["TianYaForum"]}
+  bm7_ttkk: {category: video, name: "天天看看", name_en: "TTKK", lists: ["TianTianKanKan"]}
+  bm7_tvb: {category: video, name: "TVB", name_en: "TVB", lists: ["EncoreTVB", "myTVSUPER"]}
+  bm7_ubuntu: {category: update, name: "Ubuntu 更新", name_en: "Ubuntu", lists: ["Ubuntu"]}
+  bm7_uc: {category: search, name: "UC 浏览器", name_en: "UC Browser", lists: ["UC"]}
+  bm7_unity: {category: dev, name: "Unity", name_en: "Unity", lists: ["Unity"]}
+  bm7_viki: {category: video, name: "Viki", name_en: "Viki", lists: ["Viki"]}
+  bm7_viutv: {category: video, name: "ViuTV", name_en: "ViuTV", lists: ["ViuTV"]}
+  bm7_vivo: {category: system, name: "vivo 服务", name_en: "vivo", lists: ["Vivo"]}
+  bm7_weidian: {category: shopping, name: "微店", name_en: "Weidian", lists: ["KouDaiShiShang"]}
+  bm7_wifimaster: {category: life, name: "WiFi 万能钥匙", name_en: "WiFi Master", lists: ["WiFiMaster"]}
+  bm7_xianyu: {category: shopping, name: "闲鱼", name_en: "Xianyu", lists: ["XianYu"]}
+  bm7_xiaomi: {category: system, name: "小米服务", name_en: "Xiaomi", lists: ["XiaoMi"]}
+  bm7_yfcloud: {category: cdn, name: "云帆加速", name_en: "YFCloud", lists: ["YunFanJiaSu"]}
+  bm7_yizhibo: {category: live, name: "一直播", name_en: "Yizhibo", lists: ["YiXiaKeJi", "YiZhiBo"]}
+  bm7_yyets: {category: video, name: "人人影视", name_en: "YYeTs", lists: ["YYeTs"]}
+  bm7_zalo: {category: im, name: "Zalo", name_en: "Zalo", lists: ["Zalo"]}
+  bm7_zhanqi: {category: live, name: "战旗直播", name_en: "Zhanqi", lists: ["zhanqi"]}

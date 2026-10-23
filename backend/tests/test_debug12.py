@@ -3,7 +3,7 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import insert
+from sqlalchemy import delete, insert, select
 
 from app import database, security, stats, timeutil
 from app.database import upsert_add
@@ -169,3 +169,36 @@ def test_token_invalidated_on_password_or_role_change(login_fails_cleared):
         assert c.get("/api/auth/me", headers=hb).status_code == 401
         assert c.delete(f"/api/auth/users/{uid}", headers=ha).status_code == 200
     security.forget_roles()
+
+
+def test_backfill_base_and_startup_settings():
+    """0.6.0/0.6.1 的主域名回填会抛错，导致启动时外部数据源、自定义规则都没加载（debug12 第 7 条）"""
+    from app import integrations
+    from app.main import _on_db_ready
+    from app.models import Setting
+    with database.session() as db:
+        db.execute(insert(HostDomainDay), [
+            {"ts": 1790000000, "host": "AA:00:00:00:12:01", "domain": "a.b.example.com", "app": "https", "bytes": 1, "base": None},
+            {"ts": 1790000000, "host": "AA:00:00:00:12:01", "domain": "x.y.example.org", "app": "https", "bytes": 1, "base": None},
+        ])
+        for k, v in (("singbox_url", "http://192.0.2.10:9090"), ("mosdns_url", "http://192.0.2.11:9099")):
+            row = db.get(Setting, k) or Setting(key=k)
+            row.value = v
+            db.merge(row)
+        db.commit()
+    try:
+        _on_db_ready()
+        with database.session() as db:
+            got = dict(db.execute(select(HostDomainDay.domain, HostDomainDay.base)
+                                  .where(HostDomainDay.host == "AA:00:00:00:12:01")).all())
+        assert got == {"a.b.example.com": "example.com", "x.y.example.org": "example.org"}
+        assert integrations.singbox.enabled and integrations.mosdns.enabled
+    finally:
+        with database.session() as db:
+            db.execute(delete(HostDomainDay).where(HostDomainDay.host == "AA:00:00:00:12:01"))
+            for k in ("singbox_url", "mosdns_url"):
+                row = db.get(Setting, k)
+                if row:
+                    db.delete(row)
+            db.commit()
+        integrations.apply({})

@@ -55,6 +55,7 @@ categories:
   reading:      {group: info,     name: 阅读漫画, name_en: Reading & comics}
   site:         {group: info,     name: 网站服务, name_en: Websites & services}
   adult:        {group: info,     name: 成人内容, name_en: Adult}
+  gambling:     {group: info,     name: 赌博博彩, name_en: Gambling}
   cn_web:       {group: info,     name: 国内网站, name_en: Chinese websites}
   iot:          {group: iot,      name: 智能家居, name_en: Smart home}
   camera:       {group: iot,      name: 监控摄像, name_en: Cameras}
@@ -484,6 +485,27 @@ apps:
   # 兜底应用（classify/sources.py 下载的数据源认出，没有自己的域名规则）
   - {id: cn_web, name: 国内网站, name_en: Chinese websites, category: cn_web}
   - {id: cn_net, name: 国内网络, name_en: China networks, category: cn_net}
+  # 分类兜底应用（classify/sources.py 的 Hagezi / UT1 分类列表认出：只知道是哪类网站，不知道具体是哪个应用）
+  - {id: gen_video, name: 其他视频网站, name_en: Other video sites, category: video}
+  - {id: gen_music, name: 其他音乐电台, name_en: Other music & radio, category: music}
+  - {id: gen_game, name: 其他游戏网站, name_en: Other game sites, category: game}
+  - {id: gen_im, name: 其他聊天网站, name_en: Other chat sites, category: im}
+  - {id: gen_social, name: 其他社交论坛, name_en: Other social & forums, category: social}
+  - {id: gen_mail, name: 其他网页邮箱, name_en: Other webmail, category: mail}
+  - {id: gen_download, name: 其他下载站, name_en: Other download sites, category: download}
+  - {id: gen_cloud, name: 其他文件分享, name_en: Other file sharing, category: cloud}
+  - {id: gen_update, name: 其他软件更新, name_en: Other software updates, category: update}
+  - {id: gen_remote, name: 其他远程控制, name_en: Other remote access, category: remote}
+  - {id: gen_ai, name: 其他 AI 服务, name_en: Other AI services, category: ai}
+  - {id: gen_education, name: 其他教育网站, name_en: Other education sites, category: education}
+  - {id: gen_shopping, name: 其他购物网站, name_en: Other shopping sites, category: shopping}
+  - {id: gen_finance, name: 其他金融网站, name_en: Other finance sites, category: finance}
+  - {id: gen_bank, name: 其他银行网站, name_en: Other bank sites, category: bank}
+  - {id: gen_news, name: 其他新闻资讯, name_en: Other news sites, category: news}
+  - {id: gen_reading, name: 其他博客阅读, name_en: Other blogs & reading, category: reading}
+  - {id: gen_adult, name: 成人网站, name_en: Adult sites, category: adult}
+  - {id: gen_gambling, name: 博彩网站, name_en: Gambling sites, category: gambling}
+  - {id: gen_telemetry, name: 设备遥测, name_en: Device telemetry, category: ads}
   - {id: https, name: HTTPS 网页, name_en: HTTPS, category: web, ports: [tcp/443, tcp/8443]}
   - {id: quic, name: QUIC 网页, name_en: QUIC, category: web, ports: [udp/443]}
   - {id: http, name: HTTP 网页, name_en: HTTP, category: web, ports: [tcp/80, tcp/8080]}

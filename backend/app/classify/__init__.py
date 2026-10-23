@@ -1,10 +1,17 @@
 """把一条流（远端 IP + 端口 + 域名）识别为应用。
 
 分三级：应用大类（group）→ 应用小类（category）→ 应用（app），与 Panabit 的应用分类方式一致。
-优先级：自定义规则 > 域名（先查询名再 CNAME；精确匹配 > 最长后缀）> CIDR > 专用端口 > IP 所属 ASN
-> 国内域名列表 > 官方 IP 段（最长前缀优先）/ 国内 IP 段（app/classify/sources.py，兜底）
-> 通用端口（HTTPS 等）> IP 协议号 > other。
-内置规则两份：手工维护的 apps.yaml，以及从 v2fly/domain-list-community 生成的 apps_v2fly.yaml（同一域名以前者为准）。
+
+识别顺序（前面的认出来就不再往下查）：
+1. 自定义规则（域名）
+2. 应用级域名库：内置 apps.yaml、v2fly（apps_v2fly.yaml）、blackmatrix7（lists.py，运行时下载）。
+   先查询名再 CNAME；三者一起按“命中的后缀越长越准”比较，一样长时 内置 > v2fly > blackmatrix7，
+   因此 blackmatrix7 只补前两者没有的、或比它们更具体的域名
+3. 应用级 IP：自定义 / 内置 CIDR > blackmatrix7 的 IP 段 > 专用端口 > IP 所属 ASN
+4. 分类级域名列表（lists.py）：Hagezi > UT1。只知道是哪类网站（博彩、成人、游戏、购物……），
+   所以排在所有应用级信号之后；命中 v2fly 的“geolocation”这类只说明是网站的兜底条目时，也由它们细化
+5. 国内域名列表 > 官方 IP 段（最长前缀优先）/ 国内 IP 段（sources.py）
+6. 通用端口（HTTPS 等）> IP 协议号 > other
 """
 import ipaddress
 import os
@@ -29,6 +36,7 @@ def active_v2fly_file() -> str:
     a, b = read_source(data) or {}, read_source(V2FLY_FILE) or {}
     return data if a.get("date", "") > b.get("date", "") else V2FLY_FILE
 UNKNOWN_APP = "other"
+WEAK_PREFIXES = ("v2_geolocation",)  # v2fly 的地区兜底条目：只说明是个网站，分类列表认得出类别时以分类列表为准
 
 
 def _norm_label(s: str) -> str:
@@ -100,6 +108,11 @@ class Classifier:
             self._add(a["id"], a.get("domains", []), [], [], first_wins=True)
             for d in a.get("full", []):
                 self.full.setdefault(d, a["id"])
+        # blackmatrix7 新增的应用（规则运行时下载，见 lists.py；对应关系在 bm7_map.yaml）
+        from app.classify.lists import lists as bm7
+        for aid, a in bm7.map["apps"].items():
+            if aid not in self.apps and a.get("category") in self.categories:
+                self.apps[aid] = App(aid, str(a["name"]), str(a.get("name_en", a["name"])), a["category"])
         self.apps[UNKNOWN_APP] = App(UNKNOWN_APP, "其他", "Other", "unknown")
 
         custom_nets, custom_ports = [], []
@@ -121,6 +134,7 @@ class Classifier:
         self.nets = custom_nets + self.nets
         self.ports = custom_ports + self.ports
         self._cache: dict[tuple, str] = {}
+        self._ver = None
 
     def _add(self, app_id, domains, cidrs, ports, first_wins):
         for d in domains:
@@ -145,16 +159,28 @@ class Classifier:
             for sfx in suffixes:
                 if sfx in self.custom_domains:
                     return self.custom_domains[sfx]
-        hit = self.full.get(name)
-        if hit:
-            return hit
-        for sfx in suffixes:
-            hit = self.domains.get(sfx)
-            if hit:
-                return hit
-        return None
+        # 内置 + v2fly：精确匹配算比任何后缀都长
+        hit, depth = self.full.get(name), len(parts) + 1
+        if not hit:
+            for i, sfx in enumerate(suffixes):
+                hit = self.domains.get(sfx)
+                if hit:
+                    depth = len(parts) - i
+                    break
+        # blackmatrix7：命中的后缀严格更长才用它（一样长时内置库和 v2fly 优先）
+        from app.classify.lists import lists as bm7
+        alt = bm7.app_domain(name)
+        if alt and alt[0] in self.apps and (not hit or alt[1] > depth):
+            return alt[0]
+        return hit
 
     def classify(self, remote_ip: str, proto: int, port: int, qname: str | None, cname: str | None) -> str:
+        from app.classify.lists import lists as extra_lists
+        from app.classify.sources import sources as extra
+        ver = (extra_lists.version, extra.version)
+        if ver != self._ver:   # 第三方库重新加载过：之前的结果作废
+            self._cache.clear()
+            self._ver = ver
         key = (remote_ip, proto, port, qname, cname)
         hit = self._cache.get(key)
         if hit:
@@ -167,6 +193,9 @@ class Classifier:
                     if addr.version == net.version and addr in net:
                         app = aid
                         break
+                if app is None:
+                    app = extra_lists.app_ip(remote_ip)
+                    app = app if app in self.apps else None
             except ValueError:
                 pass
         generic = None
@@ -183,8 +212,12 @@ class Classifier:
             hit = asndb.lookup(remote_ip)
             if hit:
                 app = self.asn_apps.get(hit[0])
+        if app is None or app.startswith(WEAK_PREFIXES):
+            # 分类级列表（Hagezi > UT1）：只认得出类别；也用来细化 v2fly 的地区兜底条目
+            cat = extra_lists.category(qname) or extra_lists.category(cname)
+            if cat in self.apps:
+                app = cat
         if app is None:
-            from app.classify.sources import sources as extra
             # 先按域名兜底、再按 IP：有域名时域名更准（国内网站托管在 Cloudflare/AWS 上时，IP 只能说明是哪家 CDN）
             # 国内域名列表：域名规则没认出、但在列表里 → 国内网站
             app = extra.fallback_domain(qname) or extra.fallback_domain(cname)
