@@ -35,25 +35,25 @@
   --focus: #2b6583;
 
   /* 应用大类配色（dataviz validate_palette.js 校验：白底 CVD 相邻 ΔE ≥ 9.1；三色对比度 < 3:1，故图表一律带图例与数值表） */
-  /* 8 个流量大的大类用色相，其余小众大类用灰阶（图例和表格都带名称，不靠颜色区分）。
-     dataviz validate_palette.js 按维盟顺序校验：白底、深色底均通过，CVD 相邻最差 ΔE 6.9 / 6.5（在 6–8 区间，故图表一律带图例、间隔与数值表） */
-  --g-http: #6250d6;
-  --g-game: #eb6834;
-  --g-tv: #2a78d6;
-  --g-p2p: #eda100;
-  --g-common: #8d9a9d;
-  --g-im: #1baf7a;
-  --g-music: #e34948;
-  --g-stock: #a6b0b3;
-  --g-phone: #75848a;
-  --g-proxy: #a6b0b3;
-  --g-database: #75848a;
-  --g-mobile: #008300;
-  --g-special: #e87ba4;
-  --g-mining: #a6b0b3;
-  --g-pcdn: #75848a;
-  --g-other: #a6b0b3;
-  --g-unknown: #c6ced0;
+  /* 应用大类配色照维盟 WayOS「DPI 协议」饼图：ECharts 默认 9 色按 17 个大类的顺序循环（第 10 类起重复），深浅主题相同。
+     颜色有重复，所以图例、表格始终带名称（debug12） */
+  --g-http: #5470c6;
+  --g-game: #91cc75;
+  --g-tv: #fac858;
+  --g-p2p: #ee6666;
+  --g-common: #73c0de;
+  --g-im: #3ba272;
+  --g-music: #fc8452;
+  --g-stock: #9a60b4;
+  --g-phone: #ea7ccc;
+  --g-proxy: #5470c6;
+  --g-database: #91cc75;
+  --g-mobile: #fac858;
+  --g-special: #ee6666;
+  --g-mining: #73c0de;
+  --g-pcdn: #3ba272;
+  --g-other: #fc8452;
+  --g-unknown: #9a60b4;
   --g-social: var(--g-im);   /* 兼容：设置页的识别来源条形图沿用 */
 
   --r-sm: 8px;
@@ -89,23 +89,23 @@
     --line-up: var(--up);
     --line-down: var(--down);
     --down: #3fc4c8;
-    --g-http: #9085e9;
-    --g-game: #d95926;
-    --g-tv: #3987e5;
-    --g-p2p: #c98500;
-    --g-common: #6b797c;
-    --g-im: #199e70;
-    --g-music: #e66767;
-    --g-stock: #55636a;
-    --g-phone: #7f8c8f;
-    --g-proxy: #55636a;
-    --g-database: #7f8c8f;
-    --g-mobile: #008300;
-    --g-special: #d55181;
-    --g-mining: #55636a;
-    --g-pcdn: #7f8c8f;
-    --g-other: #55636a;
-    --g-unknown: #3e494c;
+    --g-http: #5470c6;
+    --g-game: #91cc75;
+    --g-tv: #fac858;
+    --g-p2p: #ee6666;
+    --g-common: #73c0de;
+    --g-im: #3ba272;
+    --g-music: #fc8452;
+    --g-stock: #9a60b4;
+    --g-phone: #ea7ccc;
+    --g-proxy: #5470c6;
+    --g-database: #91cc75;
+    --g-mobile: #fac858;
+    --g-special: #ee6666;
+    --g-mining: #73c0de;
+    --g-pcdn: #3ba272;
+    --g-other: #fc8452;
+    --g-unknown: #9a60b4;
     --g-social: var(--g-im);
     color-scheme: dark;
   }
@@ -133,23 +133,23 @@
   --line-up: var(--up);
   --line-down: var(--down);
   --down: #3fc4c8;
-  --g-http: #9085e9;
-  --g-game: #d95926;
-  --g-tv: #3987e5;
-  --g-p2p: #c98500;
-  --g-common: #6b797c;
-  --g-im: #199e70;
-  --g-music: #e66767;
-  --g-stock: #55636a;
-  --g-phone: #7f8c8f;
-  --g-proxy: #55636a;
-  --g-database: #7f8c8f;
-  --g-mobile: #008300;
-  --g-special: #d55181;
-  --g-mining: #55636a;
-  --g-pcdn: #7f8c8f;
-  --g-other: #55636a;
-  --g-unknown: #3e494c;
+  --g-http: #5470c6;
+  --g-game: #91cc75;
+  --g-tv: #fac858;
+  --g-p2p: #ee6666;
+  --g-common: #73c0de;
+  --g-im: #3ba272;
+  --g-music: #fc8452;
+  --g-stock: #9a60b4;
+  --g-phone: #ea7ccc;
+  --g-proxy: #5470c6;
+  --g-database: #91cc75;
+  --g-mobile: #fac858;
+  --g-special: #ee6666;
+  --g-mining: #73c0de;
+  --g-pcdn: #3ba272;
+  --g-other: #fc8452;
+  --g-unknown: #9a60b4;
   --g-social: var(--g-im);
   color-scheme: dark;
 }
