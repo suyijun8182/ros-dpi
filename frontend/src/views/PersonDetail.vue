@@ -204,7 +204,7 @@ watch(() => props.id, loadFree, { immediate: true })
 .lg i { width: 10px; height: 10px; }
 .o { background: color-mix(in srgb, var(--accent) 35%, var(--panel)); }
 .l { background: var(--warn); }
-.n { background: var(--g-info, #7a5bd6); }
+.n { background: var(--g-http, #7a5bd6); }
 .days7 { display: grid; grid-template-columns: repeat(auto-fit, minmax(36px, 1fr)); gap: 8px; align-items: end; }
 .dcol { display: grid; justify-items: center; gap: 2px; }
 .dbar { position: relative; width: 100%; max-width: 34px; height: 130px; background: var(--sunk); border-radius: 6px; overflow: hidden; }

@@ -66,7 +66,7 @@ watch(() => props.open, async o => {
   res.value = null
   err.value = ''
 })
-const choices = computed(() => meta.value.groups.filter(g => !['base', 'unknown', 'work'].includes(g.id))
+const choices = computed(() => meta.value.groups.filter(g => !['common', 'other', 'unknown', 'database'].includes(g.id))
   .concat(meta.value.categories.filter(c => ['short_video', 'live', 'mobile_game', 'shopping', 'adult', 'stock'].includes(c.id))))
 const appMap = computed(() => Object.fromEntries(meta.value.apps.map(a => [a.id, a])))
 const appChoices = computed(() => {

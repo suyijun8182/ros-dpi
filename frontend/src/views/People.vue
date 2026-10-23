@@ -376,8 +376,8 @@ async function loadCfg() {
     choices.value = r.choices
   } catch (e) { err.value = e.message }
 }
-const leisureChoices = computed(() => choices.value.filter(c => c.kind === 'group' && !['base', 'unknown'].includes(c.id))
-  .concat(choices.value.filter(c => ['short_video', 'shopping', 'live', 'mobile_game', 'social'].includes(c.id) && c.kind === 'category')))
+const leisureChoices = computed(() => choices.value.filter(c => c.kind === 'group' && ['tv', 'game', 'music', 'p2p', 'im', 'stock'].includes(c.id))
+  .concat(choices.value.filter(c => ['short_video', 'shopping', 'live', 'mobile_game', 'game_tool', 'social', 'news'].includes(c.id) && c.kind === 'category')))
 function toggleDay(x) {
   const s = new Set(cfg.value.work_days.split(''))
   s.has(String(x)) ? s.delete(String(x)) : s.add(String(x))

@@ -24,7 +24,7 @@ def test_api_flow():
         assert ov["totals"]["today"]["total"] >= 777
         assert any(x["key"] == "AA:00:00:00:00:50" for x in ov["top_hosts"])
         assert len(ov["realtime"]) >= 60
-        assert ov["groups"][0]["children"][0]["id"] == "web"
+        assert ov["groups"][0]["children"][0]["id"] == "tls"
         tg = ov["trend_groups"]
         assert len(tg["ts"]) == len(ov["trend"]) and all(len(x["values"]) == len(tg["ts"]) for x in tg["series"])
 
@@ -33,7 +33,7 @@ def test_api_flow():
         assert c.patch("/api/hosts/AA:00:00:00:00:50", json={"alias": "书房电脑"}, headers=h).json()["ok"]
         d = c.get("/api/hosts/AA:00:00:00:00:50/detail?range=month", headers=h).json()
         assert d["name"] == "书房电脑" and d["alias_by"] == "mac" and d["apps"][0]["id"] == "https"
-        assert d["groups"][0]["id"] == "base" and d["trend_groups"]["series"][0]["id"] == "base"
+        assert d["groups"][0]["id"] == "common" and d["trend_groups"]["series"][0]["id"] == "common"
         # 改成按 IP 命名：MAC 下的旧名字被删掉
         r = c.patch("/api/hosts/AA:00:00:00:00:50", json={"alias": "固定IP", "by": "ip"}, headers=h).json()
         assert r["name"] == "固定IP" and r["alias_by"] == "ip"
@@ -64,7 +64,7 @@ def test_api_flow():
         assert c.put("/api/settings", json={"lan_cidrs": "nope"}, headers=h).status_code == 400
         assert c.get("/api/system", headers=h).json()["collector"]["flows"] >= 1
         meta = c.get("/api/meta", headers=h).json()
-        assert len(meta["apps"]) > 250 and {g["id"] for g in meta["groups"]} >= {"media", "game", "unknown"}
+        assert len(meta["apps"]) > 250 and {g["id"] for g in meta["groups"]} >= {"http", "game", "tv", "mobile", "pcdn", "mining", "unknown"} and len(meta["groups"]) == 17
 
 
 def test_sessions_and_destinations():

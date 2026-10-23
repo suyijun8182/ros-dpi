@@ -49,7 +49,7 @@ _VENDOR_RE = [(re.compile(p, re.I), t) for p, t in VENDOR_TYPES]
 
 # 用过的应用 → 类型线索：只放“这类设备才会用”的；智能设备另按“只用智能家居 / 摄像头类应用”判断（手机上的米家 App 也会访问同样的域名）
 APP_HINTS = {"windows_update": "computer", "xbox": "console", "playstation": "console", "nintendo": "console"}
-NEUTRAL_GROUPS = {"base", "unknown"}  # 系统、DNS、未识别：判断时不计
+NEUTRAL_CATS = {"network", "system", "cdn", "proxy", "security", "ads", "web", "tls", "cn_net", "update", "unknown"}  # 系统、DNS、未识别：判断时不计
 
 
 # 厂商全名缩短：去掉公司后缀，常见的直接给短名
@@ -148,8 +148,7 @@ def _by_apps(apps: set[str]) -> str | None:
     if len(hints) == 1:
         return hints.pop()
     cats = {cl.app_info(a).category for a in apps}
-    groups = {cl.category_info(c)["group"] for c in cats} - NEUTRAL_GROUPS
-    if groups == {"iot"}:
+    if cats - NEUTRAL_CATS and cats - NEUTRAL_CATS <= {"iot", "camera"}:
         return "camera" if "camera" in cats else "iot"
     return None
 

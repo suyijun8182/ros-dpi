@@ -9,64 +9,93 @@
 # 已发布过的应用 ID 和分类 ID 不要删除或改名：历史流量按应用 ID 存储。
 # 应用不再使用时，保留条目、清空 domains 即可。
 
+# 大类照维盟 WayOS「DPI 协议」的 17 类（debug12），顺序即显示顺序，固定列出、不管有没有流量。
 groups:
-  media:    {name: 影音娱乐, name_en: Media}
-  game:     {name: 网络游戏, name_en: Gaming}
-  social:   {name: 社交通讯, name_en: Social & messaging}
-  transfer: {name: 下载更新, name_en: Downloads & updates}
-  work:     {name: 办公学习, name_en: Work & study}
-  life:     {name: 购物生活, name_en: Shopping & life}
-  info:     {name: 资讯阅读, name_en: News & reading}
-  iot:      {name: 智能设备, name_en: Smart devices}
-  base:     {name: 网络基础, name_en: Infrastructure}
+  http:     {name: HTTP协议, name_en: HTTP & websites}
+  game:     {name: 网络游戏, name_en: Online games}
+  tv:       {name: 网络电视, name_en: Video & TV}
+  p2p:      {name: P2P下载,  name_en: P2P & downloads}
+  common:   {name: 常用协议, name_en: Common protocols}
+  im:       {name: 即时通讯, name_en: Messaging}
+  music:    {name: 网络音乐, name_en: Music}
+  stock:    {name: 股票交易, name_en: Stock trading}
+  phone:    {name: 网络电话, name_en: VoIP}
+  proxy:    {name: 流量代理, name_en: Proxies & VPN}
+  database: {name: 数据库,   name_en: Databases}
+  mobile:   {name: 移动应用, name_en: Mobile apps}
+  special:  {name: 特殊协议, name_en: Special protocols}
+  mining:   {name: 矿池,     name_en: Mining pools}
+  pcdn:     {name: PCDN,     name_en: PCDN}
+  other:    {name: 其他,     name_en: Other}
   unknown:  {name: 未识别,   name_en: Unknown}
 
 categories:
-  video:        {group: media,    name: 在线视频, name_en: Video}
-  short_video:  {group: media,    name: 短视频,   name_en: Short video}
-  live:         {group: media,    name: 直播,     name_en: Live streaming}
-  music:        {group: media,    name: 音乐音频, name_en: Music & audio}
+  # HTTP协议
+  web:          {group: http,     name: 普通网页, name_en: Web (HTTP)}
+  site:         {group: http,     name: 常用网站, name_en: Websites & services}
+  cn_web:       {group: http,     name: 国内网站, name_en: Chinese websites}
+  search:       {group: http,     name: 搜索门户, name_en: Search & portal}
+  reading:      {group: http,     name: 博客阅读, name_en: Blogs & reading}
+  adult:        {group: http,     name: 成人内容, name_en: Adult}
+  gambling:     {group: http,     name: 赌博博彩, name_en: Gambling}
+  # 网络游戏
   game:         {group: game,     name: 游戏平台, name_en: Game platforms}
-  mobile_game:  {group: game,     name: 手机游戏, name_en: Mobile games}
   console_game: {group: game,     name: 主机游戏, name_en: Console games}
-  game_tool:    {group: game,     name: 游戏加速, name_en: Game boosters}
-  im:           {group: social,   name: 即时通讯, name_en: Messaging}
-  social:       {group: social,   name: 社交社区, name_en: Social}
-  voip:         {group: social,   name: 语音通话, name_en: Voice & calls}
-  mail:         {group: social,   name: 电子邮件, name_en: Mail}
-  download:     {group: transfer, name: 下载P2P,  name_en: Download & P2P}
-  cloud:        {group: transfer, name: 网盘存储, name_en: Cloud storage}
-  update:       {group: transfer, name: 软件更新, name_en: Software update}
-  app_store:    {group: transfer, name: 应用商店, name_en: App stores}
-  work:         {group: work,     name: 办公协作, name_en: Office & collaboration}
-  meeting:      {group: work,     name: 视频会议, name_en: Meetings}
-  dev:          {group: work,     name: 开发工具, name_en: Developer}
-  remote:       {group: work,     name: 远程控制, name_en: Remote access}
-  ai:           {group: work,     name: AI 工具,  name_en: AI}
-  education:    {group: work,     name: 在线教育, name_en: Education}
-  shopping:     {group: life,     name: 网络购物, name_en: Shopping}
-  life:         {group: life,     name: 生活服务, name_en: Lifestyle}
-  travel:       {group: life,     name: 出行地图, name_en: Travel & maps}
-  finance:      {group: life,     name: 支付,     name_en: Payments}
-  bank:         {group: life,     name: 银行,     name_en: Banking}
-  stock:        {group: life,     name: 证券理财, name_en: Investing}
-  news:         {group: info,     name: 新闻资讯, name_en: News}
-  search:       {group: info,     name: 搜索门户, name_en: Search & portal}
-  reading:      {group: info,     name: 阅读漫画, name_en: Reading & comics}
-  site:         {group: info,     name: 网站服务, name_en: Websites & services}
-  adult:        {group: info,     name: 成人内容, name_en: Adult}
-  gambling:     {group: info,     name: 赌博博彩, name_en: Gambling}
-  cn_web:       {group: info,     name: 国内网站, name_en: Chinese websites}
-  iot:          {group: iot,      name: 智能家居, name_en: Smart home}
-  camera:       {group: iot,      name: 监控摄像, name_en: Cameras}
-  network:      {group: base,     name: 网络协议, name_en: Network protocol}
-  system:       {group: base,     name: 系统服务, name_en: OS services}
-  cdn:          {group: base,     name: CDN 云服务, name_en: CDN & cloud}
-  proxy:        {group: base,     name: 代理隧道, name_en: VPN & tunnels}
-  security:     {group: base,     name: 安全软件, name_en: Security}
-  ads:          {group: base,     name: 广告统计, name_en: Ads & analytics}
-  web:          {group: base,     name: 通用网页, name_en: Web}
-  cn_net:       {group: base,     name: 国内网络, name_en: China networks}
+  # 网络电视
+  video:        {group: tv,       name: 在线视频, name_en: Video}
+  live:         {group: tv,       name: 直播,     name_en: Live streaming}
+  # P2P下载
+  download:     {group: p2p,      name: 下载P2P,  name_en: Download & P2P}
+  # 常用协议（维盟：HTTPS、DNS、电子邮件、终端类、软件更新、网络安全、云盘、网上银行、常用办公、游戏加速器、AI 应用……）
+  tls:          {group: common,   name: HTTPS/QUIC, name_en: HTTPS & QUIC}
+  network:      {group: common,   name: 网络协议, name_en: Network protocol}
+  mail:         {group: common,   name: 电子邮件, name_en: Mail}
+  remote:       {group: common,   name: 远程终端, name_en: Remote access}
+  update:       {group: common,   name: 软件更新, name_en: Software update}
+  security:     {group: common,   name: 网络安全, name_en: Security}
+  cloud:        {group: common,   name: 云盘,     name_en: Cloud storage}
+  bank:         {group: common,   name: 网上银行, name_en: Banking}
+  work:         {group: common,   name: 常用办公, name_en: Office & collaboration}
+  dev:          {group: common,   name: 开发工具, name_en: Developer}
+  ai:           {group: common,   name: AI 应用,  name_en: AI}
+  game_tool:    {group: common,   name: 游戏加速器, name_en: Game boosters}
+  # 即时通讯（维盟把企业微信、钉钉、飞书、腾讯会议也放在这里）
+  im:           {group: im,       name: 即时通讯, name_en: Messaging}
+  meeting:      {group: im,       name: 视频会议, name_en: Meetings}
+  # 网络音乐
+  music:        {group: music,    name: 音乐音频, name_en: Music & audio}
+  # 股票交易
+  stock:        {group: stock,    name: 证券理财, name_en: Investing}
+  # 网络电话
+  voip:         {group: phone,    name: 语音通话, name_en: Voice & calls}
+  # 流量代理
+  proxy:        {group: proxy,    name: 代理隧道, name_en: VPN & tunnels}
+  # 数据库
+  database:     {group: database, name: 数据库,   name_en: Databases}
+  # 移动应用（维盟：音频视频、移动社交、应用商店、手机游戏、新闻资讯、购物支付、旅游、出行服务、系统应用……）
+  short_video:  {group: mobile,   name: 短视频,   name_en: Short video}
+  social:       {group: mobile,   name: 移动社交, name_en: Social}
+  app_store:    {group: mobile,   name: 应用商店, name_en: App stores}
+  mobile_game:  {group: mobile,   name: 手机游戏, name_en: Mobile games}
+  news:         {group: mobile,   name: 新闻资讯, name_en: News}
+  shopping:     {group: mobile,   name: 网络购物, name_en: Shopping}
+  finance:      {group: mobile,   name: 支付,     name_en: Payments}
+  travel:       {group: mobile,   name: 出行旅游, name_en: Travel & maps}
+  life:         {group: mobile,   name: 生活服务, name_en: Lifestyle}
+  education:    {group: mobile,   name: 在线教育, name_en: Education}
+  system:       {group: mobile,   name: 系统应用, name_en: OS services}
+  # 特殊协议
+  iot:          {group: special,  name: 智能家居, name_en: Smart home}
+  camera:       {group: special,  name: 监控摄像, name_en: Cameras}
+  # 矿池
+  mining:       {group: mining,   name: 矿池,     name_en: Mining pools}
+  # PCDN
+  pcdn:         {group: pcdn,     name: PCDN,     name_en: PCDN}
+  # 其他
+  cdn:          {group: other,    name: CDN 云服务, name_en: CDN & cloud}
+  ads:          {group: other,    name: 广告统计, name_en: Ads & analytics}
+  cn_net:       {group: other,    name: 国内网络, name_en: China networks}
+  # 未识别
   unknown:      {group: unknown,  name: 未识别,   name_en: Unknown}
 
 apps:
@@ -482,6 +511,21 @@ apps:
      domains: [kaspersky.com, kaspersky-labs.com, eset.com, avast.com, avcdn.net, mcafee.com, norton.com, bitdefender.com]}
   - {id: ads, name: 广告与统计, name_en: Ads & analytics, category: ads,
      domains: [doubleclick.net, googleadservices.com, googlesyndication.com, google-analytics.com, googletagmanager.com, adnxs.com, umeng.com, umengcloud.com, cnzz.com, growingio.com, talkingdata.com, gdt.qq.com, e.qq.com, pangolin-sdk-toutiao.com, pglstatp-toutiao.com, ads.tiktok.com, adkwai.com, app-measurement.com, crashlytics.com, sentry.io, bugly.qq.com, appsflyer.com, adjust.com, branch.io, mixpanel.com, segment.io, hotjar.com, miaozhen.com, admaster.com.cn, scorecardresearch.com]}
+  # ================= 数据库（按端口；内网互访不计，这里只会看到连外部数据库的流量） =================
+  - {id: mysql, name: MySQL, name_en: MySQL, category: database, ports: [tcp/3306]}
+  - {id: postgresql, name: PostgreSQL, name_en: PostgreSQL, category: database, ports: [tcp/5432]}
+  - {id: mssql, name: SQL Server, name_en: SQL Server, category: database, ports: [tcp/1433]}
+  - {id: oracle_db, name: Oracle, name_en: Oracle, category: database, ports: [tcp/1521]}
+  - {id: redis, name: Redis, name_en: Redis, category: database, ports: [tcp/6379]}
+  - {id: mongodb, name: MongoDB, name_en: MongoDB, category: database, ports: [tcp/27017]}
+  # ================= 矿池 =================
+  - {id: mining_pool, name: 矿池, name_en: Mining pools, category: mining,
+     domains: [f2pool.com, antpool.com, viabtc.com, poolin.com, ethermine.org, nanopool.org, nicehash.com, 2miners.com,
+               braiins.com, slushpool.com, hiveon.net, flexpool.io, herominers.com, minergate.com, unmineable.com,
+               supportxmr.com, moneroocean.stream, c3pool.com, k1pool.com, kryptex.network, zpool.ca, prohashing.com,
+               mining-dutch.nl, emcd.io, luxor.tech, spiderpool.com, sigmapool.com, ezil.me, binancepool.com]}
+  # ================= PCDN（家里的盒子把带宽卖给 CDN，上行流量大） =================
+  - {id: onethingcloud, name: 网心云, name_en: OneThing Cloud, category: pcdn, domains: [onethingcloud.com, onethingpcs.com]}
   # 兜底应用（classify/sources.py 下载的数据源认出，没有自己的域名规则）
   - {id: cn_web, name: 国内网站, name_en: Chinese websites, category: cn_web}
   - {id: cn_net, name: 国内网络, name_en: China networks, category: cn_net}
@@ -505,7 +549,8 @@ apps:
   - {id: gen_reading, name: 其他博客阅读, name_en: Other blogs & reading, category: reading}
   - {id: gen_adult, name: 成人网站, name_en: Adult sites, category: adult}
   - {id: gen_gambling, name: 博彩网站, name_en: Gambling sites, category: gambling}
+  - {id: gen_mining, name: 网页挖矿, name_en: Browser mining, category: mining}
   - {id: gen_telemetry, name: 设备遥测, name_en: Device telemetry, category: ads}
-  - {id: https, name: HTTPS 网页, name_en: HTTPS, category: web, ports: [tcp/443, tcp/8443]}
-  - {id: quic, name: QUIC 网页, name_en: QUIC, category: web, ports: [udp/443]}
+  - {id: https, name: HTTPS 网页, name_en: HTTPS, category: tls, ports: [tcp/443, tcp/8443]}
+  - {id: quic, name: QUIC 网页, name_en: QUIC, category: tls, ports: [udp/443]}
   - {id: http, name: HTTP 网页, name_en: HTTP, category: web, ports: [tcp/80, tcp/8080]}

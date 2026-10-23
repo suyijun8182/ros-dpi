@@ -69,23 +69,33 @@ export function groupName(g) {
 }
 
 /*
- * 配色按"应用大类"：8 个有意义的大类各占一个固定色相（style.css 的 --g-*，已用 dataviz 校验脚本验证色盲区分度），
- * 网络基础与未识别用中性灰。大类下的小类用同一色相的深浅区分，名字始终和色块一起出现。
+ * 配色按"应用大类"（维盟的 17 类）：流量大的 8 个大类各占一个固定色相（style.css 的 --g-*，已用 dataviz 校验脚本验证色盲区分度），
+ * 常用协议、股票、电话、代理、数据库、矿池、PCDN、其他、未识别用灰阶。大类下的小类用同一色相的深浅区分，名字始终和色块一起出现。
  * 顺序 = 小类在大类内的深浅次序；新增分类时必须同步（后端测试会检查与 apps.yaml 一致）。
  */
 export const CAT_GROUP = {
-  video: 'media', short_video: 'media', live: 'media', music: 'media',
-  game: 'game', mobile_game: 'game', console_game: 'game', game_tool: 'game',
-  im: 'social', social: 'social', voip: 'social', mail: 'social',
-  download: 'transfer', cloud: 'transfer', update: 'transfer', app_store: 'transfer',
-  work: 'work', meeting: 'work', dev: 'work', remote: 'work', ai: 'work', education: 'work',
-  shopping: 'life', life: 'life', travel: 'life', finance: 'life', bank: 'life', stock: 'life',
-  news: 'info', search: 'info', reading: 'info', site: 'info', adult: 'info', gambling: 'info', cn_web: 'info',
-  iot: 'iot', camera: 'iot',
-  network: 'base', system: 'base', cdn: 'base', proxy: 'base', security: 'base', ads: 'base', web: 'base', cn_net: 'base',
+  web: 'http', site: 'http', cn_web: 'http', search: 'http', reading: 'http', adult: 'http', gambling: 'http',
+  game: 'game', console_game: 'game',
+  video: 'tv', live: 'tv',
+  download: 'p2p',
+  tls: 'common', network: 'common', mail: 'common', remote: 'common', update: 'common', security: 'common', cloud: 'common',
+  bank: 'common', work: 'common', dev: 'common', ai: 'common', game_tool: 'common',
+  im: 'im', meeting: 'im',
+  music: 'music',
+  stock: 'stock',
+  voip: 'phone',
+  proxy: 'proxy',
+  database: 'database',
+  short_video: 'mobile', social: 'mobile', app_store: 'mobile', mobile_game: 'mobile', news: 'mobile', shopping: 'mobile',
+  finance: 'mobile', travel: 'mobile', life: 'mobile', education: 'mobile', system: 'mobile',
+  iot: 'special', camera: 'special',
+  mining: 'mining',
+  pcdn: 'pcdn',
+  cdn: 'other', ads: 'other', cn_net: 'other',
   unknown: 'unknown',
 }
-export const GROUPS = ['media', 'game', 'social', 'transfer', 'work', 'life', 'info', 'iot', 'base', 'unknown']
+// 大类照维盟 WayOS 的 17 类，顺序固定
+export const GROUPS = ['http', 'game', 'tv', 'p2p', 'common', 'im', 'music', 'stock', 'phone', 'proxy', 'database', 'mobile', 'special', 'mining', 'pcdn', 'other', 'unknown']
 
 // 小类深浅：与面板底色混合的比例
 const SHADES = [100, 76, 58, 44, 34, 26, 20]

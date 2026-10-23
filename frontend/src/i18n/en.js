@@ -80,7 +80,7 @@ export default {
     domain: 'Domain', dhcp: 'DHCP', notFound: 'Host not found',
   },
   apps: { title: 'Applications', showAll: 'Show all', count: '{n} apps', byGroup: 'App mix', byGroupHint: 'Click a group or category to filter the apps below', usedBy: 'Used by', app: 'Application', byCategory: 'By category', byApp: 'By application', sortBy: 'Sort', order: { total: 'By total', live: 'By live rate' }, live: 'Live rate', group: 'App group',
-    dpi: { title: 'DPI protocols', fixedOrder: 'Fixed order', upRate: 'Total upload rate', downRate: 'Total download rate', upBytes: 'Total uploaded', downBytes: 'Total downloaded',
+    dpi: { detailTitle: 'DPI protocol details', title: 'DPI protocols', fixedOrder: 'Fixed order', upRate: 'Total upload rate', downRate: 'Total download rate', upBytes: 'Total uploaded', downBytes: 'Total downloaded',
       proto: 'Protocol', upRateCol: 'Upload rate', downRateCol: 'Download rate', upBytesCol: 'Uploaded', downBytesCol: 'Downloaded',
       drill: 'Details', appPage: 'App page', top: 'Top level', up: 'Up one level', stop: 'Stop', resume: 'Resume',
       every: 'Refresh interval', sec: '{n}s', search: 'Search apps', searchRes: 'Search "{q}"',

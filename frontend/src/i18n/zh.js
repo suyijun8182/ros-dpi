@@ -80,7 +80,7 @@ export default {
     domain: '域名', dhcp: 'DHCP', notFound: '找不到该终端',
   },
   apps: { title: '应用统计', showAll: '显示全部', count: '{n} 个应用', byGroup: '应用构成', byGroupHint: '点击大类或小类筛选下方应用', usedBy: '使用终端', app: '应用', byCategory: '按分类', byApp: '按应用', sortBy: '排序', order: { total: '按累计流量', live: '按实时速率' }, live: '实时速率', group: '应用大类',
-    dpi: { title: 'DPI 协议', fixedOrder: '按固定顺序', upRate: '上传总速度', downRate: '下载总速度', upBytes: '上传总数据', downBytes: '下载总数据',
+    dpi: { title: 'DPI 协议', detailTitle: 'DPI 协议详情', fixedOrder: '按固定顺序', upRate: '上传总速度', downRate: '下载总速度', upBytes: '上传总数据', downBytes: '下载总数据',
       proto: '应用协议', upRateCol: '上传速度', downRateCol: '下载速度', upBytesCol: '上传数据', downBytesCol: '下载数据',
       drill: '查看详情', appPage: '应用详情', top: '返回顶部', up: '返回上一级', stop: '停止', resume: '开始刷新',
       every: '刷新间隔', sec: '{n} 秒', search: '搜索应用', searchRes: '搜索“{q}”',

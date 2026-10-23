@@ -35,16 +35,26 @@
   --focus: #2b6583;
 
   /* 应用大类配色（dataviz validate_palette.js 校验：白底 CVD 相邻 ΔE ≥ 9.1；三色对比度 < 3:1，故图表一律带图例与数值表） */
-  --g-media: #2a78d6;
+  /* 8 个流量大的大类用色相，其余小众大类用灰阶（图例和表格都带名称，不靠颜色区分）。
+     dataviz validate_palette.js 按维盟顺序校验：白底、深色底均通过，CVD 相邻最差 ΔE 6.9 / 6.5（在 6–8 区间，故图表一律带图例、间隔与数值表） */
+  --g-http: #6250d6;
   --g-game: #eb6834;
-  --g-social: #1baf7a;
-  --g-transfer: #eda100;
-  --g-work: #e87ba4;
-  --g-life: #008300;
-  --g-info: #6250d6;
-  --g-iot: #e34948;
-  --g-base: #8d9a9d;
+  --g-tv: #2a78d6;
+  --g-p2p: #eda100;
+  --g-common: #8d9a9d;
+  --g-im: #1baf7a;
+  --g-music: #e34948;
+  --g-stock: #a6b0b3;
+  --g-phone: #75848a;
+  --g-proxy: #a6b0b3;
+  --g-database: #75848a;
+  --g-mobile: #008300;
+  --g-special: #e87ba4;
+  --g-mining: #a6b0b3;
+  --g-pcdn: #75848a;
+  --g-other: #a6b0b3;
   --g-unknown: #c6ced0;
+  --g-social: var(--g-im);   /* 兼容：设置页的识别来源条形图沿用 */
 
   --r-sm: 8px;
   --r: 14px;
@@ -79,16 +89,24 @@
     --line-up: var(--up);
     --line-down: var(--down);
     --down: #3fc4c8;
-    --g-media: #3987e5;
+    --g-http: #9085e9;
     --g-game: #d95926;
-    --g-social: #199e70;
-    --g-transfer: #c98500;
-    --g-work: #d55181;
-    --g-life: #008300;
-    --g-info: #9085e9;
-    --g-iot: #e66767;
-    --g-base: #6b797c;
+    --g-tv: #3987e5;
+    --g-p2p: #c98500;
+    --g-common: #6b797c;
+    --g-im: #199e70;
+    --g-music: #e66767;
+    --g-stock: #55636a;
+    --g-phone: #7f8c8f;
+    --g-proxy: #55636a;
+    --g-database: #7f8c8f;
+    --g-mobile: #008300;
+    --g-special: #d55181;
+    --g-mining: #55636a;
+    --g-pcdn: #7f8c8f;
+    --g-other: #55636a;
     --g-unknown: #3e494c;
+    --g-social: var(--g-im);
     color-scheme: dark;
   }
 }
@@ -115,16 +133,24 @@
   --line-up: var(--up);
   --line-down: var(--down);
   --down: #3fc4c8;
-  --g-media: #3987e5;
+  --g-http: #9085e9;
   --g-game: #d95926;
-  --g-social: #199e70;
-  --g-transfer: #c98500;
-  --g-work: #d55181;
-  --g-life: #008300;
-  --g-info: #9085e9;
-  --g-iot: #e66767;
-  --g-base: #6b797c;
+  --g-tv: #3987e5;
+  --g-p2p: #c98500;
+  --g-common: #6b797c;
+  --g-im: #199e70;
+  --g-music: #e66767;
+  --g-stock: #55636a;
+  --g-phone: #7f8c8f;
+  --g-proxy: #55636a;
+  --g-database: #7f8c8f;
+  --g-mobile: #008300;
+  --g-special: #d55181;
+  --g-mining: #55636a;
+  --g-pcdn: #7f8c8f;
+  --g-other: #55636a;
   --g-unknown: #3e494c;
+  --g-social: var(--g-im);
   color-scheme: dark;
 }
 

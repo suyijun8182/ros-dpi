@@ -602,6 +602,12 @@ class Engine:
                 self._backfill_base(db)
         except Exception as e:  # noqa: BLE001  回填失败不能挡住后面恢复规则和设置
             print(f"[db] 主域名回填失败：{type(e).__name__}: {e}", flush=True)
+        try:
+            from app.classify import migrate
+            with database.session() as db:
+                migrate.run(db)   # 0.6.3：大类改成维盟的 17 类
+        except Exception as e:  # noqa: BLE001
+            print(f"[db] 大类迁移失败：{type(e).__name__}: {e}", flush=True)
         self.dns.load(rows)
         if lan and lan.value:
             self.set_lan(lan.value)

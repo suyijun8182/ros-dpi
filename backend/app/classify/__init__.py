@@ -45,7 +45,7 @@ def _norm_label(s: str) -> str:
     return re.sub(r"\d+$", "", s)          # sing-box 给规则集名加的序号：Telegram0
 GENERIC_APPS = {"https", "quic", "http", UNKNOWN_APP}  # 这些应用下的域名算"未识别"
 # 只能说明协议或 CDN 厂商、说明不了具体应用的分类，不计入"应用识别率"
-UNIDENTIFIED_CATEGORIES = {"unknown", "web", "network", "cdn"}
+UNIDENTIFIED_CATEGORIES = {"unknown", "web", "tls", "network", "cdn"}
 
 
 @dataclass

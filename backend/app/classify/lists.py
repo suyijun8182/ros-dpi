@@ -47,7 +47,7 @@ UT1 = [
     ("radio", "gen_music"), ("manga", "comics"), ("games", "gen_game"), ("educational_games", "gen_education"),
     ("social_networks", "gen_social"), ("forums", "gen_social"), ("dating", "gen_social"), ("blog", "gen_reading"),
     ("press", "gen_news"), ("sports", "gen_news"), ("celebrity", "gen_news"), ("shopping", "gen_shopping"),
-    ("publicite", "ads"),
+    ("publicite", "ads"), ("cryptojacking", "gen_mining"),
 ]
 MAX_AGE = {"bm7": 7 * 24 * 3600, "hagezi": 24 * 3600, "ut1": 24 * 3600}
 META = {

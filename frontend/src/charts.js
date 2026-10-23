@@ -258,7 +258,7 @@ export function pieOption(items, { legend = true, narrow = false } = {}) {
       type: 'pie', radius: !legend ? '82%' : narrow ? '58%' : '72%',
       center: !legend ? ['50%', '50%'] : narrow ? ['50%', '36%'] : ['36%', '52%'], startAngle: 90,
       label: { show: false }, labelLine: { show: false },
-      itemStyle: { borderColor: css('--panel'), borderWidth: 1 },
+      itemStyle: { borderColor: css('--panel'), borderWidth: 2 },   // 扇区之间留 2px 底色缝
       emphasis: { scale: true, scaleSize: 6 },
       data: items.map(x => ({ name: x.name, value: x.value, id: x.id, itemStyle: { color: x.color } })),
     }],

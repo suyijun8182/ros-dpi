@@ -19,20 +19,23 @@ SCENARIOS = {
     "enterprise": {
         "work_days": "12345",                                  # 周一 = 1
         "work": [["09:00", "12:00"], ["13:30", "18:00"]],      # 工作时间段
-        "leisure": ["media", "game", "shopping"],              # 算“娱乐”的应用大类或分类
+        "leisure": ["tv", "music", "short_video", "game", "mobile_game", "game_tool", "shopping"],  # 算“娱乐”的应用大类或分类
         "night": ["00:00", "05:00"],                           # 深夜
         "limits": {"screen": 0, "game": 0, "short_video": 0},  # 每日时长上限（秒），企业场景不用
     },
     "home": {
         "work_days": "12345",
         "work": [["19:00", "21:00"]],                          # 学习（写作业）时间
-        "leisure": ["media", "game", "shopping", "social"],
+        "leisure": ["tv", "music", "short_video", "game", "mobile_game", "game_tool", "shopping", "social"],
         "night": ["22:00", "06:00"],                           # 该睡觉了
         "limits": {"screen": 3 * 3600, "game": 3600, "short_video": 3600},
     },
 }
 DEFAULTS = {"scenario": "home", **SCENARIOS["home"]}
 JOB_APPS = {"jobs", "linkedin", "maimai"}
+# 指标用的“键”：大类或小类 ID；这两个跨了维盟的大类，单独列出包含哪些小类（游戏含手机游戏和加速器，影音含短视频和音乐）
+KEY_CATS = {"game": {"game", "console_game", "mobile_game", "game_tool"},
+            "media": {"video", "live", "short_video", "music"}}
 # 行为标签：(id, 依据, 中档阈值, 高档阈值)
 #   work:<大类或分类>  工作 / 学习时间内的时长（秒）；work:leisure 为所有娱乐应用
 #   days:<指标>        超过当日上限的天数（screen 屏幕时间、game 游戏、short_video 短视频）
@@ -205,7 +208,7 @@ def analyze(rows: list, start: int, end: int, cfg: dict) -> dict:
             job_days.add(bisect_left(day_starts, s + 1) - 1)
     def in_key(a, key):
         c = cl.app_info(a).category
-        return c == key or cl.category_info(c)["group"] == key
+        return c in KEY_CATS.get(key, {key}) or cl.category_info(c)["group"] == key
 
     game_u = union_of(lambda a: in_key(a, "game"))
     sv_u = union_of(lambda a: in_key(a, "short_video"))
@@ -241,7 +244,8 @@ def analyze(rows: list, start: int, end: int, cfg: dict) -> dict:
         return _overlap(union_of(lambda a: in_key(a, key)), work)
 
     def top_apps(key, n=3, field="work_seconds"):
-        hit = [x for x in apps if (x["leisure"] if key == "leisure" else (x["category"] == key or x["group"] == key))]
+        hit = [x for x in apps if (x["leisure"] if key == "leisure"
+                                   else (x["category"] in KEY_CATS.get(key, {key}) or x["group"] == key))]
         return sorted(hit, key=lambda x: -x[field])[:n]
 
     tags = []
