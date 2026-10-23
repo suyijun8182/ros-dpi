@@ -97,10 +97,10 @@ async def lifespan(app: FastAPI):
         sched.add_job(_safe(asndb.update, "asn-db"), "interval", hours=6, max_instances=1, coalesce=True)
         asyncio.get_running_loop().run_in_executor(None, _safe(asndb.update, "asn-db"))
     # 补充识别库：国内域名列表 + 官方 IP 段（sources.py，只做兜底；没配置的来源直接跳过）
-    from app.classify import sources
+    from app.classify.sources import sources as extra_sources
     if s.china_db or s.iplist_db:
-        sched.add_job(_safe(sources.update, "extra-db"), "interval", hours=24, max_instances=1, coalesce=True)
-        asyncio.get_running_loop().run_in_executor(None, _safe(sources.update, "extra-db"))
+        sched.add_job(_safe(extra_sources.update, "extra-db"), "interval", hours=24, max_instances=1, coalesce=True)
+        asyncio.get_running_loop().run_in_executor(None, _safe(extra_sources.update, "extra-db"))
     if poller.enabled:
         sched.add_job(_safe(poller.sample, "ros-rate"), "interval", seconds=max(s.ros_rate_seconds, 2),
                       max_instances=1, coalesce=True)
