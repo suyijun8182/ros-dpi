@@ -2,7 +2,7 @@
   <div>
     <div class="page-h"><h1>{{ t('rules.title') }}</h1><span class="lead">{{ t('rules.libCount', { n: meta.apps.length.toLocaleString() }) }}</span></div>
 
-    <!-- 识别库：来源、版本、规模、自动更新与自检结果 -->
+    <!-- 识别库：按识别层级分组（同一组内按优先级排列），前面一层认出来就不再往下查 -->
     <div class="panel lib" v-if="lib">
       <div class="panel-h"><h2>{{ t('lib.title') }}</h2>
         <span class="faint small">{{ t('lib.total', { apps: lib.total_apps.toLocaleString(), domains: lib.total_domains.toLocaleString() }) }}</span>
@@ -12,13 +12,15 @@
       </div>
       <div class="tbl-wrap">
         <table class="tbl">
-          <thead><tr><th class="r ord" :title="t('lib.orderTip')">#</th><th>{{ t('lib.source') }}</th><th class="m-hide">{{ t('lib.what') }}</th><th>{{ t('lib.version') }}</th>
+          <thead><tr><th>{{ t('lib.source') }}</th><th class="m-hide">{{ t('lib.what') }}</th><th>{{ t('lib.version') }}</th>
             <th class="r">{{ t('lib.size') }}</th><th class="m-hide">{{ t('lib.license') }}</th><th>{{ t('lib.state') }}</th></tr></thead>
-          <tbody>
-            <tr v-for="(x, i) in lib.sources" :key="x.id">
-              <td class="r num faint ord">{{ i + 1 }}</td>
+          <tbody v-for="(tier, ti) in tiers" :key="tier.id">
+            <tr class="tier"><td colspan="6"><span class="no">{{ ti + 1 }}</span><b>{{ t('lib.tier.' + tier.id) }}</b>
+              <span class="faint small">{{ t('lib.tierHint.' + tier.id) }}</span></td></tr>
+            <tr v-for="x in tier.rows" :key="x.id">
               <td><a :href="x.url" target="_blank" rel="noopener" class="link"><b>{{ t('lib.name.' + x.id) }}</b></a></td>
-              <td class="m-hide muted small wrap">{{ t('lib.desc.' + x.id) }}</td>
+              <td class="m-hide muted small wrap">{{ t('lib.desc.' + x.id) }}
+                <div v-if="x.parts" class="parts">{{ x.parts.map(p => `${t('lib.name.' + p.id)} ${(p.ranges || 0).toLocaleString()}`).join(' · ') }}</div></td>
               <td class="num small">
                 <template v-if="x.id === 'curated'">v{{ x.version }}</template>
                 <template v-else-if="x.id === 'v2fly'">{{ x.sha ? x.sha.slice(0, 7) : '-' }} <span class="faint">{{ day(x.date) }}</span>
@@ -49,7 +51,6 @@
           </tbody>
         </table>
       </div>
-      <p class="panel-b small note order"><b>{{ t('lib.orderTitle') }}</b>{{ t('lib.order') }}</p>
       <p class="panel-b faint small note">{{ t('lib.note') }}</p>
     </div>
 
@@ -129,7 +130,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http, { isAdmin } from '../api.js'
 import Icon from '../components/Icon.vue'
@@ -151,6 +152,24 @@ const unknownRange = () => (['today', 'week', 'month'].includes(ui.range) ? ui.r
 
 // ---------- 识别库 ----------
 const RES = { updated: 'ok', uptodate: 'ok', rejected: 'warn', failed: 'bad' }
+// 识别库按识别层级分组；4 家官方 IP 段合并成一行（各家规模列在说明下面）
+const TIERS = [
+  { id: 'appDomain', ids: ['curated', 'v2fly', 'bm7'] },
+  { id: 'appIp', ids: ['asn'] },
+  { id: 'category', ids: ['hagezi', 'ut1'] },
+  { id: 'fallback', ids: ['cnlist', 'official', 'cn'] },
+]
+const OFFICIAL = ['google', 'cloudflare', 'aws', 'github']
+const tiers = computed(() => {
+  const by = Object.fromEntries((lib.value ? lib.value.sources : []).map(x => [x.id, x]))
+  const parts = OFFICIAL.map(id => by[id]).filter(Boolean)
+  if (parts.length) {
+    by.official = { id: 'official', url: parts[0].url, license: parts[0].license, parts,
+      ranges: parts.reduce((n, p) => n + (p.ranges || 0), 0), updated: Math.max(...parts.map(p => p.updated || 0)),
+      error: parts.map(p => p.error).filter(Boolean).join('；') }
+  }
+  return TIERS.map(tr => ({ id: tr.id, rows: tr.ids.map(id => by[id]).filter(Boolean) })).filter(tr => tr.rows.length)
+})
 const lib = ref(null)
 const updating = ref(false)
 const day = s => (s ? s.slice(0, 10) : '')
@@ -239,8 +258,11 @@ async function test() {
 .lib .chk { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; cursor: pointer; }
 .lib .wrap { white-space: normal; max-width: 340px; line-height: 1.5; }
 .lib .note { margin: 0; padding-top: 10px; }
-.lib .note.order { line-height: 1.7; }
-.lib .ord { width: 28px; }
+.lib .tier td { background: var(--sunk); padding-top: 9px; padding-bottom: 9px; }
+.lib .tier b { margin-right: 10px; }
+.lib .tier .no { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 8px; border-radius: 50%;
+  background: var(--brand-ink); color: var(--panel); font: 600 12px/1 var(--cond); }
+.lib .parts { margin-top: 3px; color: var(--faint); }
 .lib td { vertical-align: top; }
 .mt { margin-top: 14px; }
 .form { display: flex; flex-direction: column; gap: 10px; }
