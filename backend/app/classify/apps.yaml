@@ -55,6 +55,7 @@ categories:
   reading:      {group: info,     name: 阅读漫画, name_en: Reading & comics}
   site:         {group: info,     name: 网站服务, name_en: Websites & services}
   adult:        {group: info,     name: 成人内容, name_en: Adult}
+  cn_web:       {group: info,     name: 国内网站, name_en: Chinese websites}
   iot:          {group: iot,      name: 智能家居, name_en: Smart home}
   camera:       {group: iot,      name: 监控摄像, name_en: Cameras}
   network:      {group: base,     name: 网络协议, name_en: Network protocol}
@@ -64,6 +65,7 @@ categories:
   security:     {group: base,     name: 安全软件, name_en: Security}
   ads:          {group: base,     name: 广告统计, name_en: Ads & analytics}
   web:          {group: base,     name: 通用网页, name_en: Web}
+  cn_net:       {group: base,     name: 国内网络, name_en: China networks}
   unknown:      {group: unknown,  name: 未识别,   name_en: Unknown}
 
 apps:
@@ -479,6 +481,9 @@ apps:
      domains: [kaspersky.com, kaspersky-labs.com, eset.com, avast.com, avcdn.net, mcafee.com, norton.com, bitdefender.com]}
   - {id: ads, name: 广告与统计, name_en: Ads & analytics, category: ads,
      domains: [doubleclick.net, googleadservices.com, googlesyndication.com, google-analytics.com, googletagmanager.com, adnxs.com, umeng.com, umengcloud.com, cnzz.com, growingio.com, talkingdata.com, gdt.qq.com, e.qq.com, pangolin-sdk-toutiao.com, pglstatp-toutiao.com, ads.tiktok.com, adkwai.com, app-measurement.com, crashlytics.com, sentry.io, bugly.qq.com, appsflyer.com, adjust.com, branch.io, mixpanel.com, segment.io, hotjar.com, miaozhen.com, admaster.com.cn, scorecardresearch.com]}
+  # 兜底应用（classify/sources.py 下载的数据源认出，没有自己的域名规则）
+  - {id: cn_web, name: 国内网站, name_en: Chinese websites, category: cn_web}
+  - {id: cn_net, name: 国内网络, name_en: China networks, category: cn_net}
   - {id: https, name: HTTPS 网页, name_en: HTTPS, category: web, ports: [tcp/443, tcp/8443]}
   - {id: quic, name: QUIC 网页, name_en: QUIC, category: web, ports: [udp/443]}
   - {id: http, name: HTTP 网页, name_en: HTTP, category: web, ports: [tcp/80, tcp/8080]}

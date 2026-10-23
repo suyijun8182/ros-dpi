@@ -220,6 +220,8 @@ MySQL 第一次初始化需要 20～60 秒。
 | `MOSDNS_URL` | 空 | MosDNS 审计 API 地址（也可在网页填写） |
 | `FAKEIP_CIDRS` | `198.18.0.0/15,fc00::/18` | FakeIP 地址段 |
 | `ASN_DB` | `true` | 自动下载 IP→ASN 库；没有外网时设为 `false` |
+| `CHINA_DB` | `true` | 自动下载国内域名列表（dnsmasq-china-list，约 11 万条）与国内 IP 段：规则库没认出的域名归「国内网站」，没有域名的国内流量归「国内网络」 |
+| `IPLIST_DB` | `true` | 自动下载 Google / Cloudflare / AWS / GitHub 官方发布的 IP 段（含 Apple 的 17.0.0.0/8）：没有域名的流量按 IP 认出归属 |
 | `OUI_DB` | `true` | 自动下载 IEEE MAC 厂商库（识别终端类型，每 30 天更新）；没有外网时设为 `false` |
 | `WAN_INTERFACE` | 自动 | WAN 接口名，默认按默认路由识别 |
 | `TZ` | `Asia/Shanghai` | 统计用时区，每周从周一开始 |

@@ -236,6 +236,7 @@ def system():
 
 # ---------- 识别库：来源、版本、自动更新 ----------
 def _library(db):
+    from app.classify.sources import sources
     from app.classify.updater import updater
     c = engine.classifier
     base_ids = {a["id"] for a in c._base_apps}
@@ -251,6 +252,7 @@ def _library(db):
             {"id": "v2fly", "apps": len(v2_apps), "domains": v2_domains, "license": "MIT",
              "url": "https://github.com/v2fly/domain-list-community", **updater.status()},
             {"id": "asn", "license": "PDDL v1.0", "url": "https://iptoasn.com", "asns": len(c.asn_apps), **asndb.status()},
+            *sources.rows(),
         ],
     }
 
@@ -262,11 +264,13 @@ def library(db: Session = Depends(get_db)):
 
 @router.post("/library/update")
 def library_update(request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
-    """立即检查识别库更新（v2fly 规则 + ASN 库），返回最新状态"""
+    """立即检查识别库更新（v2fly 规则 + ASN 库 + 补充库），返回最新状态"""
+    from app.classify.sources import sources
     from app.classify.updater import updater
     updater.check(force=True, reload=engine.reload_classifier)
     if get_settings().asn_db:
         asndb.update()
+    sources.update(force=True)
     oplog.log(db, request, user, "library_update", {"result": updater.state.get("result")})
     return _library(db)
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.7.0] - 2026-10-24
+
+识别率（未识别占比较高，补充更强的识别数据源）
+
+- **国内域名列表**：接入 [dnsmasq-china-list](https://github.com/felixonmars/dnsmasq-china-list)（约 11 万条，WTFPL，每天更新）。规则库没认出的域名在列表里就归到新分类**「国内网站」**。实测抽样 3000 个国内域名：v2fly + 内置规则只认出 5.6%，这个库把其余 94.4% 的长尾都兜住。
+- **官方 IP 段**：接入 [Google](https://www.gstatic.com/ipranges/goog.json)、[Cloudflare](https://www.cloudflare.com/ips/)、[AWS](https://ip-ranges.amazonaws.com/ip-ranges.json)、[GitHub](https://api.github.com/meta) 官方发布的 IP 段（每天更新），以及 IANA 注册给 Apple 的 17.0.0.0/8。完全没有域名的流量（加密 DNS、ECH、直连 IP）按 IP 认出归属，不再落到 HTTPS/其他。
+- **国内 IP 段**：来自 [chnroutes2](https://github.com/misakaio/chnroutes2)（APNIC 数据，CC-BY-SA 4.0），没有域名的国内直连流量归到新分类**「国内网络」**。
+- 以上都只做**兜底**：域名规则、自定义规则、ASN 能认出的优先，任何已有识别不会变差；「国内网站」「国内网络」计入应用识别率。
+- 数据运行时下载到数据目录（不进镜像）、每天自动更新，「识别库」面板显示每个来源的规模、更新时间与许可证；`CHINA_DB=false` / `IPLIST_DB=false` 可分别关闭。
+- 「立即检查更新」按钮同时刷新全部来源。
+
 ## [0.6.0] - 2026-10-23
 
 可靠性

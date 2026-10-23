@@ -1,7 +1,8 @@
 """把一条流（远端 IP + 端口 + 域名）识别为应用。
 
 分三级：应用大类（group）→ 应用小类（category）→ 应用（app），与 Panabit 的应用分类方式一致。
-优先级：自定义规则 > 域名（先查询名再 CNAME；精确匹配 > 最长后缀）> CIDR > 专用端口 > IP 所属 ASN > 通用端口（HTTPS 等）> IP 协议号 > other。
+优先级：自定义规则 > 域名（先查询名再 CNAME；精确匹配 > 最长后缀）> CIDR > 专用端口 > IP 所属 ASN
+> 官方 IP 段 / 国内域名列表（app/classify/sources.py，兜底）> 通用端口（HTTPS 等）> IP 协议号 > other。
 内置规则两份：手工维护的 apps.yaml，以及从 v2fly/domain-list-community 生成的 apps_v2fly.yaml（同一域名以前者为准）。
 """
 import ipaddress
@@ -181,6 +182,14 @@ class Classifier:
             hit = asndb.lookup(remote_ip)
             if hit:
                 app = self.asn_apps.get(hit[0])
+        if app is None:
+            # 官方 IP 段兜底：完全没有域名的流量（加密 DNS、ECH、直连 IP）按 Google/Cloudflare/Apple/国内段 认归属
+            from app.classify.sources import sources as extra
+            app = extra.ip_app(remote_ip)
+        if app is None:
+            # 国内域名兜底：域名规则没认出、但在国内域名列表里 → 国内网站（好于落到 HTTPS/其他）
+            from app.classify.sources import sources as extra
+            app = extra.fallback_domain(qname) or extra.fallback_domain(cname)
         if app is None:
             app = generic or self.protos.get(proto)
         app = app or UNKNOWN_APP
