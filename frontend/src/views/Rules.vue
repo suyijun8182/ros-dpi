@@ -12,10 +12,11 @@
       </div>
       <div class="tbl-wrap">
         <table class="tbl">
-          <thead><tr><th>{{ t('lib.source') }}</th><th class="m-hide">{{ t('lib.what') }}</th><th>{{ t('lib.version') }}</th>
+          <thead><tr><th class="r ord" :title="t('lib.orderTip')">#</th><th>{{ t('lib.source') }}</th><th class="m-hide">{{ t('lib.what') }}</th><th>{{ t('lib.version') }}</th>
             <th class="r">{{ t('lib.size') }}</th><th class="m-hide">{{ t('lib.license') }}</th><th>{{ t('lib.state') }}</th></tr></thead>
           <tbody>
-            <tr v-for="x in lib.sources" :key="x.id">
+            <tr v-for="(x, i) in lib.sources" :key="x.id">
+              <td class="r num faint ord">{{ i + 1 }}</td>
               <td><a :href="x.url" target="_blank" rel="noopener" class="link"><b>{{ t('lib.name.' + x.id) }}</b></a></td>
               <td class="m-hide muted small wrap">{{ t('lib.desc.' + x.id) }}</td>
               <td class="num small">
@@ -47,6 +48,7 @@
           </tbody>
         </table>
       </div>
+      <p class="panel-b small note order"><b>{{ t('lib.orderTitle') }}</b>{{ t('lib.order') }}</p>
       <p class="panel-b faint small note">{{ t('lib.note') }}</p>
     </div>
 
@@ -236,6 +238,8 @@ async function test() {
 .lib .chk { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; cursor: pointer; }
 .lib .wrap { white-space: normal; max-width: 340px; line-height: 1.5; }
 .lib .note { margin: 0; padding-top: 10px; }
+.lib .note.order { line-height: 1.7; }
+.lib .ord { width: 28px; }
 .lib td { vertical-align: top; }
 .mt { margin-top: 14px; }
 .form { display: flex; flex-direction: column; gap: 10px; }

@@ -6,6 +6,7 @@
         <button v-for="k in TABS" :key="k" role="tab" :aria-selected="tab === k" :class="{ on: tab === k }" @click="setTab(k)">
           {{ t('audit.tab.' + k) }}<span v-if="k === 'events' && sum && sum.events_today" class="num cnt">{{ sum.events_today }}</span></button>
       </div>
+      <span class="pill grey" :title="t('scn.' + scene.id + '.desc')">{{ L('badge') }}</span>
       <span class="sp" />
       <RangeTabs v-if="tab === 'logs' || tab === 'events'" />
     </div>

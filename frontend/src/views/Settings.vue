@@ -151,6 +151,7 @@
     <UsersPanel v-if="tab === 'users'" />
     <CompliancePanel v-if="tab === 'compliance'" />
 
+    <ScenePicker v-if="isAdmin && tab === 'system'" class="scene-pick" />
     <div class="grid g2 sys" v-if="tab === 'system'">
       <div class="panel" v-if="s">
         <div class="panel-h">{{ t('settings.network') }}</div>
@@ -204,6 +205,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import http, { auth, isAdmin } from '../api.js'
 import UsersPanel from '../components/UsersPanel.vue'
+import ScenePicker from '../components/ScenePicker.vue'
 import CompliancePanel from '../components/CompliancePanel.vue'
 import { ago, bytes, datetime, pct } from '../format.js'
 
@@ -381,6 +383,7 @@ async function copy() {
 </script>
 
 <style scoped>
+.scene-pick { margin-bottom: 16px; }
 .mt { margin-top: 14px; }
 .small { font-size: 12.5px; }
 .stc { display: flex; flex-direction: column; gap: 6px; font-size: 13px; min-width: 0; }

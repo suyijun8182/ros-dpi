@@ -1,6 +1,6 @@
 # ROS-DPI
 
-**RouterOS 终端流量、应用统计与上网审计面板**：像 Panabit / 维盟那样，按 今日 / 昨日 / 本周 / 本月 统计 RouterOS 下每台终端、每个人用了多少流量、用在了哪些应用上；像深信服 AC 那样记录访问日志、按规则告警。支持家用（孩子上网健康）和企业（效率与合规）两种场景。
+**RouterOS 终端流量、应用统计与上网审计面板**：像 Panabit / 维盟那样，按 今日 / 昨日 / 本周 / 本月 统计 RouterOS 下每台终端、每个人用了多少流量、用在了哪些应用上；像深信服 AC 那样记录访问日志、按规则告警。支持家庭（孩子上网健康）和企业（效率与合规）两种场景。
 
 [中文](#中文) · [English](#english)
 
@@ -16,13 +16,13 @@
 - **主机监控**：在线终端 / 全部终端 / DHCP 租约 / 命名管理四个标签。每台终端的类型（手机、电脑、电视、摄像头……自动识别）、IP、MAC、主机名、归属人、在线时长、连接数、当前速率、今日 / 本周 / 本月流量，可导出 CSV；可以按 MAC 或按 IP 给设备命名。详情页有应用排行与构成、按大类的趋势、访问过的域名、访问日志和上网时间线。
 - **应用统计**：参照 Panabit / 维盟分三级（应用大类 → 小类 → 应用，逐级“查看详情”下钻）。大类和小类固定列出，每级显示上传 / 下载速度和数据及占比；应用构成用矩形树图一眼看两层。共 10 个大类、43 个小类、2800 多个内置应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……，其中约 2500 个来自 v2fly 开源域名库）。识别不出具体应用的流量，会按 CDN 的 CNAME 归到阿里云 / 腾讯云 / Akamai 等厂商。
 - **流量流向**：**实时连接**（此刻哪台终端连到哪个域名 / IP、什么应用、多快；走 sing-box 的连接显示策略组和出口节点）、**访问目标排行**（流量最大的远端域名和 IP；流向图从本地飞向各国，看流量去了哪些国家 / 地区；可按主域名合并，看是哪些终端在访问）、**代理分流**（sing-box 各策略组、各节点的流量和主要应用）。
-- **家庭成员 / 人员**：把一个人的手机、平板、电脑归到一起，按人统计流量、在线时长、常用应用，以及最近 7 天的行为标签（附依据）。按使用场景：
-  - **家用**：关注孩子的上网健康，包括每日屏幕时间、游戏和短视频时长上限，熬夜，不良内容，学习时间玩娱乐应用。
-  - **企业**：关注效率与合规，包括工作时间娱乐占比、求职倾向、上班炒股，按部门统计。
+- **家庭成员 / 员工**：把一个人的手机、平板、电脑归到一起，按人统计流量、在线时长、常用应用，以及最近 7 天的行为标签（附依据）。使用场景在 **系统设置 → 场景与网络** 全局切换，菜单、称呼、默认时间段、标签和审计模板跟着变：
+  - **家庭**：菜单显示“家庭成员”，按分组管理；关注孩子的上网健康，包括每日屏幕时间、游戏和短视频时长上限，熬夜，不良内容，学习时间玩娱乐应用。
+  - **企业**：菜单显示“员工”，按部门管理；关注效率与合规，包括工作时间娱乐占比、求职倾向、上班炒股，按部门统计。
 - **审计日志**：
   - **访问日志**：每台终端什么时候访问了什么、多久、多少流量，可按人员 / 部门 / 关键字筛选，导出 CSV，默认保留 30 天。
   - **审计规则**：按应用、域名、时段、流量、**大流量外发**、**私接路由**、新设备设置，可限定人员 / 部门，带按场景的常用模板。命中后推送通知。
-  - **通知渠道**：企业微信、钉钉、飞书、Bark、Telegram、邮件、PushPlus、Server酱、ntfy、Gotify、Discord、Slack、通用 Webhook。每条规则可以选渠道，可设免打扰。
+  - **通知渠道**（与 EasySub 相同的 14 种）：Telegram Bot（可填 API 反代、HTTP 代理，一键获取 Chat ID）、飞书 Bot、QQ Bot、Bark、Email、Pushplus、Server酱、企业微信（群机器人或自建应用，支持 API 代理、指定成员 / 部门 / 标签、文本卡片）、钉钉、Discord、Slack、ntfy、Gotify、通用 Webhook。每条规则可以选渠道，可设免打扰。
   - **私接检测**：根据数据包 TTL 发现后面接了路由器或多种系统共享的设备。
   - **日报 / 周报**和**操作日志**。
 - **管控命令**：在人员或终端详情里，按应用、时段生成 RouterOS 命令（封禁应用、定时断网、限速），附撤销命令。ROS-DPI 只生成命令，不会修改路由器。
@@ -151,7 +151,7 @@ MySQL 第一次初始化需要 20～60 秒。
 
 接下来可以：
 
-1. 在 **家庭成员 / 人员 → 分析设置** 选择使用场景（家用 / 企业），设置学习或工作时间、每日时长上限；
+1. 在 **系统设置 → 场景与网络** 选择使用场景（家庭 / 企业），再到 **家庭成员 / 员工 → 分析设置** 设置学习或工作时间、每日时长上限；
 2. 添加成员并把设备分给他们；
 3. 在 **审计日志 → 通知渠道** 配置推送，在 **审计规则** 里从模板新建规则；
 4. 需要只读账号时，在 **系统设置 → 用户管理** 添加普通用户。
@@ -261,13 +261,13 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
 - **Hosts**: every device with its detected type (phone, computer, TV, camera…), IP, MAC, hostname, owner, online state, live rate and daily / weekly / monthly totals. Name devices by MAC or by IP. Each device has an app breakdown, visited domains, an access log and a daily timeline.
 - **Applications**: a three-level drill-down (app group → category → app) with fixed groups and categories, upload/download rates and totals with shares at each level, and a treemap of the mix. It covers 10 groups, 43 categories and 2800+ built-in apps (about 2500 converted from v2fly/domain-list-community). Traffic that can't be tied to an app is attributed to its CDN via CNAME.
 - **Flows**: live connections (sing-box connections show their policy group and outbound node), top destinations with a flow map from your location to each country, and proxy routing (traffic and top apps per sing-box policy group and node).
-- **People / Family**: group each person's devices and see their traffic, online time, top apps and behaviour tags for the last 7 days, with the evidence behind each tag.
+- **Family members / Employees**: pick the Home or Business scenario under **Settings → Scenario & network**; menus, wording, default hours, tags and audit templates follow it. Group each person's devices and see their traffic, online time, top apps and behaviour tags for the last 7 days, with the evidence behind each tag.
   - **Home**: daily screen-time, gaming and short-video limits, late nights, adult content, and leisure during homework time.
   - **Business**: leisure share in working hours, job hunting and trading at work, with departments.
 - **Audit**:
   - **Access log**: filter by person, department or keyword, export to CSV; kept 30 days by default.
   - **Audit rules**: by app, domain, time window, traffic, **large upload**, **rogue router** or new device; can be scoped to people or departments, with scenario-specific templates.
-  - **Notifications**: WeCom, DingTalk, Feishu, Bark, Telegram, email, PushPlus, ServerChan, ntfy, Gotify, Discord, Slack or webhooks, with per-rule channel choice and quiet hours.
+  - **Notifications** (the same 14 channels as EasySub): Telegram bot (API proxy, HTTP proxy, one-click Chat ID), Feishu bot, QQ bot, Bark, email, Pushplus, ServerChan, WeCom (group robot or self-built app with API proxy, user / department / tag targets and text cards), DingTalk, Discord, Slack, ntfy, Gotify or webhooks, with per-rule channel choice and quiet hours.
   - **Shared-access check**: TTL-based detection of devices with a router behind them.
   - **Daily / weekly reports** and an **operation log**.
 - **Control commands**: generate RouterOS commands that block apps, block internet on a schedule or set rate limits for a person or device, with undo commands. ROS-DPI never writes to the router.

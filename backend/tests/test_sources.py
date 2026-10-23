@@ -70,3 +70,39 @@ def test_sources_rows_for_library_panel(loaded_sources):
     assert rows["github"]["ranges"] == 2
     assert rows["cn"]["ranges"] == 1
     assert all(r["license"] and r["url"] for r in rows.values())
+
+
+def test_domain_fallback_before_ip_fallback(loaded_sources):
+    """有域名时先按域名兜底：国内网站托管在 Google/国内段的 IP 上，仍归「国内网站」而不是 IP 所属的 CDN。"""
+    c = Classifier()
+    assert c.classify("192.0.2.1", 6, 443, "www.example-test.cn", None) == "cn_web"
+    assert c.classify("198.51.100.7", 6, 443, "www.example-test.cn", None) == "cn_web"
+    # 域名不在任何库里时才按 IP
+    assert c.classify("192.0.2.1", 6, 443, "not-in-list.example.org", None) == "google"
+
+
+def test_overlapping_ranges_longest_prefix():
+    """IP 段重叠时按最长前缀：小段赢；小段之外仍落在大段里（旧实现在这里会漏查返回 None）。"""
+    from app.classify.sources import _Ranges
+    r = _Ranges()
+    r.add("10.0.0.0/8", "cn_net")       # 先加入的大段
+    r.add("10.1.0.0/16", "aws")         # 后加入、更具体
+    r.add("10.1.2.0/24", "github")      # 再嵌套一层
+    r.add("10.200.0.0/16", "cn_net")    # 同归属的嵌套，合并后不影响
+    r.add("2001:db8::/32", "google")
+    r.add("2001:db8:1::/48", "cloudflare")
+    r.build()
+    assert r.lookup("10.1.2.3") == "github"
+    assert r.lookup("10.1.3.1") == "aws"
+    assert r.lookup("10.2.0.1") == "cn_net"      # 在小段后面、仍属于大段
+    assert r.lookup("10.255.255.255") == "cn_net"
+    assert r.lookup("10.0.0.0") == "cn_net"
+    assert r.lookup("11.0.0.1") is None
+    assert r.lookup("2001:db8:1::5") == "cloudflare"
+    assert r.lookup("2001:db8:2::5") == "google"
+    # 一样大时先加入的赢
+    r2 = _Ranges()
+    r2.add("192.0.2.0/24", "google")
+    r2.add("192.0.2.0/24", "aws")
+    r2.build()
+    assert r2.lookup("192.0.2.9") == "google"

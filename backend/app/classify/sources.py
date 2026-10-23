@@ -11,6 +11,7 @@
 都是运行时下载到数据目录（不进镜像）、每天检查一次更新；单个来源失败不影响其它来源。
 环境变量 CHINA_DB / IPLIST_DB 可分别关闭（默认开）。
 """
+import heapq
 import ipaddress
 import json
 import os
@@ -62,11 +63,16 @@ def _parse_github(text: str) -> list[str]:
 
 
 class _Ranges:
-    """CIDR → 排序区间数组（bisect 查找）。重叠时先加入的赢：官方段在前，国内段在后。"""
+    """CIDR → 不重叠的排序区间数组（bisect 查找）。
+
+    段之间会重叠（AWS 中国区的段落在 chnroutes 的大段里、GitHub 的段落在 AWS 段里），
+    和路由表一样按最长前缀匹配：更小（更具体）的段赢，一样大时先加入的赢。
+    """
 
     def __init__(self):
         self._v4 = (array("Q"), array("Q"), [])
         self._v6 = ([], [], [])
+        self._raw = {4: [], 6: []}
         self.count = 0
 
     def add(self, cidr: str, app: str):
@@ -74,22 +80,42 @@ class _Ranges:
             net = ipaddress.ip_network(cidr, strict=False)
         except ValueError:
             return False
-        t = self._v4 if net.version == 4 else self._v6
-        t[0].append(int(net.network_address))
-        t[1].append(int(net.broadcast_address))
-        t[2].append(app)
+        raw = self._raw[net.version]
+        raw.append((int(net.network_address), int(net.broadcast_address), net.num_addresses, len(raw), app))
         self.count += 1
         return True
 
+    @staticmethod
+    def _flatten(raw: list) -> list[tuple[int, int, str]]:
+        """扫描线：在每个边界点之间取覆盖它的优先级最高的段，再合并相邻同归属的区间。"""
+        cuts = sorted({x for lo, hi, *_ in raw for x in (lo, hi + 1)})
+        by_lo = sorted(raw)
+        heap, out, j = [], [], 0
+        for a, b in zip(cuts, cuts[1:]):
+            while j < len(by_lo) and by_lo[j][0] <= a:
+                lo, hi, size, idx, app = by_lo[j]
+                heapq.heappush(heap, (size, idx, hi, app))
+                j += 1
+            while heap and heap[0][2] < a:
+                heapq.heappop(heap)
+            if not heap:
+                continue
+            app = heap[0][3]
+            if out and out[-1][2] == app and out[-1][1] == a - 1:
+                out[-1] = (out[-1][0], b - 1, app)
+            else:
+                out.append((a, b - 1, app))
+        return out
+
     def build(self):
-        for t in (self._v4, self._v6):
-            order = sorted(range(len(t[0])), key=lambda i: t[0][i])
-            s0, s1 = [t[0][i] for i in order], [t[1][i] for i in order]
-            if hasattr(t[0], "typecode"):  # v4 是 array("Q")，切片赋值只接受 array
-                t[0][:], t[1][:] = array("Q", s0), array("Q", s1)
-            else:                          # v6 是 list
-                t[0][:], t[1][:] = s0, s1
-            t[2][:] = [t[2][i] for i in order]
+        for ver, t in ((4, self._v4), (6, self._v6)):
+            segs = self._flatten(self._raw[ver])
+            if ver == 4:  # v4 用 array("Q") 省内存
+                t[0][:], t[1][:] = array("Q", [s[0] for s in segs]), array("Q", [s[1] for s in segs])
+            else:
+                t[0][:], t[1][:] = [s[0] for s in segs], [s[1] for s in segs]
+            t[2][:] = [s[2] for s in segs]
+        self._raw = {4: [], 6: []}
 
     def lookup(self, ip: str) -> str | None:
         try:

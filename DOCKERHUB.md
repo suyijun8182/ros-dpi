@@ -1,6 +1,6 @@
 # ROS-DPI
 
-RouterOS 终端流量、应用统计与上网审计面板。按 今日 / 昨日 / 本周 / 本月 统计每台终端、每个人的流量和应用使用情况（类似 Panabit / 维盟），记录访问日志并按规则告警（参照深信服 AC）；分家用和企业两种场景。
+RouterOS 终端流量、应用统计与上网审计面板。按 今日 / 昨日 / 本周 / 本月 统计每台终端、每个人的流量和应用使用情况（类似 Panabit / 维盟），记录访问日志并按规则告警（参照深信服 AC）；分家庭和企业两种场景。
 
 Per-device and per-person traffic, per-application (DPI-style) statistics and access auditing for MikroTik RouterOS, built on IPFIX + DNS / SNI sniffing.
 
@@ -8,6 +8,7 @@ Source & docs: https://github.com/suyijun8182/ros-dpi
 
 ## What's new
 
+- **0.6.2**: notification channels now match EasySub exactly — 14 channels with the same fields: Telegram (API proxy, HTTP proxy, check bot / get Chat ID), Feishu app bot, new QQ bot, Bark icon, email SSL switch, Pushplus channel, WeCom group robot **or self-built app** (CorpID / AgentId / Secret, API proxy, user / department / tag, text card, "check app"), webhook timeout and retries. The scenario (Home / Business) is now a global setting under **Settings → Scenario & network**; in Business mode the menu says "Employees" instead of "Family members", and the last scenario is cached so the menu no longer flashes the wrong label. Identification order: domain fallbacks (China domain list) are tried before IP-range fallbacks, and overlapping IP ranges use longest-prefix match (before, a small range inside a big one could hide the big one). The "Auto update" switch now also controls the ASN and fallback list downloads. Note: Feishu now uses an app bot (App ID / Secret / Chat IDs) like EasySub; an old Feishu group-webhook config has to be re-entered.
 - **0.6.1**: much higher identification rate. New fallback sources, all downloaded at runtime and auto-updated daily: the dnsmasq-china-list Chinese domain list (~110k domains, WTFPL) catches long-tail .cn domains as "Chinese websites" (sampling showed v2fly + built-in rules only matched 5.6% of them); official Google / Cloudflare / AWS / GitHub IP ranges plus Apple's 17.0.0.0/8 attribute domain-less traffic (DoH, ECH, raw IPs) to the owning company; China IP ranges (chnroutes2, CC-BY-SA 4.0) group domain-less domestic traffic as "China networks". Purely additive — existing rules always take priority. Disable with `CHINA_DB=false` / `IPLIST_DB=false`.
 - **0.6.0**: reliability & hardening. A failed database write no longer loses that minute's traffic and access log (kept in memory and retried, giving up only after 2 hours); retention cleanup deletes in batches of 5000 rows instead of one long transaction, and `domain_geo` is now covered. Security: login rate limiting (5 failures locks the IP+username for 15 min), tokens are revoked immediately when a password or role changes, setup race protected, 500 errors no longer echo exception details. Performance: destination ranking aggregated in SQL (new `base` column for merging by registered domain, auto-backfilled), the people page scans the access log once instead of twice, the overview reuses today's app ranking. Frontend: polling race fixed (stale responses can no longer overwrite fresh data) and a dozen loads that could spin forever on error now show the error. CI builds the image on PRs; the container process runs as a non-root user; the bundled-MySQL compose now requires real passwords.
 - **0.5.1**: people must belong to a group / department (no duplicates within a group; groups with members can't be deleted), and existing people can be edited and deleted again. Countries are shown on a flow map from your location with a ranked list; a domain's country is now stored when traffic is recorded, so it no longer turns "unlocated" after a restart. README brought up to date.
@@ -90,7 +91,7 @@ Open `http://<host>:8080`. The setup wizard has two steps. 打开网页后按两
 - Change database later: delete `./data/db_config.json` and restart. 更换数据库：删除该文件后重启容器。
 - Setting `DATABASE_URL` skips the wizard. 设置环境变量 `DATABASE_URL` 可跳过向导。
 - RouterOS commands: **Settings → Setup & check / 系统设置 → 接入与自检**. Full guide: https://github.com/suyijun8182/ros-dpi
-- Then choose the scenario under **People → Settings**, assign devices to people, and set up notifications under **Audit → Notifications**. 之后在 家庭成员 / 人员 → 分析设置 选择场景，把设备分给成员，在 审计日志 → 通知渠道 配置推送。
+- Then choose the scenario under **Settings → Scenario & network**, assign devices to people, and set up notifications under **Audit → Notifications**. 之后在 系统设置 → 场景与网络 选择场景（家庭 / 企业），把设备分给成员或员工，在 审计日志 → 通知渠道 配置推送。
 
 ## Ports
 

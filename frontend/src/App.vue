@@ -23,11 +23,13 @@
     <div class="scrim" v-if="drawer" @click="drawer = false" />
     <aside class="side" :aria-label="t('shell.menu')">
       <nav class="nav">
-        <router-link v-for="n in nav" :key="n.to" :to="n.to" :class="{ on: isOn(n) }" :title="ui.side === 'mini' ? t(n.label) : null" @click="drawer = false">
+        <router-link v-for="n in nav" :key="n.to" :to="n.to" :class="{ on: isOn(n) }" :title="ui.side === 'mini' ? navLabel(n) : null" @click="drawer = false">
           <Icon :name="n.icon" :size="19" /><span>{{ navLabel(n) }}</span>
         </router-link>
       </nav>
-      <div class="side-foot"><span class="dot" :class="status" /><span>v{{ version }}</span></div>
+      <div class="side-foot"><span class="dot" :class="status" /><span>v{{ version }}</span>
+        <router-link v-if="auth.role !== 'user'" to="/settings?tab=system" class="pill grey scene" :title="t('people.sceneGo')">{{ L('badge') }}</router-link>
+        <span v-else class="pill grey scene">{{ L('badge') }}</span></div>
     </aside>
 
     <main class="main">
@@ -151,7 +153,8 @@ function logout() {
 .mini .nav a.on::before { left: -8px; }
 .side-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; font: 500 12px/1 var(--cond); color: var(--faint); padding: 0 14px; }
 .mini .side-foot { justify-content: center; padding: 0; }
-.mini .side-foot span:last-child { display: none; }
+.mini .side-foot span:last-child, .mini .side-foot .scene { display: none; }
+.side-foot .scene { margin-left: auto; text-decoration: none; font: inherit; }
 
 .main { margin-left: var(--side); padding: 16px 18px 12px; min-width: 0; }
 .mini .main { margin-left: 64px; }

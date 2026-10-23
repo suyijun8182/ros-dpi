@@ -221,7 +221,9 @@ def delete_dept(did: int, request: Request, user: str = Depends(current_user), d
         raise HTTPException(404, "部门不存在")
     n = db.scalar(select(func.count()).select_from(Person).where(Person.dept_id == did)) or 0
     if n:
-        raise HTTPException(400, f"“{d.name}”下还有 {n} 个成员，先把他们移到别的分组或删除")
+        home = insight.get_config(db)["scenario"] == "home"
+        who, where = ("成员", "分组") if home else ("员工", "部门")
+        raise HTTPException(400, f"“{d.name}”下还有 {n} 个{who}，先把他们移到别的{where}或删除")
     name = d.name
     db.delete(d)
     oplog.log(db, request, user, "dept_delete", {"id": did, "name": name})

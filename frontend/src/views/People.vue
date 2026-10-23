@@ -4,6 +4,7 @@
       <div class="seg tabs" role="tablist">
         <button v-for="k in TABS" :key="k" role="tab" :aria-selected="tab === k" :class="{ on: tab === k }" @click="setTab(k)">{{ L('tab.' + k) }}</button>
       </div>
+      <span class="pill grey" :title="t('scn.' + scene.id + '.desc')">{{ L('badge') }}</span>
       <span class="sp" />
       <RangeTabs v-if="tab === 'list'" />
     </div>
@@ -128,16 +129,8 @@
 
     <!-- 分析设置 -->
     <template v-if="tab === 'settings' && cfg">
-      <div class="panel">
-        <div class="panel-h"><h2>{{ t('people.scenario') }}</h2><span class="faint small">{{ t('people.scenarioHint') }}</span></div>
-        <div class="panel-b scn">
-          <label v-for="k in ['home', 'enterprise']" :key="k" class="scn-c" :class="{ on: cfg.scenario === k }">
-            <input type="radio" :value="k" :checked="cfg.scenario === k" @change="switchScene(k)" />
-            <Icon :name="k === 'home' ? 'people' : 'users'" :size="22" />
-            <div><b>{{ t('scn.' + k + '.name') }}</b><span class="faint small">{{ t('scn.' + k + '.desc') }}</span></div>
-          </label>
-        </div>
-      </div>
+      <div class="info-bar scn-now"><span class="ic">i</span><div><b>{{ t('people.sceneNow', { x: t('scn.' + scene.id + '.name') }) }}</b>
+        <span>{{ t('scn.' + scene.id + '.desc') }} <router-link class="link" to="/settings?tab=system">{{ t('people.sceneGo') }}</router-link></span></div></div>
       <div class="panel mt">
         <div class="panel-h"><h2>{{ L('workTime') }}</h2><span class="faint small">{{ L('workHint') }}</span></div>
         <div class="panel-b form">
@@ -231,7 +224,7 @@ import Modal from '../components/Modal.vue'
 import RangeTabs from '../components/RangeTabs.vue'
 import Tags from '../components/Tags.vue'
 import { bytes, catName, pct } from '../format.js'
-import { hours, L, loadScene, scene } from '../scenario.js'
+import { hours, L, loadScene, scene, syncScene } from '../scenario.js'
 import { ui } from '../state.js'
 
 const { t } = useI18n()
@@ -249,7 +242,7 @@ const dept = ref(0)
 const q = ref('')
 const unLimit = ref(50)
 async function load() {
-  try { d.value = await http.get('/people', { params: { range: ui.range } }); scene.id = d.value.scenario; err.value = '' } catch (e) { err.value = e.message }
+  try { d.value = await http.get('/people', { params: { range: ui.range } }); syncScene(d.value.scenario); err.value = '' } catch (e) { err.value = e.message }
   const want = +route.query.edit
   if (want && d.value && isAdmin.value && !form.value) {
     const p = d.value.people.find(x => x.id === want)
@@ -353,7 +346,7 @@ async function delDept(g) {
 // ---------- 洞察 ----------
 const ins = ref(null)
 async function loadIns() {
-  try { ins.value = await http.get('/insights'); scene.id = ins.value.scenario } catch (e) { err.value = e.message }
+  try { ins.value = await http.get('/insights'); syncScene(ins.value.scenario) } catch (e) { err.value = e.message }
 }
 const TAG_IDS = { enterprise: ['job', 'stock_work', 'game_work', 'video_work', 'shop_work', 'late_night'],
   home: ['adult', 'screen_over', 'game_over', 'short_video_over', 'late_night', 'study_leisure'] }
@@ -394,18 +387,11 @@ function toggleLeisure(id) {
   const i = cfg.value.leisure.indexOf(id)
   i >= 0 ? cfg.value.leisure.splice(i, 1) : cfg.value.leisure.push(id)
 }
-async function switchScene(k) {
-  cfgErr.value = ''
-  try {
-    cfg.value = (await http.put('/analysis/settings', { scenario: k })).config
-    scene.id = k
-  } catch (e) { cfgErr.value = e.message }
-}
 async function saveCfg() {
   cfgErr.value = ''
   try {
     cfg.value = (await http.put('/analysis/settings', cfg.value)).config
-    scene.id = cfg.value.scenario
+    syncScene(cfg.value.scenario)
     cfgSaved.value = true
     setTimeout(() => (cfgSaved.value = false), 1500)
   } catch (e) { cfgErr.value = e.message }

@@ -39,7 +39,7 @@ def test_payloads_and_signatures(monkeypatch):
     cfg = {
         "dingtalk": {"url": "https://oapi.dingtalk.com/robot/send?access_token=x", "secret": "SECabc"},
         "webhook": {"urls": ["https://example.com/hook"], "secret": "s3", "headers": [{"key": "X-A", "value": "1"}],
-                    "template": "[{{subject}}] {{text}}", "retries": 0},
+                    "template": "[{{subject}}] {{text}}", "max_retries": 0},
         "bark": {"urls": ["https://api.day.app/KEY/"], "group": "ROS-DPI", "level": "timeSensitive"},
         "serverchan": {"sendkey": "sctp123tABC"},
     }
@@ -48,7 +48,7 @@ def test_payloads_and_signatures(monkeypatch):
     by = {c["url"].split("?")[0]: c for c in Recorder.calls}
     d = next(c for c in Recorder.calls if "dingtalk" in c["url"])
     q = urllib.parse.parse_qs(urllib.parse.urlparse(d["url"]).query)
-    assert "timestamp" in q and "sign" in q and d["json"]["text"]["content"] == "标题\n正文"
+    assert "timestamp" in q and "sign" in q and d["json"]["text"]["content"] == "标题\n\n正文"
     w = by["https://example.com/hook"]
     body = json.loads(w["content"])
     assert body["text"] == "[标题] 正文" and w["headers"]["X-A"] == "1"
@@ -109,3 +109,93 @@ def test_rule_channels_and_quiet_hours(monkeypatch):
         assert "免打扰" in mine[0]["json"]["text"]
         c.put("/api/audit/notify", json={"config": {"wecom": {"enabled": False}, "slack": {"enabled": False}},
                                          "quiet_from": "", "quiet_to": ""}, headers=h)
+
+
+class Recorder2(Recorder):
+    """在 Recorder 的基础上支持 GET，并按地址返回各家 API 的成功应答"""
+    def post(self, url, json=None, content=None, headers=None, data=None, params=None):
+        Recorder.calls.append({"url": str(url), "json": json, "content": content, "headers": headers or {}, "data": data, "params": params})
+        body = {"errcode": 0, "code": 0, "ok": True}
+        if "tenant_access_token" in str(url):
+            body = {"code": 0, "tenant_access_token": "FT"}
+        elif "getAppAccessToken" in str(url):
+            body = {"access_token": "QT"}
+        elif "pushplus" in str(url):
+            body = {"code": 200}
+        return httpx.Response(200, json=body, request=httpx.Request("POST", str(url)))
+
+    def get(self, url, params=None):
+        Recorder.calls.append({"url": str(url), "params": params})
+        body = {"errcode": 0, "access_token": "WT", "expires_in": 7200} if "gettoken" in str(url) else \
+            {"errcode": 0, "agentid": 1000002, "name": "ROS-DPI", "allow_userinfos": {"user": [{"userid": "a"}]}}
+        return httpx.Response(200, json=body, request=httpx.Request("GET", str(url)))
+
+
+def test_easysub_channels(monkeypatch):
+    """照搬 EasySub 的渠道：飞书应用机器人、QQ 机器人、企业微信自建应用、Pushplus 渠道、Bark 图标"""
+    monkeypatch.setattr(notify.httpx, "Client", Recorder2)
+    notify._WECOM_TOKENS.clear()
+    Recorder.calls = []
+    cfg = {
+        "feishu": {"app_id": "cli_1", "app_secret": "S", "chat_ids": "oc_a，oc_b"},
+        "qq": {"app_id": "1", "app_secret": "S", "group_ids": "G1", "user_ids": ""},
+        "wecom": {"mode": "app", "corp_id": "ww1", "agent_id": "1000002", "secret": "S", "to_user": "", "msg_type": "textcard"},
+        "pushplus": {"token": "P", "channel": "mail"},
+        "bark": {"urls": ["https://api.day.app/K"], "icon": "https://x/i.png"},
+    }
+    res = notify.send("标题", "正文", wait=True, config={t: {**notify.DEFAULTS[t], **c} for t, c in cfg.items()})
+    assert [r for r in res if not r["ok"]] == [] and len(res) == 5
+    urls = [c["url"] for c in Recorder.calls]
+    assert sum("im/v1/messages" in u for u in urls) == 2                       # 两个飞书群
+    assert any(u.endswith("/v2/groups/G1/messages") for u in urls)
+    send = next(c for c in Recorder.calls if c["url"].endswith("/cgi-bin/message/send"))
+    assert send["params"] == {"access_token": "WT"} and send["json"]["touser"] == "@all"
+    assert send["json"]["msgtype"] == "textcard" and send["json"]["agentid"] == 1000002
+    assert next(c for c in Recorder.calls if "pushplus" in c["url"])["json"]["channel"] == "mail"
+    assert next(c for c in Recorder.calls if "day.app" in c["url"])["json"]["icon"] == "https://x/i.png"
+    # token 缓存：再发一次不会再调 gettoken
+    n = sum("gettoken" in c["url"] for c in Recorder.calls)
+    notify.send("x", "y", wait=True, config={"wecom": {**notify.DEFAULTS["wecom"], **cfg["wecom"]}})
+    assert sum("gettoken" in c["url"] for c in Recorder.calls) == n
+    assert notify.wecom_agent_info({**notify.DEFAULTS["wecom"], **cfg["wecom"]})["users"] == 1
+    # 必填项随模式变化
+    assert notify.missing("wecom", {**notify.DEFAULTS["wecom"], "mode": "app"}) == ["corp_id", "agent_id", "secret"]
+    assert notify.missing("wecom", dict(notify.DEFAULTS["wecom"])) == ["url"]
+    assert notify.missing("qq", {"app_id": "1", "app_secret": "s"}) == ["group_ids / user_ids"]
+
+
+def test_old_field_names_migrate():
+    """0.6.x 存的 email.security / from_addr、webhook.retries 读出来改成 EasySub 的字段"""
+    with database.session() as db:
+        row = db.get(Setting, "notify_config") or Setting(key="notify_config")
+        old = row.value
+        row.value = json.dumps({"email": {"enabled": True, "host": "smtp.x", "security": "starttls", "from_addr": "a@x", "to": "b@x"},
+                                "webhook": {"urls": ["https://h"], "retries": 1}})
+        db.merge(row)
+        db.commit()
+    try:
+        cfg = notify.load_config()
+        assert cfg["email"]["ssl"] is False and cfg["email"]["from"] == "a@x" and "security" not in cfg["email"]
+        assert cfg["webhook"]["max_retries"] == 1 and "retries" not in cfg["webhook"]
+        assert list(cfg) == list(notify.DEFAULTS)[:] and list(cfg)[0] == "telegram"
+    finally:
+        with database.session() as db:
+            row = db.get(Setting, "notify_config")
+            if old is None:
+                db.delete(row)
+            else:
+                row.value = old
+            db.commit()
+
+
+def test_notify_api_bool_and_helpers(monkeypatch):
+    monkeypatch.setattr(notify.httpx, "Client", Recorder2)
+    notify._WECOM_TOKENS.clear()
+    with TestClient(app) as c:
+        h = _h(c)
+        r = c.put("/api/audit/notify", json={"config": {"email": {"enabled": False, "host": "smtp.x", "ssl": False, "to": "a@x"}}}, headers=h)
+        assert r.status_code == 200 and r.json()["config"]["email"]["ssl"] is False
+        r = c.post("/api/audit/notify/wecom/check", json={"channel": "wecom", "config": {"mode": "app", "corp_id": "ww", "agent_id": "1000002", "secret": "S"}}, headers=h)
+        assert r.status_code == 200 and r.json()["agent"]["name"] == "ROS-DPI"
+        assert c.post("/api/audit/notify/wecom/check", json={"channel": "wecom", "config": {"mode": "webhook"}}, headers=h).status_code == 400
+        assert c.post("/api/audit/notify/telegram/nope", json={"channel": "telegram"}, headers=h).status_code == 404

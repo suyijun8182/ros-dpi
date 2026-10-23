@@ -266,7 +266,9 @@ def _clean(t: str, c: dict, old: dict) -> dict:
     out = {"enabled": bool(c.get("enabled"))}
     for k, dv in base.items():
         v = c.get(k, dv)
-        if isinstance(dv, list):
+        if isinstance(dv, bool):
+            v = bool(v)
+        elif isinstance(dv, list):
             v = [x for x in (v or []) if (x.get("key") if isinstance(x, dict) else str(x).strip())]
             if k != "headers":
                 v = [str(x).strip() for x in v]
@@ -278,7 +280,9 @@ def _clean(t: str, c: dict, old: dict) -> dict:
         else:
             v = str(v or "").strip()
         out[k] = v
-    for k in ("url", "server", "api_base"):
+    if t == "wecom" and out["mode"] not in ("webhook", "app"):
+        out["mode"] = "webhook"
+    for k in ("url", "server", "card_url", "icon"):
         if out.get(k) and not str(out[k]).startswith(("http://", "https://")):
             raise HTTPException(400, f"{notify_name(t)}：地址要以 http:// 或 https:// 开头")
     for u in out.get("urls") or []:
@@ -290,9 +294,9 @@ def _clean(t: str, c: dict, old: dict) -> dict:
 
 
 def notify_name(t: str) -> str:
-    return {"wecom": "企业微信", "dingtalk": "钉钉", "feishu": "飞书", "bark": "Bark", "telegram": "Telegram", "email": "邮件",
-            "pushplus": "PushPlus", "serverchan": "Server酱", "ntfy": "ntfy", "gotify": "Gotify", "discord": "Discord",
-            "slack": "Slack", "webhook": "Webhook"}.get(t, t)
+    return {"wecom": "企业微信", "dingtalk": "钉钉", "feishu": "飞书", "qq": "QQ", "bark": "Bark", "telegram": "Telegram",
+            "email": "Email", "pushplus": "Pushplus", "serverchan": "Server酱", "ntfy": "ntfy", "gotify": "Gotify",
+            "discord": "Discord", "slack": "Slack", "webhook": "Webhook"}.get(t, t)
 
 
 @router.get("/notify")
@@ -330,6 +334,36 @@ def test_notify(req: NotifyTest):
     if not res[0]["ok"]:
         raise HTTPException(502, res[0]["error"])
     return {"ok": True}
+
+
+def _draft(channel: str, config: dict | None) -> dict:
+    """前端还没保存的配置：只保留认识的字段，密钥以“…”结尾时沿用已保存的值（不校验必填）"""
+    old = notify.load_config()[channel]
+    return _clean(channel, {**(config or old), "enabled": False}, old)
+
+
+@router.post("/notify/telegram/{action}")
+def telegram_helper(action: str, req: NotifyTest):
+    """同 EasySub：「验证机器人」= getMe，「获取 Chat ID」= getUpdates（用户先给机器人发一条消息）"""
+    method = {"me": "getMe", "updates": "getUpdates"}.get(action)
+    if not method:
+        raise HTTPException(404, "未知操作")
+    try:
+        return notify.telegram_call(_draft("telegram", req.config), method)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Telegram {method} 失败：{e}")
+
+
+@router.post("/notify/wecom/check")
+def wecom_check(req: NotifyTest):
+    """校验企业微信自建应用：拉取 access_token 并读取应用名与可见范围"""
+    conf = _draft("wecom", req.config)
+    if conf.get("mode") != "app":
+        raise HTTPException(400, "该校验仅适用于「自建应用」模式")
+    try:
+        return {"ok": True, "agent": notify.wecom_agent_info(conf)}
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, str(e))
 
 
 # ---------------- 报表 ----------------

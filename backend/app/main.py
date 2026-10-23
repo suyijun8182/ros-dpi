@@ -46,15 +46,28 @@ def _on_db_ready():
     print("[startup] 数据库已连接", flush=True)
 
 
-def _auto_update_rules():
-    """识别库自动更新（默认开启，可在识别规则页关闭）；更新器内部保证一天最多检查一次"""
+def _auto_update_on() -> bool:
+    """识别规则页的「自动更新」开关（默认开启）：管 v2fly、ASN 库和补充库的定期更新"""
     if not database.is_configured():
-        return
-    from app.classify.updater import updater
+        return False
     with database.session() as db:
         row = db.get(Setting, "rules_auto_update")
-    if row is None or row.value != "0":
+    return row is None or row.value != "0"
+
+
+def _auto_update_rules():
+    """v2fly 规则自动更新；更新器内部保证一天最多检查一次"""
+    if _auto_update_on():
+        from app.classify.updater import updater
         updater.check(reload=engine.reload_classifier)
+
+
+def _auto_update_db(fn):
+    """ASN / 补充库的定期下载跟随同一个开关；关掉后只用已下载的数据，手动「立即检查更新」仍然可用"""
+    def run():
+        if _auto_update_on():
+            fn()
+    return run
 
 
 def _reconnect():
@@ -94,12 +107,14 @@ async def lifespan(app: FastAPI):
     asyncio.get_running_loop().call_later(120, lambda: asyncio.get_running_loop().run_in_executor(
         None, _safe(_auto_update_rules, "rules-update")))
     if s.asn_db:
-        sched.add_job(_safe(asndb.update, "asn-db"), "interval", hours=6, max_instances=1, coalesce=True)
+        sched.add_job(_safe(_auto_update_db(asndb.update), "asn-db"), "interval", hours=6, max_instances=1, coalesce=True)
         asyncio.get_running_loop().run_in_executor(None, _safe(asndb.update, "asn-db"))
     # 补充识别库：国内域名列表 + 官方 IP 段（sources.py，只做兜底；没配置的来源直接跳过）
     from app.classify.sources import sources as extra_sources
     if s.china_db or s.iplist_db:
-        sched.add_job(_safe(extra_sources.update, "extra-db"), "interval", hours=24, max_instances=1, coalesce=True)
+        # 每 6 小时看一次，文件满一天才重新下载（间隔和过期时间都是 24 小时会因几秒误差拖成两天）
+        sched.add_job(_safe(_auto_update_db(extra_sources.update), "extra-db"), "interval", hours=6,
+                      max_instances=1, coalesce=True)
         asyncio.get_running_loop().run_in_executor(None, _safe(extra_sources.update, "extra-db"))
     if poller.enabled:
         sched.add_job(_safe(poller.sample, "ros-rate"), "interval", seconds=max(s.ros_rate_seconds, 2),

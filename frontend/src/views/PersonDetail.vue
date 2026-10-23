@@ -118,7 +118,7 @@ import Stat from '../components/Stat.vue'
 import Timeline from '../components/Timeline.vue'
 import TrafficPanel from '../components/TrafficPanel.vue'
 import { appName, bytes, catColor, pct } from '../format.js'
-import { hours, L, scene } from '../scenario.js'
+import { hours, L, scene, syncScene } from '../scenario.js'
 import { ui } from '../state.js'
 
 const props = defineProps({ id: String })
@@ -139,7 +139,7 @@ const limit = computed(() => (d.value && d.value.scenario === 'home' ? d.value.c
 async function load() {
   try {
     d.value = await http.get(`/people/${props.id}/detail`, { params: { range: ui.range } })
-    scene.id = d.value.scenario
+    syncScene(d.value.scenario)
     err.value = ''
   } catch (e) { err.value = e.message }
 }
