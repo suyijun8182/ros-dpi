@@ -5,7 +5,7 @@ import threading
 import time
 from collections import Counter, OrderedDict, defaultdict
 
-from sqlalchemy import bindparam, delete, insert, select, update
+from sqlalchemy import bindparam, delete, func, insert, select, tuple_, update
 
 from app import timeutil
 from app.classify import GENERIC_APPS, Classifier
@@ -28,6 +28,8 @@ VISIT_GAP = 300        # 访问日志：同一目标间隔不超过 5 分钟的�
 VISIT_SPLIT = 3600     # 持续超过 1 小时的访问分段写入
 MAX_VISITS = 100_000
 IP_DEST_PER_HOST = 30  # 没有域名的访问目标（只有 IP），每台终端每分钟只记流量最大的 30 个，防止 P2P 撑爆表
+PENDING_MAX_AGE = 7200  # 落库失败的数据在内存里最多保留 2 小时，超过就放弃（避免数据库长期故障时内存无限涨）
+CLEANUP_BATCH = 5000    # 按保留期清理时分批删除，避免大表一次删造成长事务
 
 
 def parse_cidrs(text: str) -> list:
@@ -70,6 +72,7 @@ class Engine:
         # 进行中的访问每分钟也写库（首次插入、之后按行 ID 更新），访问日志和时间线只慢一分钟
         self.visits: OrderedDict[tuple, list] = OrderedDict()
         self._vid = 0
+        self._pending: dict | None = None  # 上次落库失败遗留的数据，下次 flush 一起写（数据库抖动不丢数据）
         # 私接路由检测：终端 -> {TTL: 包数}，镜像的 TLS / QUIC 首包里取，每天清零（sharing.py）
         self.ttl: dict[str, Counter] = {}
         self.ttl_day = 0
@@ -490,51 +493,75 @@ class Engine:
         self.app_rate = {a: (u / elapsed, d / elapsed) for a, (u, d) in ar.items()}
         self.total_rate = (sum(v[0] for v in hr.values()) / elapsed, sum(v[1] for v in hr.values()) / elapsed)
 
-        m, h, d = timeutil.minute_bucket(now), timeutil.hour_bucket(now), timeutil.day_bucket(now)
-        rows = [{"host": host, "app": app, "up": up, "down": down, "flows": f}
-                for (host, app), (up, down, f) in buf.items()]
-        dirty_dns = self.dns.take_dirty()
-        with database.session() as db:
-            for table, ts in ((TrafficMinute.__table__, m), (TrafficHour.__table__, h), (TrafficDay.__table__, d)):
-                for chunk in _chunks([{**r, "ts": ts} for r in rows], 500):
-                    upsert_add(db, table, chunk, ["ts", "host", "app"], ["up", "down", "flows"])
-            drows = [{"ts": d, "host": host, "domain": name[:255], "app": app, "bytes": n}
-                     for (host, name, app), n in dom.items()]
-            per_host: dict[str, list] = defaultdict(list)
-            for (host, ip, app), n in ipdest.items():
-                per_host[host].append((n, ip, app))
-            for host, lst in per_host.items():
-                for n, ip, app in sorted(lst, reverse=True)[:IP_DEST_PER_HOST]:
-                    drows.append({"ts": d, "host": host, "domain": ip, "app": app, "bytes": n})
-            for chunk in _chunks(drows, 500):
-                upsert_add(db, HostDomainDay.__table__, chunk, ["ts", "host", "domain"], ["bytes"], ["app"])
-            new_hosts = self._save_hosts(db, seen)
-            for chunk in _chunks(visits, 500):
-                db.execute(insert(AccessLog.__table__), chunk)
-            if visit_upd:
-                t = AccessLog.__table__
-                stmt = update(t).where(t.c.id == bindparam("_id")).values(
-                    remote=bindparam("remote"), ts_end=bindparam("ts_end"), conns=bindparam("conns"),
-                    up=bindparam("up"), down=bindparam("down"))
-                for chunk in _chunks(visit_upd, 500):
-                    db.execute(stmt, [{"_id": r["id"], "remote": r["remote"], "ts_end": r["ts_end"], "conns": r["conns"],
-                                       "up": r["up"], "down": r["down"]} for r in chunk])
-            if dirty_dns:
-                drs = [{"ip": ip, "name": v[0][:255], "cname": (v[1] or "")[:255] or None, "expires": v[2]}
-                       for ip, v in dirty_dns.items()]
-                for chunk in _chunks(drs, 500):
-                    upsert_add(db, DnsCache.__table__, chunk, ["ip"], [], ["name", "cname", "expires"])
-            geo = _domain_geo(dom_ip, int(now))
-            for chunk in _chunks(geo, 500):
-                upsert_add(db, DomainGeo.__table__, chunk, ["domain"], [], ["ip", "cc", "updated"])
-            db.commit()
-        finished, self.finished_visits = getattr(self, "finished_visits", []), []
+        payload = {"ts": (timeutil.minute_bucket(now), timeutil.hour_bucket(now), timeutil.day_bucket(now)),
+                   "buf": dict(buf), "dom": dict(dom), "dom_ip": dict(dom_ip), "seen": dict(seen),
+                   "ipdest": dict(ipdest), "visits": visits, "visit_upd": visit_upd,
+                   "dns": self.dns.take_dirty(), "finished": getattr(self, "finished_visits", [])}
+        # 上次落库失败遗留的数据合并进来一起写；数据库故障超过 PENDING_MAX_AGE 秒则放弃，只丢过期部分
+        pend = self._pending
+        self._pending = None
+        if pend:
+            if now - pend.get("fail_ts", now) > PENDING_MAX_AGE:
+                print(f"[engine] 数据库已 {int(now - pend.get('fail_ts', now))} 秒写不进去，"
+                      f"放弃遗留的 {len(pend['visits'])} 条访问、{len(pend['buf'])} 组流量", flush=True)
+            else:
+                payload = _merge_payload(pend, payload)
+        try:
+            with database.session() as db:
+                new_hosts = self._write_flush(db, payload)
+                db.commit()
+        except Exception as e:  # noqa: BLE001
+            payload["fail_ts"] = (pend or {}).get("fail_ts", now)
+            self._pending = payload
+            print(f"[engine] 落库失败（{type(e).__name__}: {str(e)[:200]}），数据保留在内存，下次一起写入", flush=True)
+            return
+        finished = payload["finished"]
         if finished:
             from app import compliance
             compliance.send_visits(finished)
         if self.audit:
             # 审计规则：按这一分钟的流量和新出现的终端检查
-            self.audit.evaluate(buf, dom, new_hosts, now)
+            self.audit.evaluate(payload["buf"], payload["dom"], new_hosts, now)
+
+    def _write_flush(self, db, p: dict) -> list:
+        """把一次（或合并后多次）分钟窗口的数据写进数据库。返回新出现的终端。"""
+        m, h, d = p["ts"]
+        rows = [{"host": host, "app": app, "up": up, "down": down, "flows": f}
+                for (host, app), (up, down, f) in p["buf"].items()]
+        for table, ts in ((TrafficMinute.__table__, m), (TrafficHour.__table__, h), (TrafficDay.__table__, d)):
+            for chunk in _chunks([{**r, "ts": ts} for r in rows], 500):
+                upsert_add(db, table, chunk, ["ts", "host", "app"], ["up", "down", "flows"])
+        from app.stats import base_domain
+        drows = [{"ts": d, "host": host, "domain": name[:255], "app": app, "bytes": n,
+                  "base": base_domain(name[:255])} for (host, name, app), n in p["dom"].items()]
+        per_host: dict[str, list] = defaultdict(list)
+        for (host, ip, app), n in p["ipdest"].items():
+            per_host[host].append((n, ip, app))
+        for host, lst in per_host.items():
+            for n, ip, app in sorted(lst, reverse=True)[:IP_DEST_PER_HOST]:
+                drows.append({"ts": d, "host": host, "domain": ip, "app": app, "bytes": n, "base": base_domain(ip)})
+        for chunk in _chunks(drows, 500):
+            upsert_add(db, HostDomainDay.__table__, chunk, ["ts", "host", "domain"], ["bytes"], ["app", "base"])
+        new_hosts = self._save_hosts(db, p["seen"])
+        for chunk in _chunks(p["visits"], 500):
+            db.execute(insert(AccessLog.__table__), chunk)
+        if p["visit_upd"]:
+            t = AccessLog.__table__
+            stmt = update(t).where(t.c.id == bindparam("_id")).values(
+                remote=bindparam("remote"), ts_end=bindparam("ts_end"), conns=bindparam("conns"),
+                up=bindparam("up"), down=bindparam("down"))
+            for chunk in _chunks(p["visit_upd"], 500):
+                db.execute(stmt, [{"_id": r["id"], "remote": r["remote"], "ts_end": r["ts_end"], "conns": r["conns"],
+                                   "up": r["up"], "down": r["down"]} for r in chunk])
+        if p["dns"]:
+            drs = [{"ip": ip, "name": v[0][:255], "cname": (v[1] or "")[:255] or None, "expires": v[2]}
+                   for ip, v in p["dns"].items()]
+            for chunk in _chunks(drs, 500):
+                upsert_add(db, DnsCache.__table__, chunk, ["ip"], [], ["name", "cname", "expires"])
+        geo = _domain_geo(p["dom_ip"], int(time.time()))
+        for chunk in _chunks(geo, 500):
+            upsert_add(db, DomainGeo.__table__, chunk, ["domain"], [], ["ip", "cc", "updated"])
+        return new_hosts
 
     def _save_hosts(self, db, seen: dict) -> list:
         """返回新出现的终端 [(key, ip, mac)]"""
@@ -570,10 +597,23 @@ class Engine:
                               .where(DnsCache.expires > now)).all()
             lan = db.get(Setting, "lan_cidrs")
             hostnames.migrate_aliases(db)
+            self._backfill_base(db)
         self.dns.load(rows)
         if lan and lan.value:
             self.set_lan(lan.value)
         self.reload_rules()
+
+    @staticmethod
+    def _backfill_base(db):
+        """升级回填：给旧版本写入的 host_domain_day 行补上主域名（访问目标按主域名合并在 SQL 侧做）。"""
+        from app.stats import base_domain
+        doms = db.execute(select(HostDomainDay.domain).distinct().where(HostDomainDay.base.is_(None))).scalars().all()
+        for chunk in _chunks(doms, 500):
+            db.execute(update(HostDomainDay.__table__).where(HostDomainDay.__table__.c.domain.in_(chunk))
+                       .values(base=bindparam("b")), [{"b": base_domain(d)} for d in chunk])
+        if doms:
+            db.commit()
+            print(f"[db] 已回填 {len(doms)} 个域名的主域名列", flush=True)
 
     def cleanup(self):
         if not database.is_configured():
@@ -582,14 +622,17 @@ class Engine:
         r = compliance.retention()  # 网页里设置的留存天数优先于环境变量
         now = int(time.time())
         with database.session() as db:
-            db.execute(delete(TrafficMinute).where(TrafficMinute.ts < now - r["minute"] * 86400))
-            db.execute(delete(TrafficHour).where(TrafficHour.ts < now - r["hour"] * 86400))
-            db.execute(delete(TrafficDay).where(TrafficDay.ts < now - r["day"] * 86400))
-            db.execute(delete(HostDomainDay).where(HostDomainDay.ts < now - r["domain"] * 86400))
+            # 分批删除（每批单独提交）：存量大的表一次删会造成长事务、大锁
+            for model, col, days in ((TrafficMinute, TrafficMinute.ts, r["minute"]),
+                                     (TrafficHour, TrafficHour.ts, r["hour"]),
+                                     (TrafficDay, TrafficDay.ts, r["day"]),
+                                     (HostDomainDay, HostDomainDay.ts, r["domain"]),
+                                     (DomainGeo, DomainGeo.updated, r["domain"]),
+                                     (AccessLog, AccessLog.ts_start, r["log"]),
+                                     (AuditEvent, AuditEvent.ts, r["event"]),
+                                     (OpLog, OpLog.ts, r["event"])):
+                _purge(db, model, col, days)
             db.execute(delete(DnsCache).where(DnsCache.expires < now))
-            db.execute(delete(AccessLog).where(AccessLog.ts_start < now - r["log"] * 86400))
-            db.execute(delete(AuditEvent).where(AuditEvent.ts < now - r["event"] * 86400))
-            db.execute(delete(OpLog).where(OpLog.ts < now - r["event"] * 86400))
             db.commit()
         self.dns.purge()
         with self.lock:
@@ -597,6 +640,39 @@ class Engine:
 
     def is_generic(self, app: str) -> bool:
         return app in GENERIC_APPS
+
+
+def _merge_payload(a: dict, b: dict) -> dict:
+    """把两次分钟窗口的落库数据合并成一份（a 较早）：数值累加、seen/DNS 取较新的，访问行拼接。"""
+    out = dict(b)
+    buf = {k: list(v) for k, v in b["buf"].items()}
+    for k, v in a["buf"].items():
+        cur = buf.setdefault(k, [0, 0, 0])
+        cur[0] += v[0]
+        cur[1] += v[1]
+        cur[2] += v[2]
+    out["buf"] = buf
+    dom = dict(b["dom"])
+    for k, v in a["dom"].items():
+        dom[k] = dom.get(k, 0) + v
+    out["dom"] = dom
+    ipdest = dict(b["ipdest"])
+    for k, v in a["ipdest"].items():
+        ipdest[k] = ipdest.get(k, 0) + v
+    out["ipdest"] = ipdest
+    out["dom_ip"] = {**a["dom_ip"], **b["dom_ip"]}
+    seen = dict(a["seen"])
+    for k, v in b["seen"].items():
+        if k not in seen or v[2] >= seen[k][2]:
+            seen[k] = v
+    out["seen"] = seen
+    out["visits"] = a["visits"] + b["visits"]
+    upd = {r["id"]: r for r in a["visit_upd"]}
+    upd.update({r["id"]: r for r in b["visit_upd"]})  # 同一行的更新取较新的
+    out["visit_upd"] = list(upd.values())
+    out["dns"] = {**a["dns"], **b["dns"]}
+    out["finished"] = a["finished"] + b["finished"]
+    return out
 
 
 def _domain_geo(dom_ip: dict[str, str], now: int) -> list[dict]:
@@ -622,6 +698,25 @@ def _is_ip(x: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def _purge(db, model, col, days: int):
+    """按保留期删除 model 中 col < cutoff 的行，按主键分批（先查主键再删，MySQL / SQLite 都支持）。"""
+    if days <= 0:
+        return
+    cut = int(time.time()) - days * 86400
+    pks = list(model.__table__.primary_key.columns)
+    while True:
+        rows = db.execute(select(*pks).where(col < cut).limit(CLEANUP_BATCH)).all()
+        if not rows:
+            return
+        if len(pks) == 1:
+            db.execute(delete(model).where(pks[0].in_([r[0] for r in rows])))
+        else:
+            db.execute(delete(model).where(tuple_(*pks).in_(rows)))
+        db.commit()
+        if len(rows) < CLEANUP_BATCH:
+            return
 
 
 def _chunks(seq, n):

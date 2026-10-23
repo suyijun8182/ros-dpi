@@ -55,7 +55,8 @@ def overview(range: str = Query("today", pattern=RANGES), db: Session = Depends(
         "router": poller.status(),
         "wans": poller.wans,
         "pools": poller.pools,
-        "health": health.compute(db),
+        # range=today 时健康指数要的今日应用排行已经查过，直接复用
+        "health": health.compute(db, apps if range == "today" else None),
     }
 
 

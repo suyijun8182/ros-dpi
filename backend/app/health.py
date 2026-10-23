@@ -16,7 +16,8 @@ def _item(code, deduct, ok, **params):
     return {"code": code, "deduct": deduct if not ok else 0, "ok": ok, "params": params}
 
 
-def compute(db) -> dict:
+def compute(db, today_apps: list[dict] | None = None) -> dict:
+    """today_apps：调用方（/api/overview?range=today）已经查过今日应用排行时直接传入，避免重复查询"""
     now = time.time()
     st = engine.stats
     items = []
@@ -35,7 +36,7 @@ def compute(db) -> dict:
 
     # 3. 今日应用识别率
     start, end = timeutil.range_bounds("today")
-    apps = stats.top_apps(db, start, end)
+    apps = today_apps if today_apps is not None else stats.top_apps(db, start, end)
     total = sum(a["total"] for a in apps)
     ratio = stats.identified_ratio(apps) if total else 1.0
     items.append(_item("identified", 15 if ratio < .6 else 10, ratio >= .8 or not total, ratio=round(ratio, 3)))

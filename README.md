@@ -123,11 +123,18 @@ docker compose up -d
 
 #### 还没有 MySQL？
 
-用 [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml)：它会同时启动一个 MySQL 8.4 容器，自动建好库和账号，并且已经把连接信息写进了配置，**不需要第 1 步，网页上也不会出现数据库设置**。下载后改名为 `docker-compose.yml`，改掉其中三处「必改」（两处数据库密码要一致，以及 `LAN_CIDRS`），然后 `docker compose up -d`。MySQL 第一次初始化需要 20～60 秒。
+用 [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml)：它会同时启动一个 MySQL 8.4 容器，自动建好库和账号，并且已经把连接信息写进了配置，**不需要第 1 步，网页上也不会出现数据库设置**。下载后改名为 `docker-compose.yml`，在同目录建一个 `.env` 写入两个数据库密码（不设置密码 `docker compose up` 会直接报错，避免带着默认密码上线）：
 
 ```bash
 curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.with-mysql.yml
+cat > .env <<'EOF'
+MYSQL_PASSWORD=改成强密码
+MYSQL_ROOT_PASSWORD=改成另一个强密码
+EOF
+# 再把 compose 里的 LAN_CIDRS 改成你的内网网段，然后 docker compose up -d
 ```
+
+MySQL 第一次初始化需要 20～60 秒。
 
 ### 首次使用
 
@@ -220,6 +227,7 @@ curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi
 | `RETENTION_*_DAYS` | 2 / 45 / 730 / 31 | 分钟 / 小时 / 每日 / 域名明细的保留天数 |
 | `RETENTION_LOG_DAYS` / `RETENTION_EVENT_DAYS` | 30 / 180 | 访问日志 / 审计事件和操作日志的保留天数。以上保留天数也可以在 **系统设置 → 日志与留存** 里改，网页优先 |
 | `SECRET_KEY` | 自动生成 | 登录令牌签名密钥 |
+| `DATA_DIR` | `./data` | 数据目录（数据库连接配置、ASN / OUI 库）；Docker 里对应挂载的 `/app/data` |
 
 ### 开发
 
@@ -282,7 +290,7 @@ FLUSH PRIVILEGES;
 
 Save the `docker-compose.yml` shown above (or `curl -O https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.yml`), set `LAN_CIDRS`, and run `docker compose up -d`. Images: `suyijun8182/ros-dpi` on Docker Hub and `ghcr.io/suyijun8182/ros-dpi`, amd64/arm64.
 
-No MySQL yet? Use [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml): it starts MySQL 8.4 alongside and is pre-configured, so the database step is skipped.
+No MySQL yet? Use [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml): it starts MySQL 8.4 alongside and is pre-configured, so the database step is skipped. Rename it to `docker-compose.yml`, create a `.env` next to it with `MYSQL_PASSWORD` and `MYSQL_ROOT_PASSWORD` (compose refuses to start without them), set `LAN_CIDRS`, and run `docker compose up -d`.
 
 **First run.** Open `http://<host>:8080`. A two-step setup wizard asks for (1) the MySQL host, port, user, password and database, with a connection test, and (2) the admin password. Tables are created automatically and the connection is saved to `./data/db_config.json`. If MySQL runs on the same machine, use its LAN IP, not `127.0.0.1`. To change databases later, delete that file and restart. Setting `DATABASE_URL` skips the wizard. RouterOS commands are listed above and in **Settings → Setup & check**. Then choose the scenario under **People → Settings**, add people and assign their devices, and set up notification channels under **Audit → Notifications**.
 

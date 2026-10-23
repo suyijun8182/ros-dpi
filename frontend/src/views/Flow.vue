@@ -279,7 +279,10 @@ async function toggle(r) {
   if (open.value === r.dest) { open.value = ''; return }
   open.value = r.dest
   who.value = null
-  who.value = await http.get('/destinations/hosts', { params: { dest: r.dest, range: ui.range, merge: merge.value && !r.ip } })
+  err.value = ''
+  try {
+    who.value = await http.get('/destinations/hosts', { params: { dest: r.dest, range: ui.range, merge: merge.value && !r.ip } })
+  } catch (e) { err.value = e.message; open.value = '' }  // 失败就收起，不留一个空转的 loading
 }
 function exportDest() {
   exportCsv('rosdpi-destinations', [

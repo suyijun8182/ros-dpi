@@ -368,8 +368,11 @@ async function saveRule() {
 }
 async function del(r) {
   if (!confirm(t('common.confirmDelete'))) return
-  await http.delete(`/audit/rules/${r.id}`)
-  await loadRules()
+  err.value = ''
+  try {
+    await http.delete(`/audit/rules/${r.id}`)
+    await loadRules()
+  } catch (e) { err.value = e.message }
 }
 function condText(r) {
   if (r.kind === 'upload') {

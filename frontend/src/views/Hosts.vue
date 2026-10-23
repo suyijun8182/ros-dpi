@@ -234,7 +234,9 @@ const nfErr = ref('')
 const nfSaved = ref(false)
 const nameInput = ref(null)
 
-async function loadNames() { names.value = await http.get('/names') }
+async function loadNames() {
+  try { names.value = await http.get('/names') } catch (e) { nfErr.value = e.message }
+}
 onMounted(loadNames)
 
 async function rename(h) {
@@ -261,8 +263,11 @@ async function addName() {
 }
 async function delName(n) {
   if (!confirm(t('common.confirmDelete'))) return
-  names.value = await http.delete(`/names/${n.kind}/${enc(n.value)}`)
-  refresh()
+  nfErr.value = ''
+  try {
+    names.value = await http.delete(`/names/${n.kind}/${enc(n.value)}`)
+    refresh()
+  } catch (e) { nfErr.value = e.message }
 }
 </script>
 

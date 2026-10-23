@@ -93,11 +93,15 @@ watch(() => route.fullPath, () => (drawer.value = false))
 // 登录后、进入管理页面时再读版本和采集状态（App 在登录页也会挂载，那时还没有令牌）
 async function loadInfo() {
   try {
-    version.value = (await http.get('/health')).version
-    auth.role = (await http.get('/auth/me')).role || ''  // 管理员可能改了你的角色
+    // 三个请求互不依赖，一起发；单个失败不影响其它（/auth/me 的角色要单独兜住，401 会跳登录）
+    const [v, me, sys] = await Promise.allSettled([http.get('/health'), http.get('/auth/me'), http.get('/system')])
+    if (v.status === 'fulfilled') version.value = v.value.version
+    if (me.status === 'fulfilled') {
+      auth.role = me.value.role || ''  // 管理员可能改了你的角色
+      try { localStorage.setItem('rosdpi.role', auth.role) } catch (e) { /* ignore */ }
+    }
+    if (sys.status === 'fulfilled') status.value = sys.value.collector.flow_ok ? 'on' : 'warn'
     loadScene()
-    try { localStorage.setItem('rosdpi.role', auth.role) } catch (e) { /* ignore */ }
-    status.value = (await http.get('/system')).collector.flow_ok ? 'on' : 'warn'
   } catch (e) { /* 只影响侧边栏底部的小字 */ }
 }
 watch(() => !route.meta.public && !!auth.token && route.name, ok => { if (ok && !version.value) loadInfo() }, { immediate: true })

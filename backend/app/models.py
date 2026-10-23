@@ -41,6 +41,7 @@ class HostDomainDay(Base):
     host = Column(String(64), primary_key=True)
     domain = Column(String(255), primary_key=True)
     app = Column(String(48), nullable=False)
+    base = Column(String(255))   # 主域名（访问目标排行按主域名合并在 SQL 侧做）；升级前的旧行启动时回填
     bytes = Column(BigInteger, nullable=False, default=0)
     __table_args__ = (Index("ix_hdd_host_ts", "host", "ts"), Index("ix_hdd_app_ts", "app", "ts"))
 
@@ -114,6 +115,7 @@ class User(Base):
     username = Column(String(64), unique=True, nullable=False)
     password_hash = Column(String(128), nullable=False)
     role = Column(String(16), nullable=True)          # admin | user；空 = admin（升级前建的账号都是管理员）
+    token_version = Column(Integer, nullable=True)    # 改密码 / 改权限时 +1，旧 token 立即失效
     created = Column(Integer, nullable=True)
     last_login = Column(Integer, nullable=True)
 

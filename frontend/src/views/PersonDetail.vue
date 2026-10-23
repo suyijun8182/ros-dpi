@@ -152,20 +152,28 @@ async function delPerson() {
 }
 async function loadFree() {
   if (!isAdmin.value) return
-  const r = await http.get('/people', { params: { range: 'today' } })
-  free.value = r.unassigned
+  try {
+    const r = await http.get('/people', { params: { range: 'today' } })
+    free.value = r.unassigned
+  } catch (e) { err.value = e.message }
 }
 const freeHosts = computed(() => free.value)
 async function addDevice(ev) {
   const k = ev.target.value
   ev.target.value = ''
   if (!k) return
-  await http.put('/devices/bind', { host: k, person_id: +props.id })
-  await Promise.all([load(), loadFree()])
+  err.value = ''
+  try {
+    await http.put('/devices/bind', { host: k, person_id: +props.id })
+    await Promise.all([load(), loadFree()])
+  } catch (e) { err.value = e.message }
 }
 async function unbind(k) {
-  await http.put('/devices/bind', { host: k, person_id: null })
-  await Promise.all([load(), loadFree()])
+  err.value = ''
+  try {
+    await http.put('/devices/bind', { host: k, person_id: null })
+    await Promise.all([load(), loadFree()])
+  } catch (e) { err.value = e.message }
 }
 const maxDay = computed(() => Math.max(3600, ...(d.value ? d.value.week.days.map(x => x.online) : [0]), limit.value || 0))
 const hpct = s => Math.min(100, (s || 0) / maxDay.value * 100) + '%'

@@ -3,7 +3,7 @@ import ipaddress
 import time
 from collections import defaultdict
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import distinct, func, or_, select
 
 from app import hostnames, timeutil
 from app.classify import GENERIC_APPS, UNIDENTIFIED_CATEGORIES
@@ -270,29 +270,38 @@ def base_domain(name: str) -> str:
 
 
 def destinations(db, start, end, q: str = "", merge: bool = False, kind: str = "all", limit: int = 300) -> list[dict]:
-    """访问目标排行：按流量排序的远端域名 / IP，附带主要应用和访问的终端数。merge=True 时按主域名合并。"""
+    """访问目标排行：按流量排序的远端域名 / IP，附带主要应用和访问的终端数。merge=True 时按主域名合并。
+    聚合在 SQL 侧完成，只把排到前面的目标拿回内存；目标是域名还是 IP 在内存里判断，多取 5 倍候选保证够筛。"""
     t = HostDomainDay
-    rows = db.execute(select(t.domain, t.app, t.host, func.sum(t.bytes))
-                      .where(t.ts >= start, t.ts < end).group_by(t.domain, t.app, t.host)).all()
+    col = func.coalesce(t.base, t.domain) if merge else t.domain
+    total = func.sum(t.bytes)
+    sel = select(col.label("dest"), total.label("b"), func.count(distinct(t.host)).label("h")) \
+        .where(t.ts >= start, t.ts < end)
     s = q.strip().lower()
-    agg: dict[str, dict] = {}
-    for dom, app, host, b in rows:
-        ip = is_ip(dom)
-        if (kind == "domain" and ip) or (kind == "ip" and not ip):
-            continue
-        k = base_domain(dom) if merge else dom
-        if s and s not in dom.lower():
-            continue
-        a = agg.setdefault(k, {"dest": k, "ip": ip, "bytes": 0, "hosts": set(), "apps": defaultdict(int), "names": set()})
-        a["bytes"] += int(b)
-        a["hosts"].add(host)
-        a["apps"][app] += int(b)
-        a["names"].add(dom)
+    if s:
+        like = f"%{s}%"
+        sel = sel.where(or_(t.domain.like(like), t.base.like(like)))
+    sel = sel.group_by(col).order_by(total.desc()).limit(limit * 5)
+    rows = [r for r in db.execute(sel).all()
+            if kind == "all" or (is_ip(r.dest) if kind == "ip" else not is_ip(r.dest))][:limit]
+    if not rows:
+        return []
+    dests = [r.dest for r in rows]
+    where = (col.in_(dests), t.ts >= start, t.ts < end)
+    apps: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    names: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    for dest, app, b in db.execute(select(col, t.app, total).where(*where).group_by(col, t.app)):
+        apps[dest][app] = int(b)
+    for dest, dom, b in db.execute(select(col, t.domain, total).where(*where).group_by(col, t.domain)):
+        names[dest][dom] = int(b)
     out = []
-    for a in sorted(agg.values(), key=lambda x: x["bytes"], reverse=True)[:limit]:
-        top_app = max(a["apps"], key=a["apps"].get)
-        out.append({"dest": a["dest"], "ip": a["ip"], "bytes": a["bytes"], "hosts": len(a["hosts"]),
-                    "names": len(a["names"]), "app": app_meta(top_app), "name_list": sorted(a["names"])[:20]})
+    for r in rows:
+        a = apps[r.dest]
+        top_app = max(a, key=a.get) if a else ""
+        subs = sorted(names[r.dest].items(), key=lambda x: x[1], reverse=True)
+        out.append({"dest": r.dest, "ip": is_ip(r.dest), "bytes": int(r.b), "hosts": int(r.h),
+                    "names": len(subs), "app": app_meta(top_app) if top_app else None,
+                    "name_list": [d for d, _b in subs[:20]]})
     return out
 
 

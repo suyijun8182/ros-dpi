@@ -104,9 +104,11 @@ def people_list(range: str = Query("today", pattern=RANGES), db: Session = Depen
         select(t.host, func.sum(t.up), func.sum(t.down)).where(t.ts >= start, t.ts < end, t.host.in_(all_hosts or ["-"]))
         .group_by(t.host))}
     cfg = insight.get_config(db)
-    use = insight.analyze_many(db, groups, start, end, cfg)
+    # today 和 last7 两个区间嵌套：访问日志只查一次，两个分析共用
     w0, w1 = timeutil.range_bounds("last7")
-    week = insight.analyze_many(db, groups, w0, w1, cfg)
+    rows = insight.load_rows_multi(db, all_hosts, [(start, end), (w0, w1)]) if all_hosts else []
+    use = insight.analyze_many(db, groups, start, end, cfg, rows=rows)
+    week = insight.analyze_many(db, groups, w0, w1, cfg, rows=rows)
     rows = []
     for pid, p in c["people"].items():
         hs = groups[pid]

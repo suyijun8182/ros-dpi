@@ -167,6 +167,15 @@ def load_rows(db, hosts: list[str] | None, start: int, end: int) -> list[tuple]:
     return db.execute(q).all()
 
 
+def load_rows_multi(db, hosts: list[str] | None, ranges: list[tuple[int, int]]) -> list[tuple]:
+    """多个统计区间共用一次查询（人员列表要算 today + last7，两个区间嵌套时只扫一遍访问日志表）"""
+    if hosts is not None and not hosts:
+        return []
+    start = min(r[0] for r in ranges)
+    end = max(r[1] for r in ranges)
+    return load_rows(db, hosts, start, end)
+
+
 def _is_leisure(app: str, cfg: dict) -> bool:
     cl = engine.classifier
     c = cl.app_info(app).category
@@ -285,8 +294,9 @@ def analyze_hosts(db, hosts: list[str], start: int, end: int, cfg: dict | None =
     return res
 
 
-def analyze_many(db, groups: dict, start: int, end: int, cfg: dict | None = None) -> dict:
-    """groups: {主体 id: [host_key...]}，一次查出所有访问日志再分组计算（人员列表用）"""
+def analyze_many(db, groups: dict, start: int, end: int, cfg: dict | None = None, rows: list | None = None) -> dict:
+    """groups: {主体 id: [host_key...]}，一次查出所有访问日志再分组计算（人员列表用）。
+    rows：调用方已经查出的更大区间的访问日志（如 today + last7 共用一次查询），这里裁到本区间"""
     cfg = cfg or get_config(db)
     hosts = sorted({h for hs in groups.values() for h in hs})
     key = ("many", tuple((k, tuple(sorted(v))) for k, v in sorted(groups.items())), start // 60, end // 60,
@@ -294,8 +304,12 @@ def analyze_many(db, groups: dict, start: int, end: int, cfg: dict | None = None
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_SECONDS:
         return hit[1]
+    if rows is None:
+        rows = load_rows(db, hosts, start, end)
+    else:
+        rows = [r for r in rows if r[2] < end and r[3] >= start]
     by_host = defaultdict(list)
-    for r in load_rows(db, hosts, start, end):
+    for r in rows:
         by_host[r[0]].append(r)
     res = {k: analyze([r for h in hs for r in by_host.get(h, [])], start, end, cfg) for k, hs in groups.items()}
     _cache[key] = (time.time(), res)

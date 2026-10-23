@@ -155,12 +155,18 @@ async function updateNow() {
   try { lib.value = await http.post('/library/update', null, { timeout: 180000 }); await load() } catch (e) { formErr.value = e.message } finally { updating.value = false }
 }
 async function setAuto(v) {
-  await http.put('/settings', { rules_auto_update: v })
-  lib.value.auto = v
+  formErr.value = ''
+  try {
+    await http.put('/settings', { rules_auto_update: v })
+    lib.value.auto = v
+  } catch (e) { formErr.value = e.message }
 }
 
 async function load() {
-  ;[meta.value, rules.value] = await Promise.all([http.get('/meta'), http.get('/rules')])
+  formErr.value = ''
+  try {
+    ;[meta.value, rules.value] = await Promise.all([http.get('/meta'), http.get('/rules')])
+  } catch (e) { formErr.value = e.message; return }
   // 下拉框默认选中第一个应用，避免“添加”按钮莫名其妙地灰着
   if (!f.app_id) {
     const first = meta.value.categories.map(c => meta.value.apps.find(a => a.category === c.id)).find(Boolean)
@@ -168,7 +174,8 @@ async function load() {
   }
 }
 async function loadUnknown() {
-  unknown.value = await http.get('/rules/unknown-domains', { params: { range: unknownRange() } })
+  try { unknown.value = await http.get('/rules/unknown-domains', { params: { range: unknownRange() } }) }
+  catch (e) { /* 未识别域名列表加载失败不阻塞页面 */ }
 }
 onMounted(() => { load(); loadUnknown(); loadLib() })
 watch(() => ui.range, loadUnknown)
@@ -206,12 +213,18 @@ async function add() {
 
 async function del(r) {
   if (!confirm(t('common.confirmDelete'))) return
-  await http.delete(`/rules/${r.id}`)
-  await load()
+  formErr.value = ''
+  try {
+    await http.delete(`/rules/${r.id}`)
+    await load()
+  } catch (e) { formErr.value = e.message }
 }
 
 async function test() {
-  if (testDomain.value.trim()) testRes.value = await http.get('/rules/test', { params: { domain: testDomain.value.trim() } })
+  if (!testDomain.value.trim()) return
+  formErr.value = ''
+  try { testRes.value = await http.get('/rules/test', { params: { domain: testDomain.value.trim() } }) }
+  catch (e) { formErr.value = e.message }
 }
 </script>
 

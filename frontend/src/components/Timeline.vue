@@ -12,7 +12,8 @@
         <span class="kv">{{ t('audit.tl.active') }} <b class="num">{{ duration(d.active_seconds, locale === 'zh') }}</b></span>
       </template>
     </div>
-    <div v-if="!d" class="empty">{{ t('common.loading') }}</div>
+    <div v-if="err" class="empty">{{ err }}</div>
+    <div v-else-if="!d" class="empty">{{ t('common.loading') }}</div>
     <div v-else-if="!d.apps.length" class="empty">{{ t('audit.tl.empty') }}</div>
     <div v-else class="grid-tl">
       <div class="axis"><span class="lab" /><div class="track ticks"><span v-for="h in [0, 3, 6, 9, 12, 15, 18, 21, 24]" :key="h" :style="{ left: h / 24 * 100 + '%' }">{{ h }}</span></div></div>
@@ -43,7 +44,9 @@ const fmtDay = x => `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate
 const today = fmtDay(new Date())
 const day = ref(today)
 const d = ref(null)
+const err = ref('')
 const max = ref(12)
+let seq = 0
 
 const hm = ts => { const x = new Date(ts * 1000); return `${pad(x.getHours())}:${pad(x.getMinutes())}` }
 const seg = s => {
@@ -57,9 +60,16 @@ function shift(n) {
   day.value = fmtDay(x)
 }
 watch([day, () => props.host, () => props.person], async () => {
+  const my = ++seq  // 快速翻日期时，慢的旧响应回来不许覆盖新日期的数据
   d.value = null
+  err.value = ''
   max.value = 12
-  d.value = await http.get('/audit/timeline', { params: { host: props.host || undefined, person: props.person || undefined, day: day.value } })
+  try {
+    const r = await http.get('/audit/timeline', { params: { host: props.host || undefined, person: props.person || undefined, day: day.value } })
+    if (my === seq) d.value = r
+  } catch (e) {
+    if (my === seq) err.value = e.message
+  }
 }, { immediate: true })
 </script>
 

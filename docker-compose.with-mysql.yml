@@ -1,7 +1,11 @@
 # ROS-DPI + 自带 MySQL（适合还没有 MySQL 的用户）
 # 已有 MySQL 请改用 docker-compose.yml。
-# 用法：保存为 docker-compose.yml，改掉标了「必改」的三处，然后 docker compose up -d
-# MySQL 容器首次启动会自动建好 rosdpi 库和账号；这里已写好 DATABASE_URL，网页上不会出现数据库设置，只需设置管理员密码
+# 用法：保存为 docker-compose.yml，在旁边的 .env 文件里设置两个密码（示例见下），把 LAN_CIDRS 改成你的内网网段，然后 docker compose up -d
+#   .env 内容示例：
+#     MYSQL_PASSWORD=改成强密码
+#     MYSQL_ROOT_PASSWORD=改成另一个强密码
+# 不设置密码 compose 会直接报错（避免带着默认密码裸奔上网）。
+# MySQL 容器首次启动会自动建好 rosdpi 库和账号；连接串已写好，网页上不会出现数据库设置，只需设置管理员密码
 services:
   ros-dpi:
     image: suyijun8182/ros-dpi:latest        # 也可用 ghcr.io/suyijun8182/ros-dpi:latest
@@ -16,8 +20,8 @@ services:
       - "37008:37008/udp"   # TZSP：RouterOS 镜像的 DNS 应答和 HTTPS/QUIC 握手包发到这里
     environment:
       TZ: Asia/Shanghai
-      # 「必改」密码与下方 MYSQL_PASSWORD 保持一致
-      DATABASE_URL: mysql+pymysql://rosdpi:rosdpi-change-me@mysql:3306/rosdpi?charset=utf8mb4
+      # 密码取自 .env 里的 MYSQL_PASSWORD，与 MySQL 容器保持一致
+      DATABASE_URL: mysql+pymysql://rosdpi:${MYSQL_PASSWORD:?请在 .env 里设置 MYSQL_PASSWORD}@mysql:3306/rosdpi?charset=utf8mb4
       # 「必改」内网网段，逗号分隔（之后也可在 系统设置 → 网络 里改）
       LAN_CIDRS: 192.168.88.0/24
       # 管理员 admin 的初始密码；留空则首次打开网页时设置
@@ -34,12 +38,13 @@ services:
     image: mysql:8.4
     container_name: ros-dpi-mysql
     restart: unless-stopped
+    mem_limit: 768m                # 与下方 innodb-buffer-pool-size 对齐，小主机上不会吃满内存
     environment:
       TZ: Asia/Shanghai
       MYSQL_DATABASE: rosdpi                    # 首次启动自动创建库和账号，表由 ROS-DPI 自动建立
       MYSQL_USER: rosdpi
-      MYSQL_PASSWORD: rosdpi-change-me          # 「必改」与上方 DATABASE_URL 中的密码一致
-      MYSQL_ROOT_PASSWORD: root-change-me       # 「必改」
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请在 .env 里设置 MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 里设置 MYSQL_ROOT_PASSWORD}
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--innodb-buffer-pool-size=256M"]
     volumes:
       - ./mysql:/var/lib/mysql

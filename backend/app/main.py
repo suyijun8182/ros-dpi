@@ -118,9 +118,9 @@ app = FastAPI(title="ROS-DPI", version=__version__, lifespan=lifespan)
 
 @app.exception_handler(Exception)
 async def _unhandled(request: Request, exc: Exception):
+    # 详情只进日志；返回给客户端的只有异常类型，避免带出内部路径 / SQL 等信息
     print(f"[error] {request.method} {request.url.path}: {exc!r}")
-    msg = (str(exc).splitlines() or [""])[0][:300]
-    return JSONResponse(status_code=500, content={"detail": f"服务器内部错误：{type(exc).__name__}: {msg}"})
+    return JSONResponse(status_code=500, content={"detail": f"服务器内部错误：{type(exc).__name__}"})
 
 
 for r in (setup.router, auth.router, stats.router, admin.router, audit_router.router, people_router.router,

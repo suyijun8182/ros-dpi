@@ -34,7 +34,8 @@ onMounted(() => {
   ro.observe(el.value)
 })
 
-watch(() => props.option, render, { deep: true })
+// option 由父组件的 computed 生成（每次重算都是新对象），浅比较即可；deep 遍历整个配置纯属浪费
+watch(() => props.option, render)
 watch(() => ui.theme, render)
 
 onBeforeUnmount(() => {

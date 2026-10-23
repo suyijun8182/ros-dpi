@@ -51,6 +51,12 @@
       </div>
     </div>
 
+    <!-- 运行状态加载失败：给出错误和重试，而不是空白面板 -->
+    <div class="panel" v-else-if="sysErr && tab === 'status'">
+      <div class="panel-b"><div class="err">{{ sysErr }}</div>
+        <button class="btn sm mt" @click="loadSys">{{ t('common.refresh') }}</button></div>
+    </div>
+
     <!-- 接入自检：读取 RouterOS 的 sniff-tzsp 规则（只读），检查目标端口 / 地址、是否停用、命中数 -->
     <div class="panel" v-if="sys && sys.ros_check && tab === 'access'" id="check">
       <div class="panel-h"><h2>{{ t('check.title') }}</h2><span class="faint small">{{ t('check.hint') }}</span></div>
@@ -206,6 +212,7 @@ const route = useRoute()
 const router = useRouter()
 const s = ref(null)
 const sys = ref(null)
+const sysErr = ref('')
 const lan = ref('')
 const wan = ref('')
 const saved = ref(false)
@@ -231,10 +238,13 @@ const badge = computed(() => ({
 }))
 
 async function loadSys() {
-  sys.value = await http.get('/system')
-  // 接入向导的 HOST_IP：优先用 RouterOS 上已经在正常工作的 DNS 镜像规则的目标地址
-  const tgt = sys.value.ros_check && sys.value.ros_check.target
-  if (tgt && hostIp.value === location.hostname) hostIp.value = tgt
+  sysErr.value = ''
+  try {
+    sys.value = await http.get('/system')
+    // 接入向导的 HOST_IP：优先用 RouterOS 上已经在正常工作的 DNS 镜像规则的目标地址
+    const tgt = sys.value.ros_check && sys.value.ros_check.target
+    if (tgt && hostIp.value === location.hostname) hostIp.value = tgt
+  } catch (e) { sysErr.value = e.message }
 }
 const matchParts = computed(() => (sys.value ? ['proxy', 'conn', 'pair', 'ip', 'none'].map(k => ({ k, v: sys.value.match[k] || 0 })) : []))
 const matchTotal = computed(() => matchParts.value.reduce((n, m) => n + m.v, 0))

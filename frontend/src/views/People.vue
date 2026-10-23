@@ -376,9 +376,12 @@ const choices = ref([])
 const cfgErr = ref('')
 const cfgSaved = ref(false)
 async function loadCfg() {
-  const r = await http.get('/analysis/settings')
-  cfg.value = JSON.parse(JSON.stringify(r.config))
-  choices.value = r.choices
+  err.value = ''
+  try {
+    const r = await http.get('/analysis/settings')
+    cfg.value = JSON.parse(JSON.stringify(r.config))
+    choices.value = r.choices
+  } catch (e) { err.value = e.message }
 }
 const leisureChoices = computed(() => choices.value.filter(c => c.kind === 'group' && !['base', 'unknown'].includes(c.id))
   .concat(choices.value.filter(c => ['short_video', 'shopping', 'live', 'mobile_game', 'social'].includes(c.id) && c.kind === 'category')))

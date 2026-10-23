@@ -11,3 +11,4 @@ __pycache__/
 *.db-wal
 *.db-shm
 项目说明.txt
+/应用统计.png

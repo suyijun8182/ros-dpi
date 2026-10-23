@@ -136,7 +136,8 @@ def test_upload_rule_syslog_and_retention(monkeypatch):
         flow("192.168.88.91", "203.0.113.91", 7101, 5000, mac, now - 1000)          # 上行 5000
         flow("192.168.88.91", "203.0.113.91", 7101, 90000, mac, now - 1000, down=True)  # 下行不算
         engine.flush(now - 900)
-        ev = [e for e in c.get("/api/audit/events?range=today", headers=h).json()["rows"]
+        # 事件时间是 now-900：午夜前后 15 分钟内运行时它会落在昨天，用 last7 保证总能查到
+        ev = [e for e in c.get("/api/audit/events?range=last7", headers=h).json()["rows"]
               if e["host"] == mac and e["rule"] == "大流量外发"]
         assert len(ev) == 1 and ev[0]["bytes"] == 5000  # 只算上行
         engine.flush(now)  # 5 分钟没有新流量：访问结束，外发一条 Syslog

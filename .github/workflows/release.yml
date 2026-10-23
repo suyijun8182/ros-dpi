@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -20,7 +24,10 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"; VER="${TAG#v}"
           NOTES=$(awk -v v="## [$VER]" 'index($0,v)==1{f=1;next} /^## \[/{if(f)exit} f' CHANGELOG.md)
-          [ -n "$NOTES" ] || NOTES="详见提交记录。"
+          if [ -z "$NOTES" ]; then
+            echo "::error title=CHANGELOG 缺少 [$VER] 段落::推 tag 前先在 CHANGELOG.md 里写好这个版本的说明"
+            exit 1
+          fi
           {
             echo '### 升级'
             echo
