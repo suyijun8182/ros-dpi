@@ -109,8 +109,8 @@ export default {
     patternHint: { domain: '如 example.com（含子域名）', cidr: '如 1.2.3.0/24', port: '如 tcp/8080 或 udp/3000-3010' },
     existingApp: '已有应用', newApp: '新建应用', appId: '应用 ID（小写字母/数字/下划线）', appName: '应用名称',
     classify: '归类', test: '测试域名', testResult: '识别为：{app}', testNone: '未命中任何域名规则', bytes: '流量',
-    reclassify: '重算历史分类', reclassifyHint: '规则或识别库升级后，把近 31 天的历史流量按新规则重新归类（按天统计）',
-    reclassifyConfirm: '按当前规则重算历史分类？会把近 31 天里归类变化的历史流量搬到新的应用（可能需要十几秒）。',
+    reclassify: '重算历史分类', reclassifyHint: '规则或识别库升级后，把近 31 天（不含今天）的历史流量按新规则重新归类（按天统计）；只把笼统分类升级成具体应用',
+    reclassifyConfirm: '按当前规则重算历史分类？会把近 31 天（不含今天，今天的流量已按新规则实时统计）里能认出具体应用的笼统分类流量搬过去（可能需要十几秒）。',
     reclassifying: '重算中…', reclassifyDone: '已重算：搬移 {b} 字节（{s} 秒）',
   },
   lib: {

@@ -108,11 +108,7 @@ class Classifier:
             self._add(a["id"], a.get("domains", []), [], [], first_wins=True)
             for d in a.get("full", []):
                 self.full.setdefault(d, a["id"])
-        # blackmatrix7 新增的应用（规则运行时下载，见 lists.py；对应关系在 bm7_map.yaml）
-        from app.classify.lists import lists as bm7
-        for aid, a in bm7.map["apps"].items():
-            if aid not in self.apps and a.get("category") in self.categories:
-                self.apps[aid] = App(aid, str(a["name"]), str(a.get("name_en", a["name"])), a["category"])
+        self._sync_list_apps()
         self.apps[UNKNOWN_APP] = App(UNKNOWN_APP, "其他", "Other", "unknown")
 
         custom_nets, custom_ports = [], []
@@ -135,6 +131,14 @@ class Classifier:
         self.ports = custom_ports + self.ports
         self._cache: dict[tuple, str] = {}
         self._ver = None
+
+    def _sync_list_apps(self):
+        """blackmatrix7 新增的应用（规则运行时下载，见 lists.py；对应关系在 bm7_map.yaml，另有上游新目录自动登记的）。
+        识别库重新加载后也调一次：自动登记的新应用不用重启就生效"""
+        from app.classify.lists import lists as bm7
+        for aid, a in bm7.map["apps"].items():
+            if aid not in self.apps and a.get("category") in self.categories:
+                self.apps[aid] = App(aid, str(a["name"]), str(a.get("name_en", a["name"])), a["category"])
 
     def _add(self, app_id, domains, cidrs, ports, first_wins):
         for d in domains:
@@ -181,6 +185,7 @@ class Classifier:
         if ver != self._ver:   # 第三方库重新加载过：之前的结果作废
             self._cache.clear()
             self._ver = ver
+            self._sync_list_apps()
         key = (remote_ip, proto, port, qname, cname)
         hit = self._cache.get(key)
         if hit:

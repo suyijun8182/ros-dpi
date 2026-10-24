@@ -6,7 +6,7 @@ from fastapi import Request
 
 from app.models import OpLog
 
-SECRET_KEYS = {"singbox_secret", "password", "old_password", "new_password", "token", "secret"}
+SECRET_KEYS = {"singbox_secret", "adguard_password", "password", "old_password", "new_password", "token", "secret"}
 
 
 def client_ip(request: Request | None) -> str:

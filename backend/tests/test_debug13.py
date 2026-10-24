@@ -9,7 +9,7 @@ from app.classify import Classifier
 from app.engine import Engine
 from app.reclass import reclassify
 
-DAY = 1792900000  # 2026-10-25 附近
+DAY = 1792900000 - 7 * 86400  # 一周前（重算只处理今天以前的数据）
 HOST = "IP:192.168.8.20"
 
 
@@ -135,9 +135,8 @@ def test_reclass_moves_history():
         s.add(HostDomainDay(ts=DAY, host=HOST, domain="portal.example.cn", app="cn_net", base=None, bytes=100))
         s.commit()
 
-        class _C:
-            @staticmethod
-            def classify(ip, proto, port, qname, cname):
+        class _C(Classifier):
+            def classify(self, ip, proto, port, qname, cname):
                 if qname == "v.douyin.com":
                     return "douyin"
                 return "cn_net"

@@ -109,8 +109,8 @@ export default {
     patternHint: { domain: 'e.g. example.com (includes subdomains)', cidr: 'e.g. 1.2.3.0/24', port: 'e.g. tcp/8080 or udp/3000-3010' },
     existingApp: 'Existing app', newApp: 'New app', appId: 'App ID (lowercase, digits, underscore)', appName: 'App name',
     classify: 'Classify', test: 'Test a domain', testResult: 'Matches: {app}', testNone: 'No domain rule matches', bytes: 'Traffic',
-    reclassify: 'Re-classify history', reclassifyHint: 'After rules or libraries change, re-attribute the last 31 days of traffic under the new rules (daily stats)',
-    reclassifyConfirm: 'Re-classify history under the current rules? Traffic whose classification changed will be moved to the new app (may take a while).',
+    reclassify: 'Re-classify history', reclassifyHint: 'After rules or libraries change, re-attribute the last 31 days (excluding today) under the new rules (daily stats); only upgrades vague categories to specific apps',
+    reclassifyConfirm: 'Re-classify history under the current rules? Vague traffic from the last 31 days (excluding today, which is already live-classified) that now maps to a specific app will be moved (may take a while).',
     reclassifying: 'Re-classifying…', reclassifyDone: 'Done: moved {b} ({s}s)',
   },
   lib: {

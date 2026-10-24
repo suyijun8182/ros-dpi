@@ -27,7 +27,7 @@
   - **日报 / 周报**和**操作日志**。
 - **管控命令**：在人员或终端详情里，按应用、时段生成 RouterOS 命令（封禁应用、定时断网、限速），附撤销命令。ROS-DPI 只生成命令，不会修改路由器。
 - **识别规则**：按域名后缀、IP 段、端口自定义识别规则；列出“未识别域名 Top”，一键归类；查看识别库的版本和更新状态。
-- **系统设置**：接入与自检（检查 RouterOS 上的镜像规则）、外部数据源（sing-box / MosDNS）、**日志与留存**（Syslog 外发、各类数据保留天数、数据库占用）、**用户管理**（管理员可以修改一切；普通用户只读，可以改自己的密码）。
+- **系统设置**：接入与自检（检查 RouterOS 上的镜像规则）、外部数据源（sing-box / MosDNS / AdGuard Home）、**日志与留存**（Syslog 外发、各类数据保留天数、数据库占用）、**用户管理**（管理员可以修改一切；普通用户只读，可以改自己的密码）。
 - 顶栏功能搜索（终端、IP、MAC、应用、页面），按 / 键聚焦。中英双语，深浅色主题，手机可用。
 
 ![应用统计](docs/images/apps-light.png)
@@ -205,6 +205,8 @@ MySQL 第一次初始化需要 20～60 秒。
 
 应用识别靠三份库：内置规则库（手工维护，随版本更新）、[v2fly/domain-list-community](https://github.com/v2fly/domain-list-community)（每天自动检查更新，自检通过后热加载）、[iptoasn.com](https://iptoasn.com) 的 IP 归属库（每天自动下载，也用来显示国家 / 地区）。三者的版本和状态在 **识别规则 → 识别库** 查看，也可以关闭自动更新。终端类型识别另外用 IEEE 公开的 MAC 厂商库（OUI，每 30 天更新）。自动更新需要容器能访问外网；文件保存在 `./data` 卷里。没有外网时设 `ASN_DB=false`、`OUI_DB=false`，其余功能不受影响。
 
+blackmatrix7 上游新增的规则目录会自动登记：先下载，再用现有识别库给它的域名和 IP 段“投票”——多数属于某个已有应用就并入，多数属于同一大类就建该类应用，都不够才按目录名猜；公司级大杂烩（Tencent、Google 等）和广告 / 隐私列表不登记。识别库有变化或过了零点，会自动把今天以前的历史流量按新规则重算（只把 HTTPS / 国内网站 / 未识别这类笼统分类升级成具体应用，不会降级）；**识别规则** 页也可以手动执行。
+
 世界地图使用 [Natural Earth](https://www.naturalearthdata.com/)（公有领域）的简化数据。
 
 ### 环境变量
@@ -277,7 +279,7 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
   - **Daily / weekly reports** and an **operation log**.
 - **Control commands**: generate RouterOS commands that block apps, block internet on a schedule or set rate limits for a person or device, with undo commands. ROS-DPI never writes to the router.
 - **Rules**: custom domain / CIDR / port rules, top unidentified domains, and library versions and update status.
-- **Settings**: setup & self-check of the RouterOS mirror rules, external sources (sing-box / MosDNS), **logging & retention** (Syslog forwarding, retention per data type, database usage), and **users** (admins change everything; regular users are read-only).
+- **Settings**: setup & self-check of the RouterOS mirror rules, external sources (sing-box / MosDNS / AdGuard Home), **logging & retention** (Syslog forwarding, retention per data type, database usage), and **users** (admins change everything; regular users are read-only).
 - Chinese and English UI, light and dark themes, works on phones.
 
 **How it works.** RouterOS exports IPFIX (`/ip traffic-flow`) for byte counts, and mirrors DNS answers plus the first packets of each HTTPS/QUIC connection via `sniff-tzsp`. The TLS / QUIC handshake carries the target domain (SNI) per connection; DNS answers map remote IPs back to the domain the client looked up. A rule library maps domains to apps. An optional read-only REST user provides hostnames, IP-to-MAC, WAN rate and LAN prefixes. Data is aggregated per minute, hour and day into MySQL.

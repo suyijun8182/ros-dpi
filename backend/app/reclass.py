@@ -5,23 +5,38 @@
 app 标记同步改掉（保证重复执行幂等）。host_domain_day 只覆盖有域名、或进了当分钟 Top30 IP 的流量，
 其余流量保持原分类；traffic_minute / traffic_hour 不动，随保留期自然滚动。
 
-纯 IP 的历史行会用 dns_cache 反查域名再分类（嗅探 / MosDNS / AdGuard Home 积累的映射）——DNS 缓存
-会过期，所以已经归到具体应用、又拿不到新域名证据的行保持不动，避免缓存过期让历史分类倒退。
+只重算今天以前的数据：今天的行每分钟落库都会把 app 改回实时分类、字节继续累加，重算今天会把同一批字节
+反复搬走，还会和落库争写同一行。今天的流量本来就按最新规则实时统计，过了零点由自动重算补上。
 
-识别库更新 / DNS 映射积累后自动重算：fingerprint() 覆盖各层库的规模和 DNS 缓存行数，指纹变了才执行
-（auto_reclassify），识别规则页的手动「重算历史分类」直接调 reclassify()。
+历史行只存了域名（或 IP），没有端口、目标 IP、sing-box 规则这些实时信号，所以只“升级”不“降级”：
+- 新结果是笼统分类（HTTPS / 国内网站 / 未识别…）的不搬，免得把实时认出的应用改回笼统分类；
+- 原来就是笼统分类的，认出具体应用就搬；
+- 原来已是具体应用的，只有域名规则直接命中另一个应用时才改（例如识别库把某域名改归了别的应用）。
+纯 IP 的历史行用 dns_cache 反查域名（嗅探 / MosDNS / AdGuard Home 积累的映射）再按上面的规则判断。
+
+自动重算（auto_reclassify）：fingerprint() 覆盖各层库的版本 / 规模和日期，识别库变了或过了零点才执行；
+识别规则页的手动「重算历史分类」直接调 reclassify()。
 """
 import ipaddress
 import time
 from collections import defaultdict
 
-from sqlalchemy import func, select
+from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 
+from app import timeutil
+from app.classify import GENERIC_APPS, UNIDENTIFIED_CATEGORIES, WEAK_PREFIXES
 from app.models import DnsCache, HostDomainDay, Setting, TrafficDay
 
 FP_KEY = "reclass_fp"
-# 纯 IP 行没有域名证据时，只有原本就归在这些笼统应用里的才重算（ASN / IP 段升级的直接受益者）
-GENERIC_OLD = {"cn_net", "cn_web", "other", "unknown", "https", "quic", "http", "web", "site"}
+# 只说明协议、地区或“是个网站”的笼统分类：可以被升级成具体应用，但重算不会把行改成它们
+VAGUE_APPS = GENERIC_APPS | {"cn_net", "cn_web", "unknown"}
+
+
+def _vague(classifier, app: str | None) -> bool:
+    if not app or app in VAGUE_APPS or app.startswith(WEAK_PREFIXES):
+        return True
+    return classifier.app_info(app).category in UNIDENTIFIED_CATEGORIES
 
 
 def _is_ip(s: str) -> bool:
@@ -32,6 +47,24 @@ def _is_ip(s: str) -> bool:
         return False
 
 
+def _deadlock(e: Exception) -> bool:
+    """MySQL 死锁（1213）或锁等待超时（1205）：落库任务每分钟在写同一批表，撞上重试即可"""
+    s = str(e)
+    return "(1213" in s or "(1205" in s
+
+
+def reclassify(engine, db, before: int | None = None, attempts: int = 3) -> dict:
+    """重算 before（默认今天零点）以前的历史分类"""
+    for i in range(attempts):
+        try:
+            return _reclassify_once(engine, db, before)
+        except OperationalError as e:
+            db.rollback()
+            if i == attempts - 1 or not _deadlock(e):
+                raise
+            time.sleep(2 + i * 2)
+
+
 def _dns_domain_map(db) -> dict[str, str]:
     """未过期的 IP→域名映射（嗅探 / MosDNS / AdGuard Home 积累的），给纯 IP 的历史行反查域名"""
     now = int(time.time())
@@ -39,30 +72,38 @@ def _dns_domain_map(db) -> dict[str, str]:
     return dict(rows)
 
 
-def reclassify(engine, db) -> dict:
+def _new_app(classifier, dom: str, old_app: str, cache: dict) -> str | None:
+    """按现在的规则给一行历史重新归类；不该改时返回 None（规则见模块说明）"""
+    if _is_ip(dom):
+        qname = cache.get(dom)
+        new_app = classifier.classify(dom, 6, 0, qname, None)
+    else:
+        qname = dom
+        new_app = classifier.classify("0.0.0.0", 6, 443, dom, None)
+    if not new_app or new_app == old_app or _vague(classifier, new_app):
+        return None
+    if _vague(classifier, old_app):
+        return new_app
+    # 原来已是具体应用：只认域名规则的直接证据（IP 段 / ASN / 端口当时按真实目标判断，历史行里没有这些信息）
+    return new_app if qname and classifier.match_domain(qname) == new_app else None
+
+
+def _reclassify_once(engine, db, before: int | None) -> dict:
     t0 = time.time()
     classifier = engine.classifier
+    before = timeutil.day_bucket(time.time()) if before is None else before
     cache = _dns_domain_map(db)
     moves: dict = defaultdict(lambda: defaultdict(int))  # (ts, host, 旧应用) -> {新应用: 字节}
     marks: list[dict] = []
     rows = db.execute(
         select(HostDomainDay.ts, HostDomainDay.host, HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)
+        .where(HostDomainDay.ts < before)
     ).all()
     for ts, host, dom, old_app, b in rows:
         if not b:
             continue
-        if _is_ip(dom):
-            qname = cache.get(dom)
-            if qname:
-                new_app = classifier.classify(dom, 6, 0, qname, None)
-            elif old_app in GENERIC_OLD:
-                new_app = classifier.classify(dom, 6, 0, None, None)
-            else:
-                continue   # 已归到具体应用、又没有新的域名证据：保持不动（DNS 缓存过期不应让历史倒退）
-        else:
-            new_app = classifier.classify("0.0.0.0", 6, 443, dom, None)
-        new_app = new_app or "other"
-        if new_app != old_app:
+        new_app = _new_app(classifier, dom, old_app, cache)
+        if new_app:
             moves[(int(ts), host, old_app)][new_app] += int(b)
             marks.append({"ts": int(ts), "host": host, "domain": dom, "app": new_app})
     if marks:
@@ -117,19 +158,18 @@ def reclassify(engine, db) -> dict:
 
 
 def fingerprint(engine, db) -> str:
-    """识别规则的有效指纹：任何一层库变了（v2fly 提交、第三方库规模、ASN 行数）或 DNS 映射积累变多都不一样"""
+    """识别规则的有效指纹：任何一层库变了（v2fly 提交、第三方库规模、ASN 行数）或过了零点（昨天成了可重算的历史，
+    期间积累的 DNS 映射也一并用上）都不一样。不再用 DNS 缓存行数：它几乎时刻在变，等于每次都全量重算"""
     from app.asn import asndb
     from app.classify.lists import lists as extra_lists
     from app.classify.updater import updater
-    now = int(time.time())
-    dns_n = db.scalar(select(func.count()).select_from(DnsCache).where(DnsCache.expires > now)) or 0
     libs = "|".join(f"{r['id']}:{r.get('domains', r.get('rules', 0))}" for r in extra_lists.rows())
-    return "|".join([f"dns{dns_n}", f"asn{asndb.rows}", f"v2{updater.state.get('latest') or ''}",
-                     f"apps{len(engine.classifier.apps)}", libs])
+    return "|".join([f"day{timeutil.day_bucket(time.time())}", f"asn{asndb.rows}",
+                     f"v2{updater.state.get('latest') or ''}", f"apps{len(engine.classifier.apps)}", libs])
 
 
 def auto_reclassify(engine, db) -> dict | None:
-    """识别库更新 / DNS 映射积累后自动重算（debug14）：指纹没变就什么都不做，变了才重算并记住新指纹"""
+    """识别库更新或过了零点后自动重算（debug14）：指纹没变就什么都不做，变了才重算并记住新指纹"""
     fp = fingerprint(engine, db)
     row = db.get(Setting, FP_KEY)
     if row is not None and row.value == fp:
