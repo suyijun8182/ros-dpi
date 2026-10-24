@@ -297,6 +297,15 @@ def library_update(request: Request, user: str = Depends(current_user), db: Sess
     from app.classify.lists import lists
     lists.update(force=True)
     oplog.log(db, request, user, "library_update", {"result": updater.state.get("result")})
+    try:
+        from app.reclass import auto_reclassify
+        res = auto_reclassify(engine, db)
+        if res:
+            db.commit()
+            oplog.log(db, request, user, "reclassify", res)
+    except Exception as e:  # noqa: BLE001  重算失败不影响更新结果
+        db.rollback()
+        print(f"[reclass] 手动更新后自动重算失败：{type(e).__name__}: {e}", flush=True)
     return _library(db)
 
 

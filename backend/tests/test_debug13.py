@@ -65,6 +65,16 @@ def test_adguard_parse_entry():
     assert p._parse_entry({"domain": "nx.example.com", "client": "192.168.9.6"}) is None
 
 
+def test_adguard_entries_shapes():
+    """新版 AdGuard 返回 {"data": [...]}（线上实测），旧版 {"entries": [...]}，更老的直接数组"""
+    p = integrations.AdguardPoller(_engine())
+    assert p._entries({"data": [1, 2], "oldest": "x"}) == [1, 2]
+    assert p._entries({"entries": [3]}) == [3]
+    assert p._entries([4]) == [4]
+    assert p._entries({}) == []
+    assert p._entries({"data": None}) == []
+
+
 class _FakeEngine:
     def __init__(self):
         self.calls = []

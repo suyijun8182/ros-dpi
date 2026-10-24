@@ -5,6 +5,9 @@
 - Hagezi DNS blocklists（GPL-3.0）：成人、博彩、VPN/代理、社交、广告、各厂商设备遥测等专项分类列表。每天更新。
 - UT1（Université Toulouse Capitole，CC BY-SA 4.0）：游戏、购物、新闻、求职、银行等分类列表。每天更新。
 
+上游出现新的目录 / 列表时自动登记成新应用（debug14）：类别按目录名猜测，登记结果存在
+data/lists/rules_auto.yaml，下次更新自动带上；手工映射仍在 bm7_map.yaml，优先级更高。
+
 识别顺序和权重（详见 app/classify/__init__.py）：
 - blackmatrix7 是应用级：和内置库 / v2fly 一起按域名匹配，匹配到的后缀更长者赢，一样长时内置库和 v2fly 优先。
 - Hagezi / UT1 是分类级：只知道是哪类网站，排在所有应用级信号（域名、IP 段、端口、ASN）之后、国内域名列表之前；
@@ -16,6 +19,7 @@
 import hashlib
 import ipaddress
 import os
+import re
 import threading
 import time
 import urllib.parse
@@ -32,6 +36,47 @@ MAP_FILE = os.path.join(os.path.dirname(__file__), "bm7_map.yaml")
 BM7_URL = "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/{0}/{0}.list"
 HAGEZI_URL = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/{0}-onlydomains.txt"
 UT1_URL = "https://raw.githubusercontent.com/olbat/ut1-blacklists/master/blacklists/{0}/domains"
+# 上游目录清单（自动发现用，每次更新最多查一次）
+BM7_LIST_API = "https://api.github.com/repos/blackmatrix7/ios_rule_script/contents/rule/Clash"
+HAGEZI_LIST_API = "https://api.github.com/repos/hagezi/dns-blocklists/contents/wildcard"
+UT1_LIST_API = "https://api.github.com/repos/olbat/ut1-blacklists/contents/blacklists"
+LIST_API = {"bm7": BM7_LIST_API, "hagezi": HAGEZI_LIST_API, "ut1": UT1_LIST_API}
+# bm7 的汇总 / 区域 / 安全类目录：不是单个应用，不自动登记
+BM7_SKIP = {
+    "Global", "Proxy", "Direct", "Lan", "Reject", "AdBlock", "Advertising", "AdvertisingLite", "AntiAd",
+    "China", "ChinaMedia", "ChinaTest", "ChinaMax", "ChinaMaxNoIP", "ChinaMaxNoMedia", "ChinaNoMedia",
+    "ChinaIPs", "ChinaIPsBGP", "ChinaDNS", "DomesticIPs", "PublicDNS", "LocalDNS", "PrivateDNS", "DNS",
+    "GoogleDNS", "ProxyGFW", "GFW", "GreatFire", "AntiPolicy", "Hijacking", "PotentialMalware", "Safety",
+    "Spam", "TrackersList", "ZoneTelekom", "Classic", "3Type", "Cloud", "GlobalMedia", "IPTVOther",
+    "Speedtest", "MicrosoftEdge", "AllAI", "Download", "Crypto", "Cryptocurrency", "Developer", "Anime",
+    "AsianMedia", "Game", "Mail", "GoogleSearch", "Antutu", "Region", "TldCheap", "TldFake",
+}
+# 目录名 / 列表名 → 类别的猜测规则（debug14：上游新增内容自动归类；猜不出 bm7 归「常用网站」、分类列表跳过）
+GUESS = [
+    (r"adult|porn|nsfw|xxx", "adult"), (r"gambl|bet|casino|lotter", "gambling"),
+    (r"spotify|music|radio|podcast|tidal|deezer|netease_music|kugou|kuwo", "music"),
+    (r"(^|[-_])(live|stream)([-_]|$)|twitch|douyu|huya|yy", "live"),
+    (r"video|tv|movie|film|cinema|anime|manga|mgtv|youku|iqiyi|bilibili|netflix|hbo|disney|emby|iptv|cctv", "video"),
+    (r"game|steam|epic|blizzard|riot|xbox|playstation|nintendo|4399|9game|taptap|mihoyo", "game"),
+    (r"shop|taobao|tmall|jd|jingdong|pinduoduo|suning|vipshop|aliexpress|amazon|ebay|shopee|gome", "shopping"),
+    (r"bank|icbc|ccb|cmb|abc|psbc|boc|bocom|citic|spdb|cib|ceb|cgb|spdb|unionpay|alipay|tenpay|paypal|pay", "bank"),
+    (r"mail|smtp|imap|webmail", "mail"),
+    (r"news|media|press|bbc|cnn|reuters|nytimes", "news"),
+    (r"social|weibo|twitter|facebook|instagram|tiktok|douyin|reddit|forum|snapchat|linkedin|pin", "social"),
+    (r"wechat|weixin|whatsapp|telegram|line|slack|dingtalk|feishu|skype|zoom|meeting", "im"),
+    (r"openai|claude|gemini|copilot|chatgpt|anthropic|perplexity|midjourney|hf|\bai\b", "ai"),
+    (r"cloud|drive|pan|onedrive|dropbox|aliyundrive|quark|s3|oss", "cloud"),
+    (r"github|gitlab|gitcode|gitee|docker|npm|python|jetbrains|dev", "dev"),
+    (r"proxy|vpn|tor|gfw|warp|outline|shadowsocks|v2ray|trojan|clash", "proxy"),
+    (r"travel|trip|hotel|flight|airline|booking|ctrip|qunar|fliggy|12306|ticket", "travel"),
+    (r"edu|mooc|university|course|learn|school|xueersi|yuanfudao|zuoyebang", "education"),
+    (r"health|hospital|medic|pharma|doctor|clinic", "life"),
+    (r"food|takeaway|waimai|meituan|eleme|restaurant|recipe", "life"),
+    (r"cdn|static|cache|cloudfront|akamai|cloudflare|fastly|edge", "cdn"),
+    (r"tracker|warez|pt|download|thunder|xunlei", "download"),
+    (r"mine|mining|pool|nicehash", "mining"),
+    (r"remote|ssh|rdp|vnc|teamviewer|todesk|rustdesk|anydesk", "remote"),
+]
 
 # 分类列表：(列表名, 归到的应用)。顺序就是同一域名在多个列表里时的优先级
 HAGEZI = [(f"native.{v}", "gen_telemetry") for v in
@@ -138,6 +183,15 @@ def load_map() -> dict:
     return {"owner": owner, "apps": m.get("apps") or {}}
 
 
+def guess_category(name: str) -> tuple[str, bool]:
+    """按目录名 / 列表名猜类别（debug14 自动登记用）。返回 (类别, 是否有把握)；猜不出归「常用网站」"""
+    low = name.lower()
+    for pat, cat in GUESS:
+        if re.search(pat, low):
+            return cat, True
+    return "site", False
+
+
 class Lists:
     def __init__(self):
         self.lock = threading.Lock()
@@ -148,22 +202,53 @@ class Lists:
         self.cat = _HashTable()
         self.state: dict[str, dict] = {}   # 来源 id -> {count, apps, updated, error}
         self._map = None
+        self._auto: dict = {}              # 自动登记的应用（debug14），存 data/lists/rules_auto.yaml
+        self._load_auto()
 
     @property
     def map(self) -> dict:
         if self._map is None:
-            self._map = load_map()
+            base = load_map()
+            for aid, a in self._auto.items():
+                base["apps"].setdefault(aid, {"category": a["category"], "name": a["name"], "name_en": a["name_en"]})
+                if a.get("source") == "bm7" and a.get("dir"):
+                    base["owner"].setdefault(a["dir"], aid)
+            self._map = base
         return self._map
 
     def _dir(self, sid: str) -> str:
         return os.path.join(os.environ.get("DATA_DIR", "data"), "lists", sid)
 
+    def _auto_file(self) -> str:
+        return os.path.join(self._dir("bm7"), "rules_auto.yaml")
+
+    def _load_auto(self):
+        try:
+            with open(self._auto_file(), encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            self._auto = data.get("apps") or {}
+        except (OSError, yaml.YAMLError):
+            self._auto = {}
+
+    def _save_auto(self):
+        path = self._auto_file()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("# 自动发现并登记的第三方规则（debug14）：上游出现新目录 / 新列表时自动生成。\n"
+                    "# 手工映射在镜像内的 bm7_map.yaml，优先级更高；删除本文件后，下次更新按当时的上游重新生成。\n")
+            yaml.safe_dump({"apps": self._auto}, f, allow_unicode=True, sort_keys=True)
+
+    def _spec(self, sid: str) -> list[tuple[str, str]]:
+        """分类列表的 (列表名, 应用)：手工映射在前，自动登记的追加在后面"""
+        base = HAGEZI if sid == "hagezi" else UT1
+        extra = [(a["list"], aid) for aid, a in self._auto.items() if a.get("source") == sid]
+        return list(base) + extra
+
     def _files(self, sid: str) -> list[tuple[str, str]]:
         """(本地文件名, 下载地址)"""
         if sid == "bm7":
             return [(f"{n}.list", BM7_URL.format(urllib.parse.quote(n))) for n in sorted(self.map["owner"])]
-        spec, url = (HAGEZI, HAGEZI_URL) if sid == "hagezi" else (UT1, UT1_URL)
-        return [(f"{n}.txt", url.format(n)) for n, _app in spec]
+        return [(f"{n}.txt", (HAGEZI_URL if sid == "hagezi" else UT1_URL).format(n)) for n, _app in self._spec(sid)]
 
     # ---------- 加载 ----------
     @staticmethod
@@ -201,9 +286,8 @@ class Lists:
         return suffix, full, ips, n, len(apps)
 
     def _load_cat(self, sid: str) -> list[tuple[str, list[str]]]:
-        spec = HAGEZI if sid == "hagezi" else UT1
         out = []
-        for name, app in spec:
+        for name, app in self._spec(sid):
             doms = []
             for line in self._read(os.path.join(self._dir(sid), f"{name}.txt")):
                 s = line.strip().lower().lstrip("*.").strip(".")
@@ -250,6 +334,11 @@ class Lists:
     def update(self, force: bool = False) -> bool:
         """各来源满了更新周期（bm7 一周、其余一天）就重新下载；单个文件失败保留旧文件"""
         changed = False
+        if _enabled("bm7") and (force or time.time() - self._stamp("bm7") >= MAX_AGE["bm7"]):
+            try:
+                self.discover()   # debug14：上游新增的目录 / 列表先登记，同一轮就会下载
+            except Exception:  # noqa: BLE001  发现不了（没外网 / API 限流）不影响本轮更新
+                pass
         for sid in ("bm7", "hagezi", "ut1"):
             if not _enabled(sid):
                 continue
@@ -262,6 +351,59 @@ class Lists:
         if changed or not self.state:
             self.load()
         return changed
+
+    def discover(self) -> int:
+        """上游仓库出现新的规则目录 / 分类列表时自动登记成应用（debug14）。返回新登记个数。"""
+        added = self._discover_bm7() + self._discover_spec("hagezi") + self._discover_spec("ut1")
+        if added:
+            self._save_auto()
+            self._map = None   # 让 map 重新合并，新应用 / 新目录立即生效
+        return added
+
+    @staticmethod
+    def _list_names(url: str, kind: str) -> set[str]:
+        """GitHub 目录清单：kind=dir 取目录名；kind=file 取去掉 onlydomains.txt 后缀的文件名"""
+        r = httpx.get(url, timeout=30.0, headers={"User-Agent": "ros-dpi", "Accept": "application/vnd.github+json"})
+        r.raise_for_status()
+        out = set()
+        for x in r.json():
+            name = x.get("name", "")
+            if x.get("type") == kind and not name.startswith("."):
+                if kind == "file" and name.endswith("-onlydomains.txt"):
+                    name = name[:-len("-onlydomains.txt")]
+                out.add(name)
+        return out
+
+    def _register(self, source: str, names: set[str], strict: bool) -> int:
+        added = 0
+        known = set(self.map["owner"])
+        for n in sorted(names):
+            if n in known or n in BM7_SKIP:
+                continue
+            cat, confident = guess_category(n)
+            if strict and not confident:
+                continue   # 分类列表猜不出类别就跳过：宁缺毋滥，等手工映射
+            aid = "gen_" + re.sub(r"[^a-z0-9]+", "_", n.lower()).strip("_") if source != "bm7" \
+                else "bm7_" + re.sub(r"[^a-z0-9]+", "_", n.lower()).strip("_")
+            if aid in self._auto or aid in self.map["apps"] or aid in self.map["owner"].values():
+                continue
+            entry = {"category": cat, "name": n, "name_en": n, "source": source}
+            if source == "bm7":
+                entry["dir"] = n
+            else:
+                entry["list"] = n
+            self._auto[aid] = entry
+            known.add(n)
+            added += 1
+        return added
+
+    def _discover_bm7(self) -> int:
+        return self._register("bm7", self._list_names(LIST_API["bm7"], "dir"), strict=False)
+
+    def _discover_spec(self, sid: str) -> int:
+        if sid == "hagezi":
+            return self._register("hagezi", self._list_names(LIST_API[sid], "file"), strict=True)
+        return self._register("ut1", self._list_names(LIST_API[sid], "dir"), strict=True)
 
     def _fetch_all(self, sid: str) -> tuple[int, int]:
         d = self._dir(sid)

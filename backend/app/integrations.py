@@ -259,9 +259,14 @@ class AdguardPoller:
             self._connect()
             r = self._client.get("/control/querylog", params={"limit": self.PAGE, "response_status": "all"})
         r.raise_for_status()
-        data = r.json()
-        # 新版本返回 {"entries": [...]}，旧版本直接返回数组
-        return (data.get("entries") if isinstance(data, dict) else data) or []
+        return self._entries(r.json())
+
+    @staticmethod
+    def _entries(data) -> list:
+        # 新版本返回 {"data": [...]}，旧版本 {"entries": [...]} 或直接数组
+        if isinstance(data, dict):
+            return data.get("data") or data.get("entries") or []
+        return data or []
 
     def poll(self):
         if not self.enabled:

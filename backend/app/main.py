@@ -46,7 +46,8 @@ def _on_db_ready():
     """数据库连接成功后（启动时或安装向导保存后）执行。各步互不依赖：一步出错只记日志，不挡住后面的
     （0.6.0 / 0.6.1 的主域名回填出错时，后面的外部数据源配置、自定义规则都没加载，外部数据源显示“未启用”）"""
     ensure_admin()   # 建管理员失败要报出来（安装向导靠这个提示）
-    for name, fn in (("load_state", engine.load_state), ("apply_settings", _apply_saved)):
+    for name, fn in (("load_state", engine.load_state), ("apply_settings", _apply_saved),
+                     ("auto_reclass", _auto_reclassify)):
         try:
             fn()
         except Exception as e:  # noqa: BLE001
@@ -68,6 +69,19 @@ def _auto_update_rules():
     if _auto_update_on():
         from app.classify.updater import updater
         updater.check(reload=engine.reload_classifier)
+
+
+def _auto_reclassify():
+    """识别库更新 / DNS 映射积累后自动重算历史分类（debug14）：指纹没变就不动，变了才重算"""
+    if not _auto_update_on():
+        return
+    from app.reclass import auto_reclassify
+    with database.session() as db:
+        res = auto_reclassify(engine, db)
+        db.commit()
+    if res:
+        print(f"[reclass] 识别规则有更新，已自动重算历史分类：搬移 {res['bytes_moved'] / 1e6:.1f} MB"
+              f"（{res['seconds']}s）", flush=True)
 
 
 def _auto_update_db(fn):
@@ -104,6 +118,8 @@ async def lifespan(app: FastAPI):
     sched.add_job(_safe(integrations.singbox.poll, "singbox"), "interval", seconds=5, max_instances=1, coalesce=True)
     sched.add_job(_safe(integrations.mosdns.poll, "mosdns"), "interval", seconds=5, max_instances=1, coalesce=True)
     sched.add_job(_safe(integrations.adguard.poll, "adguard"), "interval", seconds=5, max_instances=1, coalesce=True)
+    # 识别库更新 / DNS 映射积累后的自动重算：跟在规则更新任务后面跑，指纹没变时开销只有几条计数查询
+    sched.add_job(_safe(_auto_reclassify, "auto-reclass"), "interval", hours=6, max_instances=1, coalesce=True)
     sched.add_job(_safe(_auto_update_rules, "rules-update"), "interval", hours=6, max_instances=1, coalesce=True)
     # 审计报表：日报每天 08:00 推送昨天的，周报每周一 08:30 推送近 7 天的（在审计 → 报表里开启）
     sched.add_job(_safe(lambda: audit.push_report("daily"), "report-daily"), "cron", hour=8, minute=0)
