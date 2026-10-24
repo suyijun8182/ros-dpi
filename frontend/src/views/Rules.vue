@@ -90,7 +90,10 @@
       </div>
 
       <div class="panel">
-        <div class="panel-h"><h2>{{ t('rules.custom') }}</h2><span class="faint">{{ rules.length }}</span></div>
+        <div class="panel-h"><h2>{{ t('rules.custom') }}</h2><span class="faint">{{ rules.length }}</span><span class="sp" />
+          <button class="btn sm" v-if="isAdmin" @click="reclassify" :disabled="reclassing" :title="t('rules.reclassifyHint')">
+            {{ reclassing ? t('rules.reclassifying') : t('rules.reclassify') }}</button>
+          <span v-if="reclassRes" class="muted small">{{ reclassRes }}</span></div>
         <div class="tbl-wrap">
           <table class="tbl">
             <thead><tr><th>{{ t('rules.kind') }}</th><th>{{ t('rules.pattern') }}</th><th>{{ t('rules.target') }}</th><th /></tr></thead>
@@ -249,6 +252,18 @@ async function test() {
   formErr.value = ''
   try { testRes.value = await http.get('/rules/test', { params: { domain: testDomain.value.trim() } }) }
   catch (e) { formErr.value = e.message }
+}
+
+const reclassing = ref(false)
+const reclassRes = ref('')
+async function reclassify() {
+  if (!confirm(t('rules.reclassifyConfirm'))) return
+  reclassing.value = true
+  reclassRes.value = ''
+  try {
+    const r = await http.post('/rules/reclassify')
+    reclassRes.value = t('rules.reclassifyDone', { b: bytes(r.bytes_moved), s: r.seconds })
+  } catch (e) { reclassRes.value = e.message } finally { reclassing.value = false }
 }
 </script>
 

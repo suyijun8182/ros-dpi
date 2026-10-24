@@ -1,5 +1,6 @@
 """通过 RouterOS REST API（只读，仅 GET）获取终端名称、IP↔MAC、LAN 前缀、接口速率、WAN 线路、DHCP 地址池和系统状态。"""
 import ipaddress
+import json
 import time
 from collections import deque
 
@@ -57,7 +58,9 @@ class RosPoller:
         # 注意：httpx 的 raise_for_status() 成功时返回响应对象本身，不能写成 `raise_for_status() or r.json()`
         r = c.get(path)
         r.raise_for_status()
-        return r.json()
+        # RouterOS 原样返回客户端上报的 host-name 等字节，可能是 GBK 等非法 UTF-8；
+        # 坏字节替换成 U+FFFD，别让一台设备把整个轮询搞挂
+        return json.loads(r.content.decode("utf-8", "replace"))
 
     def poll(self):
         if not self.enabled:

@@ -197,6 +197,7 @@ MySQL 第一次初始化需要 20～60 秒。
 
 - **sing-box Clash API**（`experimental.clash_api.external_controller` 和 `secret`）：按“哪台终端、哪个域名、多少字节”统计走代理的流量，代理自身的隧道流量不再重复计算；域名认不出具体应用时按命中的规则集 / 策略组名识别；流量流向 → 代理分流 按策略组和出口节点统计。
 - **MosDNS 审计 API**：知道每台终端查了哪个域名、解析出哪些 IP。
+- **AdGuard Home（自有 DNS 服务器）**：双层 NAT（路由器下面又挂了爱快等二级路由）时，下级客户端的 DNS 查询被上游代理，路由器侧看不到，这些流量只能归「国内网络 / 未识别」。把下级网络真正使用的 DNS 服务器（AdGuard Home）的地址和密码填进来，从它的查询日志读取「谁查了哪个域名、解析出哪些 IP」，下级终端的流量同样按域名识别。前提：AdGuard Home 开启查询日志（默认开启）；账号和密码都留空表示免认证访问（仅限内网监听时）。
 
 地址每个人都不一样，都不填就不启用。
 
@@ -218,6 +219,7 @@ MySQL 第一次初始化需要 20～60 秒。
 | `ROS_POLL_SECONDS` / `ROS_RATE_SECONDS` | 30 / 5 | RouterOS 完整轮询间隔 / WAN 口速率采样间隔（实时流量图） |
 | `SINGBOX_URL` / `SINGBOX_SECRET` / `PROXY_IPS` | 空 | 旁路代理 sing-box 的 Clash API（也可在网页填写，网页优先） |
 | `MOSDNS_URL` | 空 | MosDNS 审计 API 地址（也可在网页填写） |
+| `ADGUARD_URL` / `ADGUARD_USERNAME` / `ADGUARD_PASSWORD` | 空 | 自有 DNS 服务器 AdGuard Home 的查询日志（双层 NAT 场景，也可在网页填写） |
 | `FAKEIP_CIDRS` | `198.18.0.0/15,fc00::/18` | FakeIP 地址段 |
 | `ASN_DB` | `true` | 自动下载 IP→ASN 库；没有外网时设为 `false` |
 | `CHINA_DB` | `true` | 自动下载国内域名列表（dnsmasq-china-list，约 11 万条）与国内 IP 段：规则库没认出的域名归「国内网站」，没有域名的国内流量归「国内网络」 |

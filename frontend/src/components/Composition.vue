@@ -30,7 +30,7 @@ const { t, locale } = useI18n()
 const gs = computed(() => props.groups.filter(g => g.total > 0))
 const sum = computed(() => gs.value.reduce((s, g) => s + g.total, 0) || 1)
 const group = computed(() => (props.drill && props.active ? gs.value.find(g => g.id === props.active) : null))
-// 和维盟一样按固定顺序画（不按大小排）：配色是 9 色循环，同色的两个大类相隔 9 位，扇区不会挨在一起
+// 和维盟一样按固定顺序画（不按大小排）：17 个大类各有专属颜色（--g-*，debug13 去重），相邻扇区不会同色
 const CAT_ORDER = Object.keys(CAT_GROUP)
 const byOrder = (list, order) => [...list].sort((x, y) => order.indexOf(x.id) - order.indexOf(y.id))
 const items = computed(() => (group.value

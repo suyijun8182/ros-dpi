@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     proxy_ips: str = ""          # 旁路代理自身的 IP（逗号分隔）；留空时取 singbox_url 里的地址
     fakeip_cidrs: str = "198.18.0.0/15,fc00::/18"
     mosdns_url: str = ""         # MosDNS 审计 API 地址，如 http://192.168.1.3:9099
+    adguard_url: str = ""        # 自有 DNS 服务器 AdGuard Home 的地址，如 http://192.168.9.2:3000（双层 NAT 时爱快下游的 DNS）
+    adguard_username: str = ""   # AdGuard Home 登录用户名；和密码都留空表示免认证（只在内网监听时）
+    adguard_password: str = ""
     oui_db: bool = True          # 自动下载 IEEE 的 MAC 厂商库（OUI，识别终端类型用，每 30 天更新）
     asn_db: bool = True          # 自动下载 iptoasn 的 IP→ASN 库（公有领域，每天更新）
     china_db: bool = True        # 自动下载国内域名列表（dnsmasq-china-list）与国内 IP 段（每天更新）

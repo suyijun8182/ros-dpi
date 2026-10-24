@@ -101,7 +101,7 @@ categories:
 apps:
   # ================= 影音娱乐 =================
   # ---------- 短视频 ----------
-  - {id: douyin, name: 抖音, name_en: Douyin, category: short_video,
+  - {id: douyin, asns: [396986, 138699], name: 抖音, name_en: Douyin, category: short_video,
      domains: [douyin.com, douyinpic.com, douyinvod.com, douyincdn.com, douyinstatic.com, iesdouyin.com, amemv.com, snssdk.com, bytecdn.cn, byteimg.com, pstatp.com, zjcdn.com, bytedance.com, bytegoofy.com, ibytedtos.com, volces.com]}
   - {id: kuaishou, name: 快手, name_en: Kuaishou, category: short_video,
      domains: [kuaishou.com, gifshow.com, ksapisrv.com, kwaicdn.com, kwimgs.com, yximgs.com, kspkg.com, kuaishouzt.com, ndcimgs.com]}
@@ -114,9 +114,9 @@ apps:
      domains: [ixigua.com, ixiguavideo.com]}
   - {id: haokan, name: 好看视频, name_en: Haokan, category: short_video, domains: [haokan.baidu.com, haokanvideo.com]}
   # ---------- 在线视频 ----------
-  - {id: bilibili, name: 哔哩哔哩, name_en: Bilibili, category: video,
+  - {id: bilibili, asns: [140633], name: 哔哩哔哩, name_en: Bilibili, category: video,
      domains: [bilibili.com, bilivideo.com, bilivideo.cn, hdslb.com, biliapi.net, biliapi.com, bilicdn1.com, bilicdn2.com, b23.tv, acgvideo.com]}
-  - {id: iqiyi, name: 爱奇艺, name_en: iQIYI, category: video,
+  - {id: iqiyi, asns: [133865, 136250], name: 爱奇艺, name_en: iQIYI, category: video,
      domains: [iqiyi.com, iqiyipic.com, qiyi.com, qy.net, 71.am, iq.com, ppstream.com]}
   - {id: tencent_video, name: 腾讯视频, name_en: Tencent Video, category: video,
      domains: [v.qq.com, video.qq.com, vqq.com, gtimg.com, ugcvod.qq.com, apd-vlive.apdcdn.tc.qq.com, vod-tencent.com, tencentvideo.com]}
@@ -193,7 +193,7 @@ apps:
   - {id: perfect_world, name: 完美世界, name_en: Perfect World, category: game, domains: [wanmei.com, pwrd.com, perfectworld.com]}
   - {id: kingsoft_games, name: 西山居/盛趣/巨人, name_en: Seasun/Shengqu/Giant, category: game, domains: [xoyo.com, seasun.com, sdo.com, ztgame.com]}
   - {id: game_4399, name: "4399", name_en: "4399", category: game, domains: [4399.com, img4399.com, 4399sj.com]}
-  - {id: mihoyo, name: 米哈游, name_en: HoYoverse, category: mobile_game,
+  - {id: mihoyo, asns: [215543], name: 米哈游, name_en: HoYoverse, category: mobile_game,
      domains: [mihoyo.com, hoyoverse.com, yuanshen.com, genshinimpact.com, hoyolab.com, bhsr.com, starrails.com, mhyurl.cn]}
   - {id: hypergryph, name: 鹰角网络, name_en: Hypergryph, category: mobile_game, domains: [hypergryph.com, hycdn.cn]}
   - {id: lilith, name: 莉莉丝, name_en: Lilith Games, category: mobile_game, domains: [lilith.com, lilithgame.com, lilithgames.com]}
@@ -370,9 +370,9 @@ apps:
   - {id: coursera, name: Coursera/Duolingo, name_en: Coursera/Duolingo, category: education, domains: [coursera.org, duolingo.com, khanacademy.org, udemy.com]}
 
   # ================= 购物生活 =================
-  - {id: taobao, name: 淘宝/天猫, name_en: Taobao/Tmall, category: shopping,
+  - {id: taobao, asns: [24429], name: 淘宝/天猫, name_en: Taobao/Tmall, category: shopping,
      domains: [taobao.com, tmall.com, alicdn.com, tbcdn.cn, taobaocdn.com, mmstat.com, tanx.com, alibaba.com, aliexpress.com, 1688.com, alipayobjects.com, goofish.com]}
-  - {id: jd, name: 京东, name_en: JD, category: shopping,
+  - {id: jd, asns: [137753, 137787], name: 京东, name_en: JD, category: shopping,
      domains: [jd.com, 360buyimg.com, jd.hk, jdpay.com, jcloud.com, jdcloud.com, 3.cn]}
   - {id: pinduoduo, name: 拼多多, name_en: Pinduoduo, category: shopping,
      domains: [pinduoduo.com, yangkeduo.com, pddpic.com, pddugc.com, temu.com, kwcdn.com]}
@@ -424,7 +424,7 @@ apps:
   - {id: toutiao, name: 今日头条, name_en: Toutiao, category: news,
      domains: [toutiao.com, toutiaocdn.com, toutiaoimg.cn]}
   - {id: tencent_news, name: 腾讯新闻, name_en: Tencent News, category: news, domains: [news.qq.com, inews.qq.com, new.qq.com]}
-  - {id: netease, name: 网易, name_en: NetEase, category: news,
+  - {id: netease, asns: [45062], name: 网易, name_en: NetEase, category: news,
      domains: [163.com, 126.net, 127.net, netease.com]}
   - {id: sina, name: 新浪, name_en: Sina, category: news, domains: [sina.com.cn, sina.cn, sina.com]}
   - {id: sohu, name: 搜狐, name_en: Sohu, category: news, domains: [sohu.com, sohucs.com]}
@@ -492,9 +492,9 @@ apps:
      domains: [cloudflare.com, cloudflareinsights.com, cloudflare.net, workers.dev, pages.dev, cdnjs.cloudflare.com]}
   - {id: akamai, asns: [20940, 16625], name: Akamai, name_en: Akamai, category: cdn,
      domains: [akamai.net, akamaiedge.net, akamaihd.net, akamaized.net, edgekey.net, edgesuite.net, akadns.net, akamaitechnologies.com]}
-  - {id: aliyun, asns: [37963, 45102], name: 阿里云/CDN, name_en: Alibaba Cloud, category: cdn,
+  - {id: aliyun, asns: [37963, 45102, 203513], name: 阿里云/CDN, name_en: Alibaba Cloud, category: cdn,
      domains: [aliyun.com, aliyuncs.com, alikunlun.com, alikunlun.net, kunlunca.com, kunlunsl.com, kunlungr.com, kunlunle.com, alicloudccp.com, aliyundrive.cloud]}
-  - {id: tencent_cloud, asns: [45090, 132203], name: 腾讯云/CDN, name_en: Tencent Cloud, category: cdn,
+  - {id: tencent_cloud, asns: [45090, 132203, 133478, 137876], name: 腾讯云/CDN, name_en: Tencent Cloud, category: cdn,
      domains: [myqcloud.com, qcloud.com, tencent-cloud.net, tencentcs.com, tencentcloud.com, cdntip.com, tdnsv5.com, tdnsv6.com, dnsv1.com, qcloudcdn.com, qcloudcdn.cn]}
   - {id: wangsu, name: 网宿 CDN, name_en: Wangsu CDN, category: cdn,
      domains: [wscdns.com, wsglb0.com, wsdvs.com, lxdns.com, chinanetcenter.com, wswebcdn.com, cdn20.com]}

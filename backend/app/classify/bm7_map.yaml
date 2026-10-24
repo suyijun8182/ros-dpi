@@ -497,6 +497,7 @@ apps:
   bm7_dood: {category: video, name: "DoodStream", name_en: "DoodStream", lists: ["Dood"]}
   bm7_duowan: {category: game, name: "多玩", name_en: "Duowan", lists: ["DuoWan"]}
   bm7_dxy: {category: life, name: "丁香园", name_en: "DXY", lists: ["DingXiangYuan"]}
+  bm7_encoretvb: {category: video, name: "TVB++", name_en: "Encore TVB", lists: ["EncoreTVB"]}
   bm7_emby: {category: video, name: "Emby", name_en: "Emby", lists: ["Emby"]}
   bm7_fanfou: {category: social, name: "饭否", name_en: "Fanfou", lists: ["FanFou"]}
   bm7_flipboard: {category: news, name: "Flipboard", name_en: "Flipboard", lists: ["FlipBoard"]}
@@ -505,7 +506,9 @@ apps:
   bm7_friday: {category: video, name: "friDay 影音", name_en: "friDay Video", lists: ["friDay"]}
   bm7_fubo: {category: video, name: "fuboTV", name_en: "fuboTV", lists: ["FuboTV"]}
   bm7_garena: {category: game, name: "Garena", name_en: "Garena", lists: ["Garena"]}
+  bm7_govcn: {category: site, name: "政务网站", name_en: "Government portals", lists: ["GovCN"]}
   bm7_geely: {category: iot, name: "吉利汽车", name_en: "Geely", lists: ["Geely"]}
+  bm7_iptv: {category: live, name: "IPTV 电视", name_en: "IPTV", lists: ["IPTVMainland"]}
   bm7_hiby: {category: music, name: "海贝音乐", name_en: "HiBy Music", lists: ["HibyMusic"]}
   bm7_hpplay: {category: iot, name: "乐播投屏", name_en: "Hpplay", lists: ["Hpplay"]}
   bm7_iflytek: {category: ai, name: "科大讯飞", name_en: "iFlytek", lists: ["iFlytek"]}

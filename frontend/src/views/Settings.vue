@@ -139,6 +139,28 @@
               <span v-if="sys && sys.asn.rows"> {{ t('sources.asnRows', { n: sys.asn.rows.toLocaleString(), d: datetime(sys.asn.updated) }) }}</span>
               <span v-else-if="sys && sys.asn.error" class="err"> {{ sys.asn.error }}</span></p>
           </div>
+          <div class="src-box">
+            <div class="sec">AdGuard Home<span class="sp" />
+              <span v-if="sys && sys.adguard && sys.adguard.enabled" class="pill" :class="sys.adguard.ok ? 'ok' : 'bad'">{{ sys.adguard.ok ? t('sources.connected') : t('sources.failed') }}</span>
+              <span v-else class="pill grey">{{ t('sources.off') }}</span></div>
+            <p class="faint small">{{ t('sources.agWhy') }}</p>
+            <label for="ag-url">{{ t('sources.agUrl') }}</label>
+            <input id="ag-url" class="input addr" v-model.trim="src.adguard_url" placeholder="http://192.168.9.2:3000" autocomplete="off" />
+            <label for="ag-user">{{ t('sources.agUser') }}</label>
+            <input id="ag-user" class="input" v-model.trim="src.adguard_username" autocomplete="off" />
+            <label for="ag-password">{{ t('sources.agPassword') }}</label>
+            <div class="row">
+              <input id="ag-password" class="input" type="password" v-model="src.adguard_password" autocomplete="new-password"
+                     :placeholder="s.integrations.has_adguard_password ? t('sources.agKept') : t('sources.agNone')" />
+              <button v-if="s.integrations.has_adguard_password" type="button" class="btn sm" @click="clearAdguardPassword">{{ t('sources.agClear') }}</button>
+            </div>
+            <div class="faint small">{{ t('sources.agHint') }}</div>
+            <div v-if="sys && sys.adguard && sys.adguard.enabled" class="st small">
+              <span>{{ t('settings.last') }} {{ ago(sys.adguard.last) }}</span>
+              <span>{{ t('sources.answers', { n: sys.adguard.answers.toLocaleString() }) }}</span>
+              <span class="err" v-if="sys.adguard.error">{{ sys.adguard.error }}</span>
+            </div>
+          </div>
           <div class="acts">
             <span class="err" v-if="srcErr">{{ srcErr }}</span><span class="sp" />
             <button type="button" class="btn" @click="testSources" :disabled="testing">{{ testing ? t('setup.testing') : t('settings.test') }}</button>
@@ -236,7 +258,7 @@ const setTab = k => router.replace({ query: k === 'status' ? {} : { tab: k } })
 // 有问题的标签页上标一个红点
 const badge = computed(() => ({
   access: !!(sys.value && sys.value.ros_check && sys.value.ros_check.checked && sys.value.ros_check.rules.some(r => r.problems.length)),
-  sources: !!(sys.value && ((sys.value.singbox.enabled && !sys.value.singbox.ok) || (sys.value.mosdns.enabled && !sys.value.mosdns.ok))),
+  sources: !!(sys.value && ((sys.value.singbox.enabled && !sys.value.singbox.ok) || (sys.value.mosdns.enabled && !sys.value.mosdns.ok) || (sys.value.adguard && sys.value.adguard.enabled && !sys.value.adguard.ok))),
 }))
 
 async function loadSys() {
@@ -260,20 +282,23 @@ onMounted(async () => {
 })
 
 // ---------- 外部数据源 ----------
-const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '' })
+const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '' })
 const srcErr = ref('')
 const srcSaved = ref(false)
 const testing = ref(false)
 function fillSources() {
   const i = s.value.integrations
-  Object.assign(src, { singbox_url: i.singbox_url, singbox_secret: '', proxy_ips: i.proxy_ips, mosdns_url: i.mosdns_url })
+  Object.assign(src, { singbox_url: i.singbox_url, singbox_secret: '', proxy_ips: i.proxy_ips, mosdns_url: i.mosdns_url,
+                       adguard_url: i.adguard_url, adguard_username: i.adguard_username, adguard_password: '' })
 }
 async function saveSources() {
   srcErr.value = ''
   try {
-    // 密钥留空表示不修改；要清除用“清除密钥”按钮
-    const body = { singbox_url: src.singbox_url, proxy_ips: src.proxy_ips, mosdns_url: src.mosdns_url }
+    // 密钥留空表示不修改；要清除用“清除密钥/密码”按钮
+    const body = { singbox_url: src.singbox_url, proxy_ips: src.proxy_ips, mosdns_url: src.mosdns_url,
+                   adguard_url: src.adguard_url, adguard_username: src.adguard_username }
     if (src.singbox_secret) body.singbox_secret = src.singbox_secret
+    if (src.adguard_password) body.adguard_password = src.adguard_password
     s.value = await http.put('/settings', body)
     fillSources()
     srcSaved.value = true
@@ -283,6 +308,9 @@ async function saveSources() {
 }
 async function clearSecret() {
   try { s.value = await http.put('/settings', { singbox_secret: '' }); fillSources() } catch (e) { srcErr.value = e.message }
+}
+async function clearAdguardPassword() {
+  try { s.value = await http.put('/settings', { adguard_password: '' }); fillSources() } catch (e) { srcErr.value = e.message }
 }
 async function testSources() {
   testing.value = true

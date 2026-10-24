@@ -103,6 +103,16 @@ def unknown_domains(range: str = Query("week", pattern="^(today|week|month|last7
     return stats.unknown_domains(db, *timeutil.range_bounds(range))
 
 
+@router.post("/rules/reclassify")
+def rules_reclassify(request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
+    """按当前规则重算历史分类：规则或识别库升级后，把历史流量搬到新归属（host_domain_day 覆盖的天数）。"""
+    from app.reclass import reclassify
+    res = reclassify(engine, db)
+    db.commit()
+    oplog.log(db, request, user, "reclassify", res)
+    return res
+
+
 @router.get("/rules/test")
 def test_rule(domain: str):
     """查看一个域名当前会被识别成什么。"""
@@ -119,6 +129,9 @@ class SettingsIn(BaseModel):
     singbox_secret: str | None = Field(None, max_length=255)
     proxy_ips: str | None = Field(None, max_length=500)
     mosdns_url: str | None = Field(None, max_length=255)
+    adguard_url: str | None = Field(None, max_length=255)
+    adguard_username: str | None = Field(None, max_length=255)
+    adguard_password: str | None = Field(None, max_length=255)
     rules_auto_update: bool | None = None
 
 
@@ -158,7 +171,10 @@ def _integrations(db):
     saved = {k: _get(db, k, None) for k in integrations.KEYS}
     cfg = integrations.effective(saved)
     return {"singbox_url": cfg["singbox_url"], "has_secret": bool(cfg["singbox_secret"]), "proxy_ips": cfg["proxy_ips"],
-            "mosdns_url": cfg["mosdns_url"], "proxy_auto": integrations.singbox.host_ip()}
+            "mosdns_url": cfg["mosdns_url"],
+            "adguard_url": cfg["adguard_url"], "adguard_username": cfg["adguard_username"],
+            "has_adguard_password": bool(cfg["adguard_password"]),
+            "proxy_auto": integrations.singbox.host_ip()}
 
 
 def _db_info():
@@ -228,6 +244,7 @@ def system():
         "ros_check": poller.check(),
         "singbox": integrations.singbox.status(),
         "mosdns": integrations.mosdns.status(),
+        "adguard": integrations.adguard.status(),
         "asn": asndb.status(),
         "proxied_skipped": st["proxied_skipped"], "dns_mosdns": st["dns_mosdns"],
         "generic_apps": sorted(GENERIC_APPS),
@@ -285,10 +302,12 @@ def library_update(request: Request, user: str = Depends(current_user), db: Sess
 
 @router.post("/integrations/test")
 def integrations_test():
-    """立即读一次 sing-box 和 MosDNS，返回各自状态（用于“测试连接”按钮）"""
+    """立即读一次 sing-box / MosDNS / AdGuard Home，返回各自状态（用于“测试连接”按钮）"""
     integrations.singbox.poll()
     integrations.mosdns.poll()
-    return {"singbox": integrations.singbox.status(), "mosdns": integrations.mosdns.status()}
+    integrations.adguard.poll()
+    return {"singbox": integrations.singbox.status(), "mosdns": integrations.mosdns.status(),
+            "adguard": integrations.adguard.status()}
 
 
 @router.post("/ros/test")

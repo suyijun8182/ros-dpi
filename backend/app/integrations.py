@@ -1,9 +1,11 @@
-"""外部数据源（可选）：旁路代理 sing-box 的 Clash API、内网 DNS MosDNS 的审计日志。
+"""外部数据源（可选）：旁路代理 sing-box 的 Clash API、内网 DNS MosDNS 的审计日志、自有 DNS 服务器 AdGuard Home 的查询日志。
 
 为什么需要：
 - 终端走旁路代理时，代理回给终端的下载流量常常走二层直达、不经过路由器；路由器只看到代理自己连服务器的加密隧道，
   认不出任何应用。Clash API 的 /connections 直接给出每条连接的来源终端、域名和上下行字节，最准。
 - 终端向内网 DNS（同一网段）查询不经过路由器，DNS 嗅探看不到；MosDNS 审计日志给出“哪台终端查了哪个域名、解析出哪些 IP”。
+- 双层 NAT（如爱快在路由器下面又挂一层内网）时，下级客户端的 DNS 被爱快代理，路由器侧更看不到；
+  它们真正的 DNS 服务器（如爱快下游的 AdGuard Home）的查询日志就是域名的来源。
 
 地址、密钥每个人都不一样：在网页 系统设置 → 外部数据源 里填写（存在数据库 settings 表），环境变量作为默认值。都不填就不启用。
 """
@@ -16,7 +18,7 @@ import httpx
 
 from app.config import get_settings
 
-KEYS = ("singbox_url", "singbox_secret", "proxy_ips", "mosdns_url")
+KEYS = ("singbox_url", "singbox_secret", "proxy_ips", "mosdns_url", "adguard_url", "adguard_username", "adguard_password")
 
 
 def effective(db_values: dict) -> dict:
@@ -196,19 +198,164 @@ class MosdnsPoller:
                 "last": self.last, "answers": self.answers}
 
 
+class AdguardPoller:
+    """读 AdGuard Home 的查询日志（最新的在前），把新出现的应答交给引擎：终端 + IP → 域名。
+
+    用于双层 NAT（如爱快下游）：路由器看不到下级客户端的 DNS 查询，但它们的查询都记录在
+    下游自己的 DNS 服务器上。应答会进引擎的全网 IP→域名表（add_dns_answer），与客户端在哪层 NAT 无关。
+    """
+
+    PAGE = 500
+    # 查询日志 answer 字段的资源记录行：「域名. TTL IN A|AAAA|CNAME 值」
+    _RR = re.compile(r"(\S+)\s+(\d+)\s+IN\s+(A|AAAA|CNAME)\s+(\S+)", re.IGNORECASE)
+
+    def __init__(self, engine):
+        self.engine = engine
+        self.url = ""
+        self.username = ""
+        self.password = ""
+        self.ok = False
+        self.error = ""
+        self.last = 0
+        self.answers = 0
+        self._mark: tuple[str, str, str] | None = None  # 上次处理到的 (time, domain, client)
+        self._client: httpx.Client | None = None
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.url)
+
+    def configure(self, url: str, username: str, password: str):
+        url = (url or "").strip().rstrip("/")
+        username, password = (username or "").strip(), password or ""
+        if (url, username, password) != (self.url, self.username, self.password):
+            self._mark = None
+            self._close_client()
+            self.ok, self.error = False, ""
+        self.url, self.username, self.password = url, username, password
+
+    def _close_client(self):
+        if self._client is not None:
+            try:
+                self._client.close()
+            except Exception:  # noqa: BLE001
+                pass
+        self._client = None
+
+    def _connect(self):
+        """登录拿会话；没配账号密码时跳过登录（AdGuard 只在内网监听时可以免认证）"""
+        self._close_client()
+        c = httpx.Client(base_url=self.url, timeout=10.0)
+        if self.username or self.password:
+            r = c.post("/control/login", json={"name": self.username, "password": self.password})
+            r.raise_for_status()
+        self._client = c
+
+    def _fetch(self) -> list:
+        if self._client is None:
+            self._connect()
+        r = self._client.get("/control/querylog", params={"limit": self.PAGE, "response_status": "all"})
+        if r.status_code in (401, 403):  # 会话过期：重登一次再取
+            self._connect()
+            r = self._client.get("/control/querylog", params={"limit": self.PAGE, "response_status": "all"})
+        r.raise_for_status()
+        data = r.json()
+        # 新版本返回 {"entries": [...]}，旧版本直接返回数组
+        return (data.get("entries") if isinstance(data, dict) else data) or []
+
+    def poll(self):
+        if not self.enabled:
+            return
+        try:
+            entries = self._fetch()
+        except Exception as e:  # noqa: BLE001
+            self._close_client()
+            self.ok, self.error, self.last = False, _err(e), int(time.time())
+            return
+        new = []
+        for x in entries:  # 最新的在前，遇到上次处理过的就停
+            mark = (str(x.get("time") or ""), str(x.get("domain") or ""), str(x.get("client") or ""))
+            if self._mark and mark <= self._mark:
+                break
+            new.append(x)
+        if entries:
+            self._mark = max((str(x.get("time") or ""), str(x.get("domain") or ""), str(x.get("client") or ""))
+                             for x in entries)
+        for x in reversed(new):
+            parsed = self._parse_entry(x)
+            if parsed:
+                name, ips, cnames, client = parsed
+                self.engine.add_dns_answer(client, name, ips, cnames, source="adguard")
+                self.answers += 1
+        self.ok, self.error, self.last = True, "", int(time.time())
+
+    @classmethod
+    def _parse_entry(cls, x: dict):
+        """返回 (域名, [(IP, TTL)...], [CNAME...], 客户端IP)；没有 A/AAAA 应答（被拦截、NXDOMAIN）时返回 None"""
+        name = (x.get("domain") or (x.get("question") or {}).get("name") or "").strip().lower().rstrip(".")
+        client = (x.get("client_ip") or x.get("client") or "").strip()
+        answer = x.get("answer")
+        ips, cnames = [], []
+        if isinstance(answer, (list, tuple)):
+            for v in answer:
+                if isinstance(v, dict):
+                    typ = str(v.get("type") or "").upper()
+                    val = str(v.get("value") or "").strip().rstrip(".")
+                    ttl = int(v.get("ttl") or 0)
+                    if typ == "CNAME" and val:
+                        cnames.append(val.lower())
+                    elif typ in ("A", "AAAA") and val:
+                        try:
+                            ipaddress.ip_address(val)
+                        except ValueError:
+                            continue
+                        ips.append((val, ttl))
+                else:
+                    cls._parse_rr(str(v), ips, cnames)
+        else:
+            if isinstance(answer, dict):
+                answer = "\n".join(str(v) for v in answer.values())
+            cls._parse_rr(str(answer or ""), ips, cnames)
+        if not ips or not name or not client:
+            return None
+        return name, ips, cnames, client
+
+    @classmethod
+    def _parse_rr(cls, text: str, ips: list, cnames: list):
+        for line in text.splitlines():
+            m = cls._RR.search(line)
+            if not m:
+                continue
+            typ, val = m.group(3).upper(), m.group(4).rstrip(".")
+            ttl = int(m.group(2) or 0)
+            if typ == "CNAME":
+                cnames.append(val.lower())
+            elif typ in ("A", "AAAA"):
+                try:
+                    ipaddress.ip_address(val)
+                except ValueError:
+                    continue
+                ips.append((val, ttl))
+
+    def status(self) -> dict:
+        return {"enabled": self.enabled, "url": self.url, "ok": self.ok, "error": self.error,
+                "last": self.last, "answers": self.answers}
+
+
 def _make():
     from app.engine import engine
-    return SingboxPoller(engine), MosdnsPoller(engine)
+    return SingboxPoller(engine), MosdnsPoller(engine), AdguardPoller(engine)
 
 
-singbox, mosdns = _make()
+singbox, mosdns, adguard = _make()
 
 
 def apply(db_values: dict):
-    """按网页 / 环境变量的配置更新两个轮询器和引擎里的旁路代理地址"""
+    """按网页 / 环境变量的配置更新三个轮询器和引擎里的旁路代理地址"""
     cfg = effective(db_values)
     singbox.configure(cfg["singbox_url"], cfg["singbox_secret"])
     mosdns.configure(cfg["mosdns_url"])
+    adguard.configure(cfg["adguard_url"], cfg["adguard_username"], cfg["adguard_password"])
     ips = {x.strip() for x in cfg["proxy_ips"].replace("\n", ",").split(",") if x.strip()}
     if not ips and singbox.host_ip():
         ips.add(singbox.host_ip())
