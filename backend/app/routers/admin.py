@@ -330,6 +330,25 @@ def library(db: Session = Depends(get_db)):
     return _library(db)
 
 
+@router.get("/system/update")
+def system_update_status():
+    """Linux 二进制部署的版本检测（debug18）：当前版本 vs GitHub 最新 Release"""
+    from app import selfupdate
+    return selfupdate.status(__version__)
+
+
+@router.post("/system/update")
+def system_update_run(request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
+    """一键自更新（仅 Linux 二进制部署）：下载新版本 → 原子替换 → 自动重启服务"""
+    from app import selfupdate
+    try:
+        res = selfupdate.perform(__version__)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    oplog.log(db, request, user, "self_update", res)
+    return res
+
+
 @router.post("/library/update")
 def library_update(request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
     """立即检查识别库更新（v2fly 规则 + ASN 库 + 补充库），返回最新状态"""

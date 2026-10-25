@@ -139,6 +139,11 @@ export default {
     checked: 'Checked {t}', result: { updated: 'Updated', uptodate: 'Up to date', rejected: 'Self-test failed, kept old', failed: 'Check failed', loaded: 'Loaded' },
     note: 'Auto update: v2fly is checked daily (swapped in live only after a self-test), blackmatrix7 weekly, the rest daily; a failed source keeps its old data. With "Auto update" off, sources update only when you press "Check now".',
   },
+  upd: {
+    title: 'Version update', current: 'Current v{v}', available: 'New version v{v} available', uptodate: 'Up to date',
+    btn: 'Update now', running: 'Updating, the service will restart itself…', done: 'Updated', confirm: 'Download the new version and restart the service automatically?',
+    docker: 'For Docker deployments run docker compose pull && docker compose up -d on the server',
+  },
   sources: {
     title: 'External sources', hint: 'Optional. Connect a side-router proxy (sing-box) or LAN DNS (MosDNS) for much better identification; fill in your own addresses',
     sbWhy: 'When devices use a side-router proxy, replies often bypass the router, which only sees the proxy\'s encrypted tunnel. With the Clash API, traffic is counted per device and domain, and the tunnel itself is not counted twice.',

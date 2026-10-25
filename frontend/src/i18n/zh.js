@@ -139,6 +139,11 @@ export default {
     checked: '{t}检查', result: { updated: '已更新', uptodate: '已是最新', rejected: '自检未通过，保留旧版', failed: '检查失败', loaded: '已加载' },
     note: '自动更新：v2fly 每天检查（自检通过才替换，立即生效），blackmatrix7 每周，其余每天；单个来源下载失败时继续用旧数据。关掉「自动更新」后只在点「立即检查更新」时更新。',
   },
+  upd: {
+    title: '版本更新', current: '当前版本 v{v}', available: '有新版本 v{v}', uptodate: '已是最新版本',
+    btn: '一键更新', running: '更新中，服务将自动重启…', done: '更新完成', confirm: '下载新版本并自动重启服务？',
+    docker: 'Docker 部署请在服务器上执行 docker compose pull && docker compose up -d',
+  },
   sources: {
     title: '外部数据源', hint: '可选。家里有旁路代理（sing-box）或内网 DNS（MosDNS）时接入，识别会准很多；地址和密钥按你自己的环境填写',
     sbWhy: '终端走旁路代理时，代理回给终端的数据常常不经过路由器，路由器只看到代理自己连服务器的加密隧道。接入 Clash API 后，按“哪台终端、哪个域名、多少字节”直接记账，代理隧道本身不再重复计算。',

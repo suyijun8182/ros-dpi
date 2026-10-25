@@ -14,31 +14,19 @@
 
 - **全网概览**：路由器状态、**网络健康指数**（逐项扣分和改进建议）、在线终端、**DHCP 地址池**、每条 **WAN 线路**的状态和速率；流量构成饼图（应用大类 → 小类）；实时流量、历史流量、历史在线终端数；Top 应用与 Top 终端排行。
 - **主机监控**：在线终端 / 全部终端 / DHCP 租约 / 命名管理四个标签。每台终端的类型（手机、电脑、电视、摄像头……自动识别）、IP、MAC、主机名、归属人、在线时长、连接数、当前速率、今日 / 本周 / 本月流量，可导出 CSV；可以按 MAC 或按 IP 给设备命名。详情页有应用排行与构成、按大类的趋势、访问过的域名、访问日志和上网时间线。
-- **应用统计**：参照维盟分三级（应用大类 → 小类 → 应用，逐级“查看详情”下钻）。大类照维盟的 17 类（HTTP协议、网络游戏、网络电视、P2P下载、常用协议、即时通讯、网络音乐、股票交易、网络电话、流量代理、数据库、移动应用、特殊协议、矿池、PCDN、其他、未识别），大类和小类固定列出，每级显示上传 / 下载速度和数据及占比；应用构成用矩形树图一眼看两层。共 17 个大类、50 个小类、2900 多个应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……，其中约 2500 个来自 v2fly 开源域名库，约 100 个来自运行时下载的 blackmatrix7 规则；另有 Hagezi、UT1 分类列表兜底认出网站类别）。识别不出具体应用的流量，会按 CDN 的 CNAME 归到阿里云 / 腾讯云 / Akamai 等厂商。
-- **流量流向**：**实时连接**（此刻哪台终端连到哪个域名 / IP、什么应用、多快；走 sing-box 的连接显示策略组和出口节点）、**访问目标排行**（流量最大的远端域名和 IP；流向图从本地飞向各国，看流量去了哪些国家 / 地区；可按主域名合并，看是哪些终端在访问）、**代理分流**（sing-box 各策略组、各节点的流量和主要应用）。
-- **家庭成员 / 员工**：把一个人的手机、平板、电脑归到一起，按人统计流量、在线时长、常用应用，以及最近 7 天的行为标签（附依据）。使用场景在 **系统设置 → 场景与网络** 全局切换，菜单、称呼、默认时间段、标签和审计模板跟着变：
-  - **家庭**：菜单显示“家庭成员”，按分组管理；关注孩子的上网健康，包括每日屏幕时间、游戏和短视频时长上限，熬夜，不良内容，学习时间玩娱乐应用。
-  - **企业**：菜单显示“员工”，按部门管理；关注效率与合规，包括工作时间娱乐占比、求职倾向、上班炒股，按部门统计。
-- **审计日志**：
-  - **访问日志**：每台终端什么时候访问了什么、多久、多少流量，可按人员 / 部门 / 关键字筛选，导出 CSV，默认保留 30 天。
-  - **审计规则**：按应用、域名、时段、流量、**大流量外发**、**私接路由**、新设备设置，可限定人员 / 部门，带按场景的常用模板。命中后推送通知。
-  - **通知渠道**（与 EasySub 相同的 14 种）：Telegram Bot（可填 API 反代、HTTP 代理，一键获取 Chat ID）、飞书 Bot、QQ Bot、Bark、Email、Pushplus、Server酱、企业微信（群机器人或自建应用，支持 API 代理、指定成员 / 部门 / 标签、文本卡片）、钉钉、Discord、Slack、ntfy、Gotify、通用 Webhook。每条规则可以选渠道，可设免打扰。
-  - **私接检测**：根据数据包 TTL 发现后面接了路由器或多种系统共享的设备。
-  - **日报 / 周报**和**操作日志**。
-- **管控命令**：在人员或终端详情里，按应用、时段生成 RouterOS 命令（封禁应用、定时断网、限速），附撤销命令。ROS-DPI 只生成命令，不会修改路由器。
-- **识别规则**：按域名后缀、IP 段、端口自定义识别规则；列出“未识别域名 Top”，一键归类；查看识别库的版本和更新状态。
-- **系统设置**：接入与自检（检查 RouterOS 上的镜像规则）、外部数据源（sing-box / MosDNS / AdGuard Home）、**日志与留存**（Syslog 外发、各类数据保留天数、数据库占用）、**用户管理**（管理员可以修改一切；普通用户只读，可以改自己的密码）。
-- 顶栏功能搜索（终端、IP、MAC、应用、页面），按 / 键聚焦。中英双语，深浅色主题，手机可用。
+- **应用统计**：参照维盟分三级（应用大类 → 小类 → 应用，逐级“查看详情”下钻）。大类照维盟的 17 类，固定列出，每级显示上传 / 下载速度和数据及占比；应用构成用矩形树图一眼看两层。17 个大类、50 个小类、2900 多个应用（抖音、B 站、微信视频号、Steam、银行、券商、ToDesk、DeepSeek……），识别不出具体应用的流量按 CDN 归到云厂商。
+- **流量流向**：实时连接、访问目标排行（可按主域名合并）、流向世界地图、代理分流（sing-box 各策略组 / 节点）。
+- **家庭成员 / 员工**：把一个人的设备归到一起按人统计；**家庭**场景关注孩子上网健康（屏幕时间、游戏和短视频上限、熬夜、不良内容），**企业**场景关注效率与合规。场景在 系统设置 全局切换。
+- **审计日志**：访问日志（可筛选、导出 CSV）；审计规则（应用、域名、时段、流量、大流量外发、私接路由、新设备）；**通知渠道 14 种**（Telegram、飞书、企业微信、钉钉、Bark、Email、Server酱、Pushplus、Discord、Slack、ntfy、Gotify、QQ Bot、Webhook）；日报 / 周报；操作日志。
+- **管控命令**：按应用、时段生成 RouterOS 命令（封禁应用、定时断网、限速），附撤销命令。只生成命令，不修改路由器。
+- **识别规则**：按域名 / IP 段 / 端口自定义；未识别域名 Top 一键归类；识别库版本与更新状态（含本地自学习库）。
+- **系统设置**：接入与自检、外部数据源（sing-box / MosDNS / AdGuard Home / 社区共享库）、日志与留存、用户管理。中英双语，深浅色主题，手机可用。
 
 ![应用统计](docs/images/apps-light.png)
 
 ![流量流向](docs/images/flow-light.png)
 
-![家庭成员](docs/images/people-light.png)
-
 ### 工作原理
-
-RouterOS 本身没有 DPI，ROS-DPI 用两路数据拼出应用级统计：
 
 ```
 RouterOS ──IPFIX  udp/2055 ──▶ 流量采集：每条连接的终端、远端 IP、端口、字节数
@@ -46,24 +34,40 @@ RouterOS ──TZSP   udp/37008──▶ DNS 嗅探：远端 IP 是哪个域名�
                              ▶ SNI：每条 HTTPS / QUIC 连接握手里的目标域名
 RouterOS ◀─REST 只读（可选）── 主机名、IP↔MAC、WAN 口速率、LAN 前缀
                     ↓
-         域名 → 应用规则库 → 按 分钟 / 小时 / 天 汇总写入 MySQL
+         域名 → 应用规则库 → 按 分钟 / 小时 / 天 汇总写入数据库
 ```
 
 - 流量来自 `/ip traffic-flow`（IPFIX），统计的是真实字节数。
-- 应用识别靠域名，有两个来源：
-  - **SNI**（推荐开启）：每条 HTTPS 连接开头的 TLS 握手里有明文的目标域名；HTTP/3（QUIC）的握手包也能解开。按连接识别，最准，终端用加密 DNS 也有效。
-  - **DNS 嗅探**：终端访问 `v26.douyinvod.com` 时，路由器把 DNS 应答镜像一份过来，之后发往该 IP 的流量就归到“抖音”。
-  - 查找顺序由准到粗：这条连接的 SNI → 这台终端对该 IP 的 DNS / SNI → 全网的 IP→域名 表。都查不到时，依次按 IP 段、端口兜底（HTTPS / QUIC 等）。**系统设置 → 运行状态 → 域名来源** 会显示各来源的占比。
-- 域名 → 应用：手工维护的规则库（约 280 个常用应用，带中文名和细分类），加上从 [v2fly/domain-list-community](https://github.com/v2fly/domain-list-community) 转换来的约 2500 个应用、3.6 万条域名。
-- 终端用 MAC 区分（来自 ROS 的 ARP / DHCP，或流记录中的源 MAC），IP 变化不影响统计。
+- 域名来源由准到粗：这条连接的 **SNI**（推荐，终端用加密 DNS 也有效）→ **DNS 嗅探** → 这台终端的 DNS/SNI 记录 → 全网 IP→域名 表；都查不到时依次按 IP 段（ASN）、端口兜底。
+- **域名 → 应用规则库，四层叠加**：
+  1. 公开库：内置手工规则库 + [v2fly](https://github.com/v2fly/domain-list-community)（约 2500 应用）+ [blackmatrix7](https://github.com/blackmatrix7/ios_rule_script)（自动登记上游新目录）+ Hagezi / UT1 分类列表 + 国内域名列表 / 官方 IP 段 / 国内 IP 段兜底；
+  2. **本地自学习库**：本网络实测的「IP → 应用」与「域名 → 应用」长期记忆——DNS 缓存过期、DoH、裸 IP 流量都能按记忆归类，每小时自动重建；
+  3. **社区共享库**：各部署实例把实测结论匿名共享（至少 2 个实例见过才发布），本地没有结论时兜底；
+  4. 以上都没有时，才归到 HTTPS / 国内网络这类笼统分类。
+- 终端用 MAC 区分，IP 变化不影响统计。
 
-**已知局限**：只开 DNS 嗅探时，终端使用 DoH / DoT 加密 DNS 的流量只能识别为 HTTPS / QUIC，开启 SNI 识别可以补上。启用了 ECH（加密 ClientHello）的少数网站，SNI 只能看到外层的公共名字。
+**已知局限**：只开 DNS 嗅探时，终端使用 DoH / DoT 的流量只能识别为 HTTPS / QUIC，开启 SNI 识别可以补上；启用了 ECH 的少数网站只能看到外层公共名字。
 
-**内网有自己的 DNS 服务器（AdGuard Home / Pi-hole 等）时**：DNS 嗅探照样能用。终端查询内网 DNS 走的是交换机，路由器看不到；但内网 DNS 向上游（如 223.5.5.5）查询时，应答要经过路由器，会被 `forward` 那条规则嗅探到，同样能得到“IP → 域名”的对应关系。前提是内网 DNS 的上游用普通 DNS（udp/53）；上游设成 DoH / DoT 时路由器看不到域名，可以把上游改成普通 DNS，或者改成路由器地址。**系统设置 → 运行状态** 里 DNS 嗅探卡片的“应答来源”会显示应答来自哪台 DNS 服务器。
+## 部署
 
-### 部署
+两种方式任选。**方式一**最快：一条命令装好，用 SQLite 零配置起步，之后可以在网页里一键升级；**方式二**是传统 Docker Compose，适合已有 MySQL / NAS 的环境。
 
-ROS-DPI 把统计数据存在 **MySQL**（5.7 / 8.x 均可）。默认你已经有一个 MySQL，比如 NAS 自带的、单独跑的容器，或者其他服务器上的。只需要给 ROS-DPI 建一个库和账号，连接信息在**第一次打开网页时填写**，和 EasySub 的流程一样。还没有 MySQL 的话，见[自带 MySQL 的部署方式](#还没有-mysql)。
+### 方式一：Linux 一键安装（二进制，无需 Docker）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/install.sh | sudo bash
+```
+
+脚本自动完成：下载最新版单文件二进制（含前端）→ 安装到 `/usr/local/bin/ros-dpi` → 创建 `/opt/ros-dpi` 数据目录（默认 SQLite，无需 MySQL）→ 注册并启动 systemd 服务。完成后浏览器打开 `http://<本机IP>:8080`。
+
+- **升级不用登录服务器**：有新版本时 系统设置 → 版本更新 会出现提示，点「一键更新」自动下载、替换二进制并重启服务。
+- 支持 x86_64 与 aarch64。想用 MySQL：设 `DATABASE_URL` 环境变量后 `systemctl restart ros-dpi`。
+- 服务以 root 运行（一键自更新需要写 `/usr/local/bin` 与 systemctl 权限）。
+- 常用变量（`/etc/systemd/system/ros-dpi.service`）：`HTTP_PORT`、`DATA_DIR`、`DATABASE_URL`。
+
+### 方式二：Docker Compose
+
+ROS-DPI 把统计数据存在 **MySQL**（5.7 / 8.x）。默认你已经有一个 MySQL；还没有的话见[自带 MySQL 的部署方式](#还没有-mysql)。
 
 #### 1. 准备数据库
 
@@ -77,19 +81,14 @@ FLUSH PRIVILEGES;
 ```
 
 - 命令行：`mysql -h <MySQL地址> -u root -p`，输入 root 密码后粘贴上面的语句。MySQL 跑在容器里时，可以用 `docker exec -it <mysql容器名> mysql -u root -p`。
-- 图形界面（phpMyAdmin、群晖 / 飞牛的 MariaDB 管理页、Navicat、DBeaver 等）：打开 SQL 窗口粘贴执行；或者按界面新建数据库 `rosdpi`（字符集选 `utf8mb4`），再新建用户 `rosdpi`，主机填 `%`，授予该库的全部权限。
-- 表不用手动建，ROS-DPI 会自动创建。如果直接用 root 账号，连库都可以不建，安装向导会自动创建。
-- 如果 MySQL 只允许本机连接，需要把 `bind-address` 改为 `0.0.0.0`，并确认运行 ROS-DPI 的主机能访问 3306 端口。
+- 图形界面（phpMyAdmin、NAS 的 MariaDB 管理页、Navicat、DBeaver 等）：新建数据库 `rosdpi`（字符集 `utf8mb4`），再新建用户 `rosdpi`（主机 `%`），授予该库全部权限。
+- 表不用手动建，ROS-DPI 会自动创建。
 
 #### 2. 编写 `docker-compose.yml` 并启动
 
-新建一个目录，保存下面的内容（也可以直接下载：`curl -O https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.yml`），把 `LAN_CIDRS` 改成你的内网网段：
+新建目录保存下面的内容（也可 `curl -O https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.yml`），把 `LAN_CIDRS` 改成你的内网网段：
 
 ```yaml
-# ROS-DPI：RouterOS 终端流量与应用统计
-# 前提：已有 MySQL 5.7+ / 8.x，并已按 README「准备数据库」建好库和账号
-# 用法：保存为 docker-compose.yml，把 LAN_CIDRS 改成你的内网网段，然后 docker compose up -d
-# 浏览器打开 http://<本机IP>:8080，按安装向导填写 MySQL 信息、设置管理员密码
 services:
   ros-dpi:
     image: suyijun8182/ros-dpi:latest        # 也可用 ghcr.io/suyijun8182/ros-dpi:latest
@@ -101,29 +100,25 @@ services:
       - "37008:37008/udp"   # TZSP：RouterOS 镜像的 DNS 应答和 HTTPS/QUIC 握手包发到这里
     environment:
       TZ: Asia/Shanghai
-      # MySQL 连接信息在首次打开网页时填写（保存在 ./data/db_config.json）
-      # 「必改」内网网段，逗号分隔（之后也可在 系统设置 → 网络与账号 里改）
-      LAN_CIDRS: 192.168.88.0/24
-      # 管理员 admin 的初始密码；留空则首次打开网页时设置
-      ADMIN_PASSWORD: ""
-      # RouterOS 只读 API（可选：显示主机名、WAN 速率）
-      ROS_URL: ""                 # 例如 https://192.168.88.1
+      LAN_CIDRS: 192.168.88.0/24     # 「必改」内网网段，逗号分隔
+      ADMIN_PASSWORD: ""             # 留空则首次打开网页时设置
+      ROS_URL: ""                    # 可选：RouterOS 只读 API，如 http://192.168.88.1
       ROS_USER: ""
       ROS_PASSWORD: ""
       ROS_VERIFY_TLS: "false"
     volumes:
-      - ./data:/app/data      # 保存数据库连接配置，务必保留这个卷
+      - ./data:/app/data             # 保存数据库连接配置，务必保留这个卷
 ```
 
 ```bash
 docker compose up -d
 ```
 
-镜像同时发布在 Docker Hub（`suyijun8182/ros-dpi`）和 GHCR（`ghcr.io/suyijun8182/ros-dpi`），支持 amd64 / arm64。群晖、飞牛、威联通等 NAS 可以在 Docker / Container Manager 里新建“项目”，把 compose 内容粘贴进去即可。
+镜像同时发布在 Docker Hub（`suyijun8182/ros-dpi`）和 GHCR（`ghcr.io/suyijun8182/ros-dpi`），支持 amd64 / arm64，每次发版带版本标签。NAS（群晖 / 飞牛 / 威联通）在 Container Manager 里新建“项目”粘贴 compose 即可。
 
 #### 还没有 MySQL？
 
-用 [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml)：它会同时启动一个 MySQL 8.4 容器，自动建好库和账号，并且已经把连接信息写进了配置，**不需要第 1 步，网页上也不会出现数据库设置**。下载后改名为 `docker-compose.yml`，在同目录建一个 `.env` 写入两个数据库密码（不设置密码 `docker compose up` 会直接报错，避免带着默认密码上线）：
+用 [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml)：同时启动一个 MySQL 8.4 容器，自动建好库和账号并写好连接配置，**不需要第 1 步，网页上也不会出现数据库设置**：
 
 ```bash
 curl -o docker-compose.yml https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.with-mysql.yml
@@ -134,42 +129,28 @@ EOF
 # 再把 compose 里的 LAN_CIDRS 改成你的内网网段，然后 docker compose up -d
 ```
 
-MySQL 第一次初始化需要 20～60 秒。
-
 ### 首次使用
 
-浏览器打开 `http://<主机IP>:8080`，按两步完成设置：
+浏览器打开 `http://<主机IP>:8080`：
 
-1. **连接数据库**：填写 MySQL 地址、端口、账号、密码、数据库名。可以先点“测试连接”，没问题再点“保存并继续”。ROS-DPI 会自动建表，并把连接信息保存在 `./data/db_config.json`，之后重启不用再填。
-   - MySQL 和 ROS-DPI 在同一台机器上时，地址填这台机器的局域网 IP，**不能填 `127.0.0.1` 或 `localhost`**（在容器里它指向容器自己）。
-   - 连接失败时，页面会直接说明原因（地址不通、账号或密码错误、没有权限等）。
-2. **设置管理员**：设置 admin 的密码后自动登录。如果在 compose 里填了 `ADMIN_PASSWORD`，这一步会跳过，直接用 `admin` 和该密码登录。
+1. **连接数据库**（Docker 且未用内置 MySQL 时）：填写 MySQL 信息，可先“测试连接”；自动建表并把连接信息存到 `./data/db_config.json`。MySQL 在同机时填局域网 IP，**不能填 127.0.0.1**。
+2. **设置管理员**密码后自动登录。
 
-![安装向导](docs/images/setup-wizard.png)
-
-完成后，到 **系统设置 → 接入与自检** 复制 RouterOS 命令，在路由器终端执行（见下一节）。大约 1 分钟后，概览页开始有数据。
-
-接下来可以：
-
-1. 在 **系统设置 → 场景与网络** 选择使用场景（家庭 / 企业），再到 **家庭成员 / 员工 → 分析设置** 设置学习或工作时间、每日时长上限；
-2. 添加成员并把设备分给他们；
-3. 在 **审计日志 → 通知渠道** 配置推送，在 **审计规则** 里从模板新建规则；
-4. 需要只读账号时，在 **系统设置 → 用户管理** 添加普通用户。
+完成后到 **系统设置 → 接入与自检** 复制 RouterOS 命令并在路由器执行（见下节），约 1 分钟后概览页开始有数据。接着：选择场景（家庭 / 企业）、添加成员并把设备分给他们、配置通知渠道和审计规则；需要只读账号时在 用户管理 添加。
 
 **常见问题**
 
 | 现象 | 原因与处理 |
 |---|---|
-| 提示“连不上 MySQL” | 地址或端口不通，或者填了 `127.0.0.1`；MySQL 需要允许远程连接（`bind-address`），防火墙要放行 3306 |
-| 提示“账号或密码错误” | 检查密码；账号的主机要是 `%`，只允许 `localhost` 的账号无法从容器连接 |
-| 提示“没有该数据库的权限” | 执行第 1 步的 `GRANT` 语句 |
-| 重启后网页显示“正在连接数据库” | MySQL 还没启动完成，页面会每 5 秒自动重试，不需要重新填写 |
-| 需要更换数据库 | 删除 `./data/db_config.json`，然后重启容器，会重新出现安装向导 |
-| 忘记管理员密码 | 还有其他管理员时，由他在 **系统设置 → 用户管理** 重置。都忘了时，在 MySQL 中执行 `DELETE FROM rosdpi.users;`（会删除所有账号，包括普通用户），刷新网页重新设置管理员；统计数据不受影响 |
+| 提示“连不上 MySQL” | 地址或端口不通，或填了 `127.0.0.1`；MySQL 需要允许远程连接（`bind-address`），防火墙放行 3306 |
+| 提示“账号或密码错误” | 检查密码；账号主机要是 `%` |
+| 重启后显示“正在连接数据库” | MySQL 未就绪，每 5 秒自动重试，无需重新填写 |
+| 需要更换数据库 | 删除 `./data/db_config.json` 重启，重新出现向导 |
+| 忘记管理员密码 | 其他管理员可在 用户管理 重置；都忘了时执行 `DELETE FROM rosdpi.users;` 后重新设置（统计数据不受影响） |
 
 ### RouterOS 配置
 
-把 `192.168.88.10` 换成运行容器的主机 IP（**系统设置 → 接入与自检**里可以直接复制填好 IP 的命令，还会检查规则是否生效）：
+把 `192.168.88.10` 换成运行 ROS-DPI 的主机 IP（**系统设置 → 接入与自检** 里可直接复制）：
 
 ```routeros
 # 1. 流量采集（IPFIX）
@@ -189,54 +170,50 @@ MySQL 第一次初始化需要 20～60 秒。
 /user add name=rosdpi group=rosdpi password=<强密码> address=192.168.88.10
 ```
 
-更多说明（SNI 的开销、FastTrack、双 NAT、IPv6、排错）见 [docs/RouterOS配置.md](docs/RouterOS配置.md)。
+更多说明（SNI 开销、FastTrack、双 NAT、IPv6、排错）见 [docs/RouterOS配置.md](docs/RouterOS配置.md)。
 
 ### 旁路代理与内网 DNS（可选）
 
-家里用旁路代理（sing-box 做旁路由）或内网 DNS（MosDNS）时，路由器看到的多是代理的加密隧道，识别率会很低。在 **系统设置 → 外部数据源** 填写：
-
-- **sing-box Clash API**（`experimental.clash_api.external_controller` 和 `secret`）：按“哪台终端、哪个域名、多少字节”统计走代理的流量，代理自身的隧道流量不再重复计算；域名认不出具体应用时按命中的规则集 / 策略组名识别；流量流向 → 代理分流 按策略组和出口节点统计。
+- **sing-box Clash API**：走代理的流量按“哪台终端、哪个域名、多少字节”直接记账；按规则集 / 策略组名识别；代理分流按策略组和节点统计。
 - **MosDNS 审计 API**：知道每台终端查了哪个域名、解析出哪些 IP。
-- **AdGuard Home（自有 DNS 服务器）**：双层 NAT（路由器下面又挂了爱快等二级路由）时，下级客户端的 DNS 查询被上游代理，路由器侧看不到，这些流量只能归「国内网络 / 未识别」。把下级网络真正使用的 DNS 服务器（AdGuard Home）的地址和密码填进来，从它的查询日志读取「谁查了哪个域名、解析出哪些 IP」，下级终端的流量同样按域名识别。前提：AdGuard Home 开启查询日志（默认开启）；账号和密码都留空表示免认证访问（仅限内网监听时）。
+- **AdGuard Home（自有 DNS 服务器）**：双层 NAT（路由器下挂爱快等二级路由）时，下级客户端的 DNS 查询被上游代理，路由器侧看不到——填入下级网络真正使用的 AdGuard Home 地址和密码，从查询日志补全域名，下级终端的流量同样按域名识别。
 
 地址每个人都不一样，都不填就不启用。
 
-### 识别库与自动更新
+### 识别库、自学习与社区共享
 
-应用识别靠三份库：内置规则库（手工维护，随版本更新）、[v2fly/domain-list-community](https://github.com/v2fly/domain-list-community)（每天自动检查更新，自检通过后热加载）、[iptoasn.com](https://iptoasn.com) 的 IP 归属库（每天自动下载，也用来显示国家 / 地区）。三者的版本和状态在 **识别规则 → 识别库** 查看，也可以关闭自动更新。终端类型识别另外用 IEEE 公开的 MAC 厂商库（OUI，每 30 天更新）。自动更新需要容器能访问外网；文件保存在 `./data` 卷里。没有外网时设 `ASN_DB=false`、`OUI_DB=false`，其余功能不受影响。
+识别规则**四层叠加**，识别规则 → 识别库 可看每层的规模和状态：
 
-blackmatrix7 上游新增的规则目录会自动登记：先下载，再用现有识别库给它的域名和 IP 段“投票”——多数属于某个已有应用就并入，多数属于同一大类就建该类应用，都不够才按目录名猜；公司级大杂烩（Tencent、Google 等）和广告 / 隐私列表不登记。识别库有变化或过了零点，会自动把今天以前的历史流量按新规则重算（只把 HTTPS / 国内网站 / 未识别这类笼统分类升级成具体应用，不会降级）；**识别规则** 页也可以手动执行。
+1. **公开库**（自动更新）：内置手工库 + v2fly（每天自检更新）+ blackmatrix7（每周，上游新目录自动登记：先下载、再由现有识别库投票定归属）+ Hagezi / UT1 分类列表 + ASN（iptoasn）+ 国内域名列表 / 官方 IP 段 / 国内 IP 段兜底。
+2. **本地自学习库**：本网络实测的「IP → 应用」（IPv6 按 /64 前缀聚合）与「域名 → 应用」长期记忆，每小时从数据库重建；DNS 缓存过期、DoH、裸 IP 流量都能按记忆归类。每次历史重算自动纠正它。
+3. **社区共享库**：各部署实例把实测结论匿名共享——只含远端 IP / 域名、应用 ID 和字节票数，不含本机终端、域名记录与自定义应用，私网地址剔除；中转聚合**至少 2 个实例见过**的映射才发布。系统设置 → 外部数据源 填中转地址即参与（总开关默认打开），也可把自己的实例开成中转（公网可达）。中转的 `/api/share/deployments` 公开显示全球已部署 / 在线 / 离线数量。
+4. 以上都没有时，才归到 HTTPS / 国内网络这类笼统分类。
 
-世界地图使用 [Natural Earth](https://www.naturalearthdata.com/)（公有领域）的简化数据。
+识别库有变化或过了零点，自动把今天以前的历史流量按新规则重算（只升级不降级）；识别规则页也可手动执行。世界地图使用 [Natural Earth](https://www.naturalearthdata.com/)（公有领域）简化数据。
 
 ### 环境变量
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `DATABASE_URL` | 空 | 留空则用网页安装向导；设置后跳过向导，格式 `mysql+pymysql://user:pass@host:3306/rosdpi?charset=utf8mb4` |
+| `DATABASE_URL` | 空 | 留空则用网页安装向导（二进制部署默认 SQLite）；格式 `mysql+pymysql://user:pass@host:3306/rosdpi?charset=utf8mb4` |
 | `LAN_CIDRS` | 私网三段 + `fd00::/8` | 内网网段，逗号分隔，界面里也能改 |
 | `ADMIN_PASSWORD` | 空 | 首次启动创建 `admin` 用的密码；留空则在登录页设置 |
-| `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | 空 | RouterOS REST 地址与只读账号，如 `https://192.168.88.1` |
+| `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | 空 | RouterOS REST 地址与只读账号 |
 | `ROS_VERIFY_TLS` | `false` | 是否校验 ROS 证书 |
-| `ROS_POLL_SECONDS` / `ROS_RATE_SECONDS` | 30 / 5 | RouterOS 完整轮询间隔 / WAN 口速率采样间隔（实时流量图） |
+| `ROS_POLL_SECONDS` / `ROS_RATE_SECONDS` | 30 / 5 | RouterOS 完整轮询间隔 / WAN 口速率采样间隔 |
 | `SINGBOX_URL` / `SINGBOX_SECRET` / `PROXY_IPS` | 空 | 旁路代理 sing-box 的 Clash API（也可在网页填写，网页优先） |
-| `MOSDNS_URL` | 空 | MosDNS 审计 API 地址（也可在网页填写） |
-| `ADGUARD_URL` / `ADGUARD_USERNAME` / `ADGUARD_PASSWORD` | 空 | 自有 DNS 服务器 AdGuard Home 的查询日志（双层 NAT 场景，也可在网页填写） |
+| `MOSDNS_URL` | 空 | MosDNS 审计 API 地址 |
+| `ADGUARD_URL` / `ADGUARD_USERNAME` / `ADGUARD_PASSWORD` | 空 | 自有 DNS 服务器 AdGuard Home 的查询日志（双层 NAT 场景） |
+| `SHARE_URL` | 空 | 社区共享库中转地址（debug16）：上报本网络实测、拉取社区库；留空不参与 |
+| `SHARE_TOKEN` | 空 | 中转的上报令牌（中转设置了才需要） |
 | `FAKEIP_CIDRS` | `198.18.0.0/15,fc00::/18` | FakeIP 地址段 |
-| `ASN_DB` | `true` | 自动下载 IP→ASN 库；没有外网时设为 `false` |
-| `CHINA_DB` | `true` | 自动下载国内域名列表（dnsmasq-china-list，约 11 万条）与国内 IP 段：规则库没认出的域名归「国内网站」，没有域名的国内流量归「国内网络」 |
-| `IPLIST_DB` | `true` | 自动下载 Google / Cloudflare / AWS / GitHub 官方发布的 IP 段（含 Apple 的 17.0.0.0/8）：没有域名的流量按 IP 认出归属 |
-| `BM7_DB` | `true` | 自动下载 [blackmatrix7](https://github.com/blackmatrix7/ios_rule_script) 按应用整理的规则（GPL-2.0，每周）：给已有应用补域名和 IP 段，另新增约 100 个应用 |
-| `HAGEZI_DB` | `true` | 自动下载 [Hagezi](https://github.com/hagezi/dns-blocklists) 分类列表（GPL-3.0，每天）：成人、博彩、VPN/代理、社交、广告、设备遥测 |
-| `UT1_DB` | `true` | 自动下载 [UT1](https://dsi.ut-capitole.fr/blacklists/) 分类列表（CC BY-SA 4.0，每天）：游戏、购物、新闻、求职、银行等 20 多类 |
-| `OUI_DB` | `true` | 自动下载 IEEE MAC 厂商库（识别终端类型，每 30 天更新）；没有外网时设为 `false` |
+| `ASN_DB` / `CHINA_DB` / `IPLIST_DB` / `BM7_DB` / `HAGEZI_DB` / `UT1_DB` / `OUI_DB` | `true` | 各识别库自动下载开关；没有外网时设 `false` |
 | `WAN_INTERFACE` | 自动 | WAN 接口名，默认按默认路由识别 |
 | `TZ` | `Asia/Shanghai` | 统计用时区，每周从周一开始 |
 | `HTTP_PORT` / `IPFIX_PORT` / `TZSP_PORT` | 8080 / 2055 / 37008 | 端口 |
-| `RETENTION_*_DAYS` | 2 / 45 / 730 / 31 | 分钟 / 小时 / 每日 / 域名明细的保留天数 |
-| `RETENTION_LOG_DAYS` / `RETENTION_EVENT_DAYS` | 30 / 180 | 访问日志 / 审计事件和操作日志的保留天数。以上保留天数也可以在 **系统设置 → 日志与留存** 里改，网页优先 |
+| `RETENTION_*_DAYS` | 2 / 45 / 730 / 31 / 30 / 180 | 分钟 / 小时 / 每日 / 域名明细 / 访问日志 / 审计事件的保留天数（界面可改，网页优先） |
 | `SECRET_KEY` | 自动生成 | 登录令牌签名密钥 |
-| `DATA_DIR` | `./data` | 数据目录（数据库连接配置、ASN / OUI 库）；Docker 里对应挂载的 `/app/data` |
+| `DATA_DIR` | `./data` | 数据目录（数据库连接配置、识别库文件）；Docker 里对应 `/app/data` |
 
 ### 开发
 
@@ -248,6 +225,11 @@ DATABASE_URL=sqlite:///./dev.db .venv/bin/uvicorn app.main:app --port 8080
 
 # 前端
 cd frontend && npm install && npm run dev   # http://localhost:5173，/api 代理到 8080
+
+# Linux 单文件二进制（debug18）
+cd frontend && npm run build
+pip install -r backend/requirements.txt pyinstaller
+pyinstaller ros-dpi.spec                    # 产物 dist/ros-dpi
 
 # 灌入模拟数据
 backend/.venv/bin/python scripts/simulate.py --minutes 5
@@ -266,29 +248,25 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
 
 - **Overview**: router status, a network health score with fixes, DHCP pool usage, WAN line status, online-host history, live rate, a traffic-mix pie (app group → category), and top apps and hosts.
 - **Hosts**: every device with its detected type (phone, computer, TV, camera…), IP, MAC, hostname, owner, online state, live rate and daily / weekly / monthly totals. Name devices by MAC or by IP. Each device has an app breakdown, visited domains, an access log and a daily timeline.
-- **Applications**: a three-level drill-down (app group → category → app) with fixed groups and categories, upload/download rates and totals with shares at each level, and a treemap of the mix. Groups follow WayOS's 17 DPI classes (HTTP, online games, video/TV, P2P, common protocols, messaging, music, stock trading, VoIP, proxies, databases, mobile apps, special protocols, mining pools, PCDN, other, unknown). It covers 17 groups, 50 categories and 2900+ apps (about 2500 converted from v2fly/domain-list-community, about 100 from blackmatrix7 rules downloaded at runtime, with Hagezi / UT1 category lists as a fallback). Traffic that can't be tied to an app is attributed to its CDN via CNAME.
-- **Flows**: live connections (sing-box connections show their policy group and outbound node), top destinations with a flow map from your location to each country, and proxy routing (traffic and top apps per sing-box policy group and node).
-- **Family members / Employees**: pick the Home or Business scenario under **Settings → Scenario & network**; menus, wording, default hours, tags and audit templates follow it. Group each person's devices and see their traffic, online time, top apps and behaviour tags for the last 7 days, with the evidence behind each tag.
-  - **Home**: daily screen-time, gaming and short-video limits, late nights, adult content, and leisure during homework time.
-  - **Business**: leisure share in working hours, job hunting and trading at work, with departments.
-- **Audit**:
-  - **Access log**: filter by person, department or keyword, export to CSV; kept 30 days by default.
-  - **Audit rules**: by app, domain, time window, traffic, **large upload**, **rogue router** or new device; can be scoped to people or departments, with scenario-specific templates.
-  - **Notifications** (the same 14 channels as EasySub): Telegram bot (API proxy, HTTP proxy, one-click Chat ID), Feishu bot, QQ bot, Bark, email, Pushplus, ServerChan, WeCom (group robot or self-built app with API proxy, user / department / tag targets and text cards), DingTalk, Discord, Slack, ntfy, Gotify or webhooks, with per-rule channel choice and quiet hours.
-  - **Shared-access check**: TTL-based detection of devices with a router behind them.
-  - **Daily / weekly reports** and an **operation log**.
-- **Control commands**: generate RouterOS commands that block apps, block internet on a schedule or set rate limits for a person or device, with undo commands. ROS-DPI never writes to the router.
-- **Rules**: custom domain / CIDR / port rules, top unidentified domains, and library versions and update status.
-- **Settings**: setup & self-check of the RouterOS mirror rules, external sources (sing-box / MosDNS / AdGuard Home), **logging & retention** (Syslog forwarding, retention per data type, database usage), and **users** (admins change everything; regular users are read-only).
+- **Applications**: a three-level drill-down (app group → category → app) with fixed groups and categories, upload/download rates and totals with shares at each level, and a treemap of the mix. Groups follow WayOS's 17 DPI classes. It covers 17 groups, 50 categories and 2900+ apps, with a CDN fallback for unidentified traffic.
+- **Flows**: live connections (sing-box connections show their policy group and outbound node), top destinations with a flow map from your location to each country, and proxy routing per sing-box policy group and node.
+- **Family members / Employees**: pick the Home or Business scenario under **Settings → Scenario & network**; group each person's devices and see their traffic, online time, top apps and behaviour tags for the last 7 days.
+- **Audit**: access log (CSV export), audit rules (app, domain, time window, traffic, large upload, rogue router, new device) with 14 push-notification channels, daily / weekly reports, operation log, TTL-based shared-access check, and a RouterOS control-command generator.
+- **Self-learning & community library**: mappings observed on YOUR network (IP → app, domain → app) are kept as long-term memory and classify traffic even after DNS caches expire, with DoH clients, or for bare-IP flows; deployments can share anonymous votes through a relay, and the relay publishes mappings seen by at least two instances plus a global deployment counter.
+- **Self-update** (Linux binary install): a one-line installer sets up a systemd service with SQLite out of the box; new versions are detected automatically and applied with one click from the UI — no SSH needed.
 - Chinese and English UI, light and dark themes, works on phones.
 
-**How it works.** RouterOS exports IPFIX (`/ip traffic-flow`) for byte counts, and mirrors DNS answers plus the first packets of each HTTPS/QUIC connection via `sniff-tzsp`. The TLS / QUIC handshake carries the target domain (SNI) per connection; DNS answers map remote IPs back to the domain the client looked up. A rule library maps domains to apps. An optional read-only REST user provides hostnames, IP-to-MAC, WAN rate and LAN prefixes. Data is aggregated per minute, hour and day into MySQL.
+**How it works.** RouterOS exports IPFIX (`/ip traffic-flow`) for byte counts, and mirrors DNS answers plus the first packets of each HTTPS/QUIC connection via `sniff-tzsp`. The TLS / QUIC handshake carries the target domain (SNI) per connection; DNS answers map remote IPs back to the domain the client looked up. A four-layer rule library maps domains and IPs to apps (public libraries, self-learned local memory, community-shared votes, then generic fallbacks). An optional read-only REST user provides hostnames, IP-to-MAC, WAN rate and LAN prefixes. Data is aggregated per minute, hour and day.
 
-**Side-router proxy and LAN DNS (optional).** If you run sing-box as a side router or MosDNS as LAN DNS, fill in their Clash API / audit API under Settings → External sources: proxied traffic is then counted per device and domain, and per-device DNS answers are used for identification. **Library updates.** v2fly rules are checked daily and hot-reloaded after a self-test; an IP→ASN database from iptoasn.com (public domain) identifies domain-less traffic by owner and country; the IEEE OUI list identifies device vendors. Set `ASN_DB=false` / `OUI_DB=false` without internet access. The world map uses simplified Natural Earth data (public domain).
+**Deploy (Linux one-line, no Docker).**
 
-**Limitations.** With DNS sniffing alone, clients using DoH/DoT show up as generic HTTPS/QUIC; SNI covers them. Sites using ECH only expose their outer public name. A LAN DNS server (AdGuard Home, Pi-hole…) works fine as long as its upstream is plain DNS on udp/53: its upstream answers pass through the router and are sniffed by the `forward` rule.
+```bash
+curl -fsSL https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/install.sh | sudo bash
+```
 
-**Deploy.** ROS-DPI stores data in **MySQL** (5.7 / 8.x) and assumes you already have one. Create a database and user for it:
+Downloads the latest single-file binary, installs a systemd service on port 8080 with SQLite out of the box, and starts it. Upgrades are one click under **Settings → Version update**.
+
+**Deploy (Docker).** Create a MySQL database and user:
 
 ```sql
 CREATE DATABASE rosdpi CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -297,11 +275,13 @@ GRANT ALL PRIVILEGES ON rosdpi.* TO 'rosdpi'@'%';
 FLUSH PRIVILEGES;
 ```
 
-Save the `docker-compose.yml` shown above (or `curl -O https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.yml`), set `LAN_CIDRS`, and run `docker compose up -d`. Images: `suyijun8182/ros-dpi` on Docker Hub and `ghcr.io/suyijun8182/ros-dpi`, amd64/arm64.
+Save the `docker-compose.yml` shown above (or `curl -O https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/docker-compose.yml`), set `LAN_CIDRS`, and run `docker compose up -d`. Images: `suyijun8182/ros-dpi` on Docker Hub and `ghcr.io/suyijun8182/ros-dpi`, amd64/arm64, tagged per release.
 
-No MySQL yet? Use [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml): it starts MySQL 8.4 alongside and is pre-configured, so the database step is skipped. Rename it to `docker-compose.yml`, create a `.env` next to it with `MYSQL_PASSWORD` and `MYSQL_ROOT_PASSWORD` (compose refuses to start without them), set `LAN_CIDRS`, and run `docker compose up -d`.
+No MySQL yet? Use [`docker-compose.with-mysql.yml`](docker-compose.with-mysql.yml): it starts MySQL 8.4 alongside and is pre-configured, so the database step is skipped. Rename it to `docker-compose.yml`, create a `.env` next to it with `MYSQL_PASSWORD` and `MYSQL_ROOT_PASSWORD`, set `LAN_CIDRS`, and run `docker compose up -d`.
 
-**First run.** Open `http://<host>:8080`. A two-step setup wizard asks for (1) the MySQL host, port, user, password and database, with a connection test, and (2) the admin password. Tables are created automatically and the connection is saved to `./data/db_config.json`. If MySQL runs on the same machine, use its LAN IP, not `127.0.0.1`. To change databases later, delete that file and restart. Setting `DATABASE_URL` skips the wizard. RouterOS commands are listed above and in **Settings → Setup & check**. Then choose the scenario (Home / Business) under **Settings → Scenario & network**, add people and assign their devices, and set up notification channels under **Audit → Notifications**.
+**First run.** Open `http://<host>:8080`. A two-step setup wizard asks for (1) the MySQL host, port, user, password and database, with a connection test, and (2) the admin password. Tables are created automatically and the connection is saved to `./data/db_config.json`. If MySQL runs on the same machine, use its LAN IP, not `127.0.0.1`. To change databases later, delete that file and restart. RouterOS commands are listed above and in **Settings → Setup & check**. Then choose the scenario (Home / Business) under **Settings → Scenario & network**, add people and assign their devices, and set up notification channels under **Audit → Notifications**.
+
+**Limitations.** With DNS sniffing alone, clients using DoH/DoT show up as generic HTTPS/QUIC; SNI covers them. Sites using ECH only expose their outer public name. A LAN DNS server (AdGuard Home, Pi-hole…) works fine as long as its upstream is plain DNS on udp/53: its upstream answers pass through the router and are sniffed by the `forward` rule.
 
 ## License
 
