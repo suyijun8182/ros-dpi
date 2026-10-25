@@ -246,7 +246,8 @@ class Engine:
             return
         proto = 17 if network == "udp" else 6
         qname = host if host and not _is_ip(host) else None
-        remote = dst or host or "0.0.0.0"
+        # remote 只存 IP（写 access_log.remote）：目标是域名时没有 IP 可存，留空；0.6.8 前把域名塞进来曾撑爆列宽
+        remote = dst if dst and _is_ip(dst) else (host if host and _is_ip(host) else "")
         node, group, rule, names = route
         with self.lock:
             app = self.classifier.classify(dst or "0.0.0.0", proto, dport, qname, None)
@@ -313,6 +314,14 @@ class Engine:
         if not src or not dst or nbytes <= 0:
             self.stats["flows_dropped"] += 1
             return None
+        # 组播 / 广播是设备发现协议（SSDP、mDNS……）的噪音：一台设备一个月能发几百 MB，全落进「其它」，不计
+        try:
+            if ipaddress.ip_address(dst).is_multicast or ipaddress.ip_address(src).is_multicast \
+                    or src == "255.255.255.255" or dst == "255.255.255.255":
+                self.stats["multicast_dropped"] = self.stats.get("multicast_dropped", 0) + 1
+                return None
+        except ValueError:
+            pass
         src_lan, dst_lan = self.is_lan(src), self.is_lan(dst)
         mac = None
         if src_lan and not dst_lan:

@@ -47,12 +47,23 @@ def _on_db_ready():
     """数据库连接成功后（启动时或安装向导保存后）执行。各步互不依赖：一步出错只记日志，不挡住后面的
     （0.6.0 / 0.6.1 的主域名回填出错时，后面的外部数据源配置、自定义规则都没加载，外部数据源显示“未启用”）"""
     ensure_admin()   # 建管理员失败要报出来（安装向导靠这个提示）
-    for name, fn in (("load_state", engine.load_state), ("apply_settings", _apply_saved)):
+    for name, fn in (("load_state", engine.load_state), ("apply_settings", _apply_saved),
+                     ("local_db", _refresh_local)):
         try:
             fn()
         except Exception as e:  # noqa: BLE001
             print(f"[startup] {name} 失败：{type(e).__name__}: {e}", flush=True)
     print("[startup] 数据库已连接", flush=True)
+
+
+def _refresh_local():
+    """本地自学习库（debug15）：从 host_domain_day 重建 IP→应用 长期记忆（启动 + 每小时），热加载"""
+    if not database.is_configured():
+        return
+    from app.classify.local import local
+    with database.session() as db:
+        local.load(db)
+        db.commit()
 
 
 def _auto_update_on() -> bool:
@@ -118,6 +129,7 @@ async def lifespan(app: FastAPI):
     sched.add_job(_safe(integrations.singbox.poll, "singbox"), "interval", seconds=5, max_instances=1, coalesce=True)
     sched.add_job(_safe(integrations.mosdns.poll, "mosdns"), "interval", seconds=5, max_instances=1, coalesce=True)
     sched.add_job(_safe(integrations.adguard.poll, "adguard"), "interval", seconds=5, max_instances=1, coalesce=True)
+    sched.add_job(_safe(_refresh_local, "local-db"), "interval", hours=1, max_instances=1, coalesce=True)
     # 识别库更新 / 过了零点后的自动重算：指纹没变时开销只有一次设置查询。启动后等 15 分钟再跑第一次，
     # 第三方库、ASN、国内列表是在后台线程加载的，不能用没加载完的识别器去算历史
     sched.add_job(_safe(_auto_reclassify, "auto-reclass"), "interval", hours=1, max_instances=1, coalesce=True,

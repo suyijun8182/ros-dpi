@@ -18,17 +18,20 @@ app 标记同步改掉（保证重复执行幂等）。host_domain_day 只覆盖
 识别规则页的手动「重算历史分类」直接调 reclassify()。
 """
 import ipaddress
+import threading
 import time
 from collections import defaultdict
 
 from sqlalchemy import select
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app import timeutil
 from app.classify import GENERIC_APPS, UNIDENTIFIED_CATEGORIES, WEAK_PREFIXES
+from app.database import upsert_add
 from app.models import DnsCache, HostDomainDay, Setting, TrafficDay
 
 FP_KEY = "reclass_fp"
+_reclass_lock = threading.Lock()   # 自动任务和手动按钮可能同时触发：串行化，避免两轮重算搬同一批字节
 # 只说明协议、地区或“是个网站”的笼统分类：可以被升级成具体应用，但重算不会把行改成它们
 VAGUE_APPS = GENERIC_APPS | {"cn_net", "cn_web", "unknown"}
 
@@ -47,22 +50,24 @@ def _is_ip(s: str) -> bool:
         return False
 
 
-def _deadlock(e: Exception) -> bool:
-    """MySQL 死锁（1213）或锁等待超时（1205）：落库任务每分钟在写同一批表，撞上重试即可"""
+def _retryable(e: Exception) -> bool:
+    """MySQL 死锁（1213）/ 锁等待超时（1205）/ 主键冲突（1062，并发重算撞车）：落库任务每分钟在写同一批表，
+    自动任务和手动按钮也可能同时跑，撞上重试即可"""
     s = str(e)
-    return "(1213" in s or "(1205" in s
+    return "(1213" in s or "(1205" in s or "(1062" in s
 
 
 def reclassify(engine, db, before: int | None = None, attempts: int = 3) -> dict:
     """重算 before（默认今天零点）以前的历史分类"""
-    for i in range(attempts):
-        try:
-            return _reclassify_once(engine, db, before)
-        except OperationalError as e:
-            db.rollback()
-            if i == attempts - 1 or not _deadlock(e):
-                raise
-            time.sleep(2 + i * 2)
+    with _reclass_lock:
+        for i in range(attempts):
+            try:
+                return _reclassify_once(engine, db, before)
+            except (OperationalError, IntegrityError) as e:
+                db.rollback()
+                if i == attempts - 1 or not _retryable(e):
+                    raise
+                time.sleep(2 + i * 2)
 
 
 def _dns_domain_map(db) -> dict[str, str]:
@@ -139,20 +144,20 @@ def _reclassify_once(engine, db, before: int | None) -> dict:
             s_[1] += down
             s_[2] += flows
     for key, (up, down, flows) in srcs.items():
-        src = db.get(TrafficDay, {"ts": key[0], "host": key[1], "app": key[2]})
-        if src is None:
+        # 负增量也走 upsert：并发重算串行化了（见 reclassify 的锁），但落库任务可能同时碰同一行
+        if db.get(TrafficDay, {"ts": key[0], "host": key[1], "app": key[2]}) is None:
             continue
-        src.up = max(src.up - up, 0)
-        src.down = max(src.down - down, 0)
-        src.flows = max(src.flows - flows, 0)
+        upsert_add(db, TrafficDay.__table__,
+                   [{"ts": key[0], "host": key[1], "app": key[2], "up": -up, "down": -down, "flows": -flows}],
+                   ["ts", "host", "app"], ["up", "down", "flows"])
+        src = db.get(TrafficDay, {"ts": key[0], "host": key[1], "app": key[2]})
+        if src is not None and (src.up < 0 or src.down < 0 or src.flows < 0):
+            src.up, src.down, src.flows = max(src.up, 0), max(src.down, 0), max(src.flows, 0)
     for key, (up, down, flows) in dsts.items():
-        dst = db.get(TrafficDay, {"ts": key[0], "host": key[1], "app": key[2]})
-        if dst is None:
-            db.add(TrafficDay(ts=key[0], host=key[1], app=key[2], up=up, down=down, flows=flows))
-        else:
-            dst.up += up
-            dst.down += down
-            dst.flows += flows
+        # upsert：落库任务 / 并发的重算可能刚写入了同一行（0.6.7 及以前用 db.get + add，撞主键整笔回滚）
+        upsert_add(db, TrafficDay.__table__,
+                   [{"ts": key[0], "host": key[1], "app": key[2], "up": up, "down": down, "flows": flows}],
+                   ["ts", "host", "app"], ["up", "down", "flows"])
     return {"scanned": len(rows), "rows_moved": len(dsts), "bytes_moved": sum(v[0] + v[1] for v in dsts.values()),
             "flows_moved": sum(v[2] for v in dsts.values()), "seconds": round(time.time() - t0, 1)}
 

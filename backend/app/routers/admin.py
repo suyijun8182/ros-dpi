@@ -177,6 +177,12 @@ def _integrations(db):
             "proxy_auto": integrations.singbox.host_ip()}
 
 
+def local_status():
+    """本地自学习库（debug15）：本网络实测的 IP→应用 记忆规模"""
+    from app.classify.local import local
+    return {"ips": len(local.ips), "updated": local.version}
+
+
 def _db_info():
     eng = database.engine
     if eng is None:
@@ -245,6 +251,7 @@ def system():
         "singbox": integrations.singbox.status(),
         "mosdns": integrations.mosdns.status(),
         "adguard": integrations.adguard.status(),
+        "local": local_status(),
         "asn": asndb.status(),
         "proxied_skipped": st["proxied_skipped"], "dns_mosdns": st["dns_mosdns"],
         "generic_apps": sorted(GENERIC_APPS),
