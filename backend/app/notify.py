@@ -45,7 +45,9 @@ DEFAULTS: dict[str, dict] = {
     "webhook": {"urls": [], "secret": "", "headers": [], "template": "", "timeout_ms": 5000, "max_retries": 3},
 }
 CHANNEL_TYPES = tuple(DEFAULTS)
-SECRET = {"url", "urls", "secret", "bot_token", "password", "token", "sendkey", "app_secret"}
+SECRET = {"url", "urls", "secret", "bot_token", "password", "token", "sendkey", "app_secret", "proxy"}
+# 改了这些“发往哪里”的字段时，被遮住的密钥不能沿用旧值——否则把地址改成自己的服务器就能套出已保存的密钥
+ADDRESS = {"api_base", "server", "host", "proxy_base", "proxy"}
 REQUIRED = {"telegram": ["bot_token", "chat_id"], "feishu": ["app_id", "app_secret", "chat_ids"],
             "qq": ["app_id", "app_secret"], "bark": ["urls"], "email": ["host", "to"], "pushplus": ["token"],
             "serverchan": ["sendkey"], "dingtalk": ["url"], "discord": ["url"], "slack": ["url"],
@@ -146,12 +148,27 @@ def mask(cfg: dict[str, dict]) -> dict[str, dict]:
         if isinstance(v, str) and len(v) > 12:
             return v[:12] + "…"
         return v
-    return {t: {k: (m(v) if k in SECRET else v) for k, v in c.items()} for t, c in cfg.items()}
+    def mh(v):
+        # webhook 自定义请求头的值常带 Authorization: Bearer …
+        return [{**h, "value": m(h.get("value") or "") if len(h.get("value") or "") > 12 else
+                 ("…" if h.get("value") else "")} if isinstance(h, dict) else h for h in (v or [])]
+    return {t: {k: (m(v) if k in SECRET else mh(v) if k == "headers" else v) for k, v in c.items()}
+            for t, c in cfg.items()}
 
 
 def unmask(new: dict, old: dict) -> dict:
-    """以“…”结尾的值（列表按位置）沿用原值"""
+    """以“…”结尾的值（列表按位置）沿用原值；发送地址改了时不沿用（要求重新填写密钥）"""
     out = dict(new)
+    masked = any((isinstance(new.get(k), str) and new[k].endswith("…")) or
+                 (isinstance(new.get(k), list) and any(isinstance(x, str) and x.endswith("…") for x in new[k]))
+                 for k in SECRET)
+    if masked and any(str(new.get(k) or "").rstrip("…") != str(old.get(k) or "")[:len(str(new.get(k) or "").rstrip("…"))]
+                      for k in ADDRESS if k in new and not str(new.get(k) or "").endswith("…")):
+        raise ValueError("改了发送地址，请重新填写密钥 / 令牌")
+    if isinstance(new.get("headers"), list):
+        oh = old.get("headers") if isinstance(old.get("headers"), list) else []
+        out["headers"] = [{**h, "value": oh[i].get("value", "")} if isinstance(h, dict) and str(h.get("value") or "").endswith("…")
+                          and i < len(oh) and isinstance(oh[i], dict) else h for i, h in enumerate(new["headers"])]
     for k in SECRET & set(new):
         v, o = new[k], old.get(k)
         if isinstance(v, list):
@@ -570,7 +587,7 @@ def send(title: str, text: str, types: list[str] | None = None, wait: bool = Fal
                 send_one(t, cfg[t], title, text)
                 r = {"channel": t, "ok": True, "error": ""}
             except Exception as e:  # noqa: BLE001
-                r = {"channel": t, "ok": False, "error": f"{type(e).__name__}: {str(e)[:200]}"}
+                r = {"channel": t, "ok": False, "error": scrub_error(f"{type(e).__name__}: {str(e)[:300]}")[:200]}
             with _lock:
                 _last[t] = {**r, "ts": int(time.time())}
             results.append(r)
@@ -579,6 +596,17 @@ def send(title: str, text: str, types: list[str] | None = None, wait: bool = Fal
     else:
         threading.Thread(target=run, daemon=True).start()
     return results
+
+
+def scrub_error(s: str) -> str:
+    """报错里常带完整 URL（Telegram 的 /bot<令牌>/、Server 酱的 /<SendKey>.send、?access_token=…），
+    会随接口返回给前端：把这些密钥换成 ***"""
+    import re
+    s = re.sub(r"/bot[^/\s]+", "/bot***", s)
+    s = re.sub(r"(?i)((?:access_)?token|key|secret|sendkey|sign)=[^&\s'\"]+", r"\1=***", s)
+    s = re.sub(r"/[A-Za-z0-9_\-]{24,}(?=[./?\s'\"]|$)", "/***", s)
+    s = re.sub(r"://[^/@\s]+@", "://***@", s)
+    return s
 
 
 def last_results() -> dict:

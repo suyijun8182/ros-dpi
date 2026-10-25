@@ -37,7 +37,8 @@ def _make_engine(url: str):
         path = url.split("///", 1)[-1]
         if path and path != ":memory:":
             os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-        eng = create_engine(url, connect_args={"check_same_thread": False})
+        # 锁等待 30 秒（默认 5 秒）：历史重算持有写锁时，每分钟落库和 API 不至于直接报 database is locked
+        eng = create_engine(url, connect_args={"check_same_thread": False, "timeout": 30})
 
         @event.listens_for(eng, "connect")
         def _pragma(conn, _):
@@ -183,6 +184,12 @@ def add_missing_columns():
                     ctype = col.type.compile(dialect=engine.dialect)
                     conn.exec_driver_sql(f"ALTER TABLE `{table.name}` MODIFY `{col.name}` {ctype}")
                     print(f"[db] 已把 {table.name}.{col.name} 从 {db_len} 加宽到 {length}", flush=True)
+            # 新版本加的索引：create_all 不会给已有的表补，这里补上
+            have_idx = {i["name"] for i in insp.get_indexes(table.name)}
+            for idx in table.indexes:
+                if idx.name and idx.name not in have_idx:
+                    idx.create(conn)
+                    print(f"[db] 已为 {table.name} 添加索引 {idx.name}", flush=True)
 
 
 def add_ready_hook(fn):

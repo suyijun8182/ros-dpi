@@ -39,6 +39,7 @@ export default {
     peak: '峰值 {v}', mode: { groups: '按应用大类', pair: '上行 / 下行' },
   },
   setup: {
+    code: '安装码', codeNeeded: '你正在从公网地址进行首次设置：请填写安装码（在容器 / 服务的启动日志里，形如“首次设置的安装码：xxxxxxxx”）。内网访问不需要。',
     title: '连接 MySQL 数据库', intro: '统计数据保存在你的 MySQL 中。请填写为 ROS-DPI 准备的数据库和账号。',
     step1: '连接数据库', step2: '设置管理员', host: 'MySQL 地址', port: '端口', user: '账号', password: '密码',
     database: '数据库名', hostHint: 'MySQL 和本程序在同一台机器时，请填这台机器的局域网 IP，不要填 127.0.0.1。表会自动创建。',

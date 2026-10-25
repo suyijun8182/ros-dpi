@@ -88,11 +88,14 @@ def logs_csv(request: Request, range: str = Query("today", pattern=RANGES), star
     buf.write("﻿")
     w = csv.writer(buf)
     w.writerow(["开始", "结束", "终端", "终端 IP", "访问目标", "远端 IP", "端口", "应用", "大类", "连接数", "上行字节", "下行字节", "识别依据"])
+    def safe(v):
+        # 主机名、访问目标来自网络（设备可以随便设）：以 = + - @ 开头的单元格在 Excel 里会被当成公式执行
+        return "'" + v if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
     for r in rows:
         x = _row(r, meta)
-        w.writerow([datetime.fromtimestamp(r.ts_start, tz).strftime("%Y-%m-%d %H:%M:%S"),
+        w.writerow([safe(v) for v in [datetime.fromtimestamp(r.ts_start, tz).strftime("%Y-%m-%d %H:%M:%S"),
                     datetime.fromtimestamp(r.ts_end, tz).strftime("%Y-%m-%d %H:%M:%S"), x["host_name"], r.host_ip,
-                    r.dest, r.remote, r.port, x["app"]["name"], x["app"]["group_name"], r.conns, r.up, r.down, r.source])
+                    r.dest, r.remote, r.port, x["app"]["name"], x["app"]["group_name"], r.conns, r.up, r.down, r.source]])
     name = f"rosdpi-access-{datetime.now(tz).strftime('%Y%m%d-%H%M')}.csv"
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": f'attachment; filename="{name}"'})
@@ -265,7 +268,10 @@ class NotifyTest(BaseModel):
 def _clean(t: str, c: dict, old: dict) -> dict:
     """只保留该渠道认识的字段，类型按默认值转换；以“…”结尾的密钥沿用原值"""
     base = notify.DEFAULTS[t]
-    c = notify.unmask(c, old)
+    try:
+        c = notify.unmask(c, old)
+    except ValueError as e:
+        raise HTTPException(400, f"{notify_name(t)}：{e}") from None
     out = {"enabled": bool(c.get("enabled"))}
     for k, dv in base.items():
         v = c.get(k, dv)

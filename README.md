@@ -217,6 +217,8 @@ EOF
 | `SHARE_HUB_URL` | `https://rosdpi.suyijun.top:8443` | 社区主站地址（内置，一般不用改）；自建私有社区时改成自己的主站 |
 | `SHARE_HUB` | `false` | 本实例作为社区主站（只有主站部署设为 `true`） |
 | `SHARE_VERIFY_TLS` | `true` | 校验主站证书；私有社区用自签证书时才设 `false` |
+| `SHARE_TRUSTED_PROXIES` | 空 | 主站：可信反向代理地址 / 网段（逗号分隔），只信它们传来的 `X-Forwarded-For`；留空 = 内网和回环地址 |
+| `COLLECTOR_ALLOWED` | 空 | 采集端口（IPFIX / TZSP）只收这些地址的包，一般填路由器 IP；留空不限制。内网有不可信设备时建议设置 |
 | `FAKEIP_CIDRS` | `198.18.0.0/15,fc00::/18` | FakeIP 地址段 |
 | `ASN_DB` / `CHINA_DB` / `IPLIST_DB` / `BM7_DB` / `HAGEZI_DB` / `UT1_DB` / `OUI_DB` | `true` | 各识别库自动下载开关；没有外网时设 `false` |
 | `WAN_INTERFACE` | 自动 | WAN 接口名，默认按默认路由识别 |

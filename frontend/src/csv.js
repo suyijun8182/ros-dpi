@@ -1,7 +1,9 @@
 // 导出 CSV：带 UTF-8 BOM，Excel 直接打开不乱码。columns: [{ label, value: row => any }]
 export function exportCsv(name, columns, rows) {
   const cell = v => {
-    const s = v == null ? '' : String(v)
+    let s = v == null ? '' : String(v)
+    // 主机名、域名来自网络：以 = + - @ 开头的文本在 Excel 里会被当成公式执行，前面加 ' 当纯文本
+    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = "'" + s
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
   }
   const lines = [columns.map(c => cell(c.label)).join(',')]

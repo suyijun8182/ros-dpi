@@ -54,7 +54,7 @@ def _retryable(e: Exception) -> bool:
     """MySQL 死锁（1213）/ 锁等待超时（1205）/ 主键冲突（1062，并发重算撞车）：落库任务每分钟在写同一批表，
     自动任务和手动按钮也可能同时跑，撞上重试即可"""
     s = str(e)
-    return "(1213" in s or "(1205" in s or "(1062" in s
+    return "(1213" in s or "(1205" in s or "(1062" in s or "database is locked" in s
 
 
 def reclassify(engine, db, before: int | None = None, attempts: int = 3, since: int | None = None) -> dict:
