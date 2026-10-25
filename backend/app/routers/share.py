@@ -30,8 +30,9 @@ def collect(req: Request, body: dict):
     entries = (body or {}).get("entries")
     if not reporter or not isinstance(entries, list):
         raise HTTPException(400, "格式不对：需要 instance 和 entries")
+    from app.engine import engine
     with database.session() as db:
-        accepted = share.collect(db, reporter, entries)
+        accepted = share.collect(db, reporter, entries, domains, engine.classifier)
         db.commit()
     return {"ok": True, "accepted": accepted}
 
