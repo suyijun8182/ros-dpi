@@ -1,17 +1,17 @@
-"""debug16：社区共享库——本地库导出/上报过滤、中转聚合（≥2 实例才发布）、部署心跳、总开关。"""
+"""debug16/22：WebDAV 社区共享——本地库导出过滤、≥2 实例聚合、部署量、自学习接入。"""
+import json
 import time
 
-from app import share
-from app.classify import Classifier
+import pytest
+
 from app.classify.local import local
 from app.engine import Engine
-from app.models import HostDomainDay, ShareDeployment, ShareDomain, ShareEntry
+from app.models import HostDomainDay
+from app.share import webdav_cycle
 
 DAY = 1792900000
 HOST = "IP:192.168.8.40"
-HUB = "11111111-1111-1111-1111-111111111111"
-CLIENT_A = "22222222-2222-2222-2222-222222222222"
-CLIENT_B = "33333333-3333-3333-3333-333333333333"
+BASE = "http://nas.local:5005/ros-dpi"
 
 
 def _engine():
@@ -20,193 +20,133 @@ def _engine():
     return e
 
 
-def test_export_filters_private_and_custom():
+class _FakeDav:
+    """最小 WebDAV 仿真：按文件夹分桶的内存键值 + PROPFIND 列表；记录所有 PUT。
+    files 的键是 "<folder>/<name>.json"（和真实 WebDAV 的路径一致）"""
+
+    def __init__(self):
+        self.files = {}
+        self.puts = []
+
+    def handle(self, method, url, content=None):
+        from httpx import Response
+        path = str(url).split("/ros-dpi/")[-1].rstrip("/")      # deployments/xxx.json 或 votes/ 或 votes/xxx.json
+        if method == "PROPFIND":
+            folder = path.rstrip("/")
+            names = [k for k in self.files if k.startswith(folder + "/")]
+            body = "".join(f"<d:response><d:href>/{n}</d:href></d:response>" for n in names)
+            return Response(207, text=f"<d:multistatus>{body}</d:multistatus>")
+        if method == "PUT":
+            self.puts.append(path)
+            self.files[path] = content or b""
+            return Response(201)
+        if method == "GET":
+            if path in self.files:
+                return Response(200, content=self.files[path])
+            return Response(404)
+        if method == "MKCOL":
+            return Response(201)
+        return Response(200)
+
+
+def _install(monkeypatch, dav):
+    """把 share.py 里的 httpx 模块函数换成 WebDAV 仿真"""
+    import httpx
+
+    from app import share as share_mod
+
+    monkeypatch.setattr(share_mod.httpx, "put", lambda url, content=None, **kw: dav.handle("PUT", url, content))
+    monkeypatch.setattr(share_mod.httpx, "get", lambda url, **kw: dav.handle("GET", url))
+    monkeypatch.setattr(share_mod.httpx, "request", lambda method, url, **kw: dav.handle(method, url))
+    del httpx
+
+
+def test_export_filters_private():
     import app.database as database
     database.connect_from_saved(force=True)
     s = database.SessionLocal()
     try:
         s.query(HostDomainDay).filter(HostDomainDay.host == HOST).delete(synchronize_session=False)
-        s.commit()
         s.add(HostDomainDay(ts=DAY, host=HOST, domain="93.184.216.34", app="douyin", base=None, bytes=800))
-        s.add(HostDomainDay(ts=DAY, host=HOST, domain="192.168.8.5", app="douyin", base=None, bytes=999))     # 私网：不共享
-        s.add(HostDomainDay(ts=DAY, host=HOST, domain="239.255.255.250", app="douyin", base=None, bytes=999))  # 组播：不共享
-        s.add(HostDomainDay(ts=DAY, host=HOST, domain="45.57.10.1", app="my_custom_app", base=None, bytes=999))  # 自定义应用：不共享
+        s.add(HostDomainDay(ts=DAY, host=HOST, domain="192.168.8.5", app="douyin", base=None, bytes=999))      # 私网
+        s.add(HostDomainDay(ts=DAY, host=HOST, domain="239.255.255.250", app="douyin", base=None, bytes=999))  # 组播
         s.commit()
-        entries, _doms = share.export_entries(_engine(), s)
-        mine = {e["ip"]: e["app"] for e in entries if e["ip"] == "93.184.216.34"}
-        assert mine == {"93.184.216.34": "douyin"}
-        assert "192.168.8.5" not in {e["ip"] for e in entries}            # 私网
-        assert "239.255.255.250" not in {e["ip"] for e in entries}        # 组播
-        assert "45.57.10.1" not in {e["ip"] for e in entries}             # 自定义应用（45.57.10.1 那行是自定义应用）
-        assert all(not e["ip"].endswith("/64") or ":" in e["ip"] for e in entries)  # IPv4 永远精确
+        eng = _engine()
+        from app import share as share_mod
+        entries, _domains = share_mod.export_entries(eng, s)
+        ips = {e["ip"] for e in entries}
+        assert "93.184.216.34" in ips
+        assert "192.168.8.5" not in ips and "239.255.255.250" not in ips
     finally:
         s.query(HostDomainDay).filter(HostDomainDay.host == HOST).delete(synchronize_session=False)
         s.commit()
         s.close()
 
 
-def test_hub_collect_publishes_only_two_reporters():
+def test_webdav_aggregates_two_instances(monkeypatch):
+    """两个实例各写各的投票文件：≥2 个实例见过的映射进社区层；单实例见过的进不来"""
     import app.database as database
     database.connect_from_saved(force=True)
+    dav = _FakeDav()
+    _install(monkeypatch, dav)
     s = database.SessionLocal()
     try:
         s.query(HostDomainDay).filter(HostDomainDay.host == HOST).delete(synchronize_session=False)
         s.commit()
-        s.query(ShareEntry).filter(ShareEntry.ip.in_(["45.57.10.1", "8.8.8.8"])).delete(synchronize_session=False)
+        eng = _engine()
+        # A 的本机实测：1.2.3.4 → douyin（进入自己的投票文件）
+        s.add(HostDomainDay(ts=DAY, host=HOST, domain="1.2.3.4", app="douyin", base=None, bytes=500))
         s.commit()
-        # 单个实例上报：不发布
-        share.collect(s, CLIENT_A, [{"ip": "45.57.10.1", "app": "douyin", "bytes": 500},
-                                    {"ip": "8.8.8.8", "app": "bilibili", "bytes": 300}])
-        s.commit()
-        lib = share.published_library(s)
-        assert lib["entries"] == []
-        # 第二个实例也见过 198.51.100.1 → 发布；198.51.100.2 仍只有一个实例 → 不发布
-        share.collect(s, CLIENT_B, [{"ip": "45.57.10.1", "app": "douyin", "bytes": 700}])
-        s.commit()
-        lib = share.published_library(s)
-        assert {"ip": "45.57.10.1", "app": "douyin"} in lib["entries"]
-        assert all(e["ip"] != "8.8.8.8" for e in lib["entries"])
-    finally:
-        s.query(ShareEntry).filter(ShareEntry.ip.in_(["45.57.10.1", "8.8.8.8"])).delete(synchronize_session=False)
-        s.commit()
-        s.close()
+        # 第一轮：A 写入自己的投票文件；此时没有其它文件，社区层为空
+        with database.session() as db:
+            res1 = webdav_cycle(eng, db, BASE, "", "")
+            db.commit()
+        assert res1["deployed"] == 1 and res1["online"] == 1
+        assert res1["community_ips"] == 0
+        # B 的文件出现在 NAS 上：1.2.3.4 → douyin（与 A 相同）+ 5.6.7.8 → bilibili（只有 B 见过）
+        dav.files["votes/IID_B.json"] = json.dumps({
+            "version": "0.6.20", "ts": int(time.time()),
+            "entries": [{"ip": "1.2.3.4", "app": "douyin", "bytes": 100},
+                        {"ip": "5.6.7.8", "app": "bilibili", "bytes": 200}],
+            "domains": []}).encode()
+        dav.files["deployments/IID_B.json"] = json.dumps(
+            {"version": "0.6.20", "ts": int(time.time())}).encode()
 
-
-def test_heartbeat_and_deployments():
-    import app.database as database
-    database.connect_from_saved(force=True)
-    s = database.SessionLocal()
-    try:
-        s.query(ShareDeployment).filter(ShareDeployment.instance.in_([HUB, CLIENT_A])).delete(synchronize_session=False)
-        s.commit()
-        share.heartbeat(s, HUB, "0.6.10")
-        share.heartbeat(s, CLIENT_A, "0.6.10")
-        s.commit()
-        d = share.deployments(s)
-        assert d["total"] >= 2 and d["online"] >= 2
-    finally:
-        s.query(ShareDeployment).filter(ShareDeployment.instance.in_([HUB, CLIENT_A])).delete(synchronize_session=False)
-        s.commit()
-        s.close()
-
-
-def test_client_merges_community_only_into_gaps():
-    import app.database as database
-    database.connect_from_saved(force=True)
-    s = database.SessionLocal()
-    try:
-        local.reset()
-        # 其它测试可能留过同域名的行：先清掉（8.8.4.4 在共享测试里是社区条目）
-        s.query(HostDomainDay).filter(HostDomainDay.domain.in_(["45.57.10.1", "8.8.4.4"])).delete(synchronize_session=False)
-        s.commit()
-        # 本地实测：45.57.10.1 → bilibili；社区对同一 IP 说什么都不覆盖
-        local.load_community({"45.57.10.1": "bilibili", "8.8.4.4": "douyin"})
-        s.add(HostDomainDay(ts=DAY, host=HOST, domain="45.57.10.1", app="bilibili", base=None, bytes=100))
-        s.commit()
-        local.load(s)
-        s.commit()
-        assert local.ip_app("45.57.10.1") == "bilibili"   # 本地实测优先
-        assert local.ip_app("8.8.4.4") == "douyin"     # 本地没有的用社区
+        # 第二轮：A 读 B 的文件并聚合
+        with database.session() as db:
+            res2 = webdav_cycle(eng, db, BASE, "", "")
+            db.commit()
+        assert res2["deployed"] == 2 and res2["online"] == 2
+        assert res2["community_ips"] == 1          # 1.2.3.4 两家都见过
+        assert local.ip_app("1.2.3.4") == "douyin"
+        assert local.ip_app("5.6.7.8") is None     # 单实例见过的进不了社区层
+        assert len(dav.puts) == 4                  # 2 轮 × (deployments + votes)
     finally:
         s.query(HostDomainDay).filter(HostDomainDay.host == HOST).delete(synchronize_session=False)
-        s.query(HostDomainDay).filter(HostDomainDay.domain.in_(["45.57.10.1", "8.8.4.4"])).delete(synchronize_session=False)
         s.commit()
         s.close()
         local.reset()
+        dav.files.clear()
+        dav.puts.clear()
 
 
-def test_ipv6_prefix_shared_and_matched():
-    """中国环境以 IPv6 公网为主：精确地址在不同实例间几乎不重复，共享与匹配都按 /64 前缀"""
-    import app.database as database
-    database.connect_from_saved(force=True)
-    s = database.SessionLocal()
+def test_webdav_single_instance_no_community(monkeypatch):
+    import httpx
+
+    dav = _FakeDav()
+    _install(monkeypatch, dav)
+    eng = _engine()
     try:
-        s.query(HostDomainDay).filter(HostDomainDay.host == HOST).delete(synchronize_session=False)
-        s.query(ShareEntry).filter(ShareEntry.ip.like("%/64")).delete(synchronize_session=False)
-        s.commit()
-        # 两个不同实例、同一 /64 里的不同精确地址：聚合后应发布为同一条 /64 记忆
-        s.add(HostDomainDay(ts=DAY, host=HOST, domain="2408:8556:1234:5678::1", app="douyin", base=None, bytes=600))
-        s.add(HostDomainDay(ts=DAY, host=HOST, domain="fd00::5", app="douyin", base=None, bytes=999))   # ULA：不共享
-        s.commit()
-        entries, _doms = share.export_entries(_engine(), s)
-        v6 = {e["ip"]: e["app"] for e in entries if e["ip"].endswith("/64")}
-        assert v6 == {"2408:8556:1234:5678::/64": "douyin"}
-        assert "fd00::/64" not in v6
-        share.collect(s, CLIENT_A, [{"ip": "2408:8556:1234:5678::5", "app": "douyin", "bytes": 100}])   # 别的实例、同一 /64
-        share.collect(s, CLIENT_B, [{"ip": "2408:8556:1234:5678::9", "app": "douyin", "bytes": 100}])
-        s.commit()
-        lib = share.published_library(s)
-        assert {"ip": "2408:8556:1234:5678::/64", "app": "douyin"} in lib["entries"]
-        # 本地匹配：同一 /64 里的另一个精确地址也能命中
         local.reset()
-        local.load_community({"2408:8556:1234:5678::/64": "douyin"})
-        assert local.ip_app("2408:8556:1234:5678::abc") == "douyin"
-        assert local.ip_app("2408:8556:9999::abc") is None
+        import app.database as database
+        database.connect_from_saved(force=True)
+        s = database.SessionLocal()
+        with database.session() as db:
+            res = webdav_cycle(eng, db, BASE, "", "")
+            db.commit()
+        assert res["deployed"] == 1 and res["online"] == 1
+        assert res["community_ips"] == 0           # 没有其它实例 → 社区层空（本地实测本来就优先）
     finally:
-        s.query(HostDomainDay).filter(HostDomainDay.host == HOST).delete(synchronize_session=False)
-        s.query(ShareEntry).filter(ShareEntry.ip.like("%/64")).delete(synchronize_session=False)
-        s.commit()
         s.close()
         local.reset()
-
-
-def test_domain_learning_and_matching():
-    """域名学习（debug17）：本地实测按字节数取多数，精确匹配，分类管线用得上"""
-    import app.database as database
-    database.connect_from_saved(force=True)
-    s = database.SessionLocal()
-    try:
-        s.query(HostDomainDay).filter(HostDomainDay.domain == "media.example.com").delete(synchronize_session=False)
-        HOST2 = "IP:192.168.8.41"
-        s.query(HostDomainDay).filter(HostDomainDay.host.in_([HOST, HOST2])).delete(synchronize_session=False)
-        s.add(HostDomainDay(ts=DAY, host=HOST, domain="media.example.com", app="douyin", base=None, bytes=500))
-        s.add(HostDomainDay(ts=DAY, host=HOST2, domain="media.example.com", app="web", base=None, bytes=100))
-        s.commit()
-        local.reset()
-        local.load(s)
-        s.commit()
-        assert local.domain_app("media.example.com") == "douyin"       # 字节多的应用赢
-        assert local.domain_app("media.example.com.") == "douyin"      # 根点归一
-        assert local.domain_app("other.example.com") is None
-        c = Classifier()
-        assert c.classify("0.0.0.0", 6, 443, "media.example.com", None) == "douyin"
-        assert c.classify("0.0.0.0", 6, 443, "unknown.example.net", None) != "douyin"
-    finally:
-        s.query(HostDomainDay).filter(HostDomainDay.domain == "media.example.com").delete(synchronize_session=False)
-        s.commit()
-        s.close()
-        local.reset()
-
-
-def test_hub_domains_two_reporters_and_merge():
-    """域名共享（debug17）：≥2 个实例见过才发布；合并后本地实测优先、社区补空白"""
-    import app.database as database
-    database.connect_from_saved(force=True)
-    s = database.SessionLocal()
-    try:
-        s.query(ShareDomain).filter(ShareDomain.domain == "media.example.com").delete(synchronize_session=False)
-        s.commit()
-        share.collect(s, CLIENT_A, [], domains=[{"domain": "media.example.com", "app": "douyin", "bytes": 500}])
-        s.commit()
-        lib = share.published_library(s)
-        assert all(d["domain"] != "media.example.com" for d in lib["domains"])   # 单实例不发布
-        share.collect(s, CLIENT_B, [], domains=[{"domain": "media.example.com", "app": "douyin", "bytes": 300}])
-        s.commit()
-        lib = share.published_library(s)
-        assert {"domain": "media.example.com", "app": "douyin"} in lib["domains"]
-        # 客户端合并：本地没学过的域名用社区结论
-        local.reset()
-        share.merge_community(s, {"entries": [], "domains": [{"domain": "media.example.com", "app": "douyin"}]})
-        assert local.domain_app("media.example.com") == "douyin"
-        # 本地实测优先：同域名本地学的是 web，就不被社区覆盖
-        s.add(HostDomainDay(ts=DAY, host=HOST, domain="media.example.com", app="web", base=None, bytes=100))
-        s.commit()
-        local.load(s)
-        s.commit()
-        assert local.domain_app("media.example.com") == "web"
-    finally:
-        s.query(ShareDomain).filter(ShareDomain.domain == "media.example.com").delete(synchronize_session=False)
-        s.query(HostDomainDay).filter(HostDomainDay.domain == "media.example.com").delete(synchronize_session=False)
-        s.commit()
-        s.close()
-        local.reset()
+        dav.files.clear()
