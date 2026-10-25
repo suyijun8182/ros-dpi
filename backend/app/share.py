@@ -106,7 +106,10 @@ def export_domains(engine, db) -> list[dict]:
 
 
 def _valid_app(classifier, app: str) -> bool:
-    """应用白名单（debug20）：只收所有实例都认识的应用；自定义应用和编造的 ID 拒收"""
+    """应用白名单（debug20）：只收所有实例都认识的应用；自定义应用和编造的 ID 拒收。
+    classifier 传 None 时只按 ID 形状校验（测试直调用）"""
+    if classifier is None:
+        return bool(app) and len(app) <= 48 and app != "other" and not app.startswith("custom_")
     info = classifier.apps.get(app)
     return info is not None and not info.custom
 
