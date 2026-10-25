@@ -158,6 +158,45 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # Linux 单文件二进制（debug18）：与 Docker 并行的第二种部署形态，产物附加到 GitHub Release
+  linux-binary:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci || npm install
+          npm run build
+      - name: Build Linux binary
+        run: |
+          pip install -r backend/requirements.txt pyinstaller
+          pyinstaller ros-dpi.spec
+          mkdir -p pkg
+          install -m 755 dist/ros-dpi pkg/ros-dpi
+          tar -czf "ros-dpi-linux-amd64.tar.gz" -C pkg ros-dpi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ros-dpi-linux-amd64
+          path: ros-dpi-linux-amd64.tar.gz
+      - name: Attach to release
+        run: |
+          VER=$(grep __version__ backend/app/__init__.py | grep -oE '[0-9]+[.][0-9]+[.][0-9]+' | head -1)
+          gh release view "v${VER}" >/dev/null 2>&1 || gh release create "v${VER}" --title "v${VER}" --notes "ROS-DPI v${VER}"
+          gh release upload "v${VER}" "ros-dpi-linux-amd64.tar.gz" --clobber
+
   # 把 DOCKERHUB.md 同步到 Docker Hub 的 Overview。独立 job：失败不影响镜像发布。
   # 用社区维护的 action（跟进 Docker Hub 认证接口变化），出错时原因会写进任务注释。
   dockerhub-overview:

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.12] - 2026-10-25
+
+Linux 二进制一键部署 + 网页一键自更新 + 项目文档重写（debug18）
+
+- **Linux 单文件二进制部署**（debug18 第 1 条）：PyInstaller 把后端、前端与运行时打成单文件二进制，`install.sh` 一键部署——下载、创建 `/opt/ros-dpi` 数据目录、注册并启动 systemd 服务，默认 SQLite 零配置起步（想用 MySQL 设 `DATABASE_URL`）。支持 x86_64 / aarch64。与 Docker 部署并行提供，以后每个版本都有两种形态。
+- **网页一键自更新**（debug18 第 2 条）：二进制部署时自动检测 GitHub 最新 Release；系统设置 → 版本更新 出现新版本提示，点「一键更新」自动下载、原子替换二进制并重启服务——全程不需要登录 Linux。Docker 部署的实例会提示用 `docker compose pull`。
+- **项目文档重写**（debug18 第 3 条）：README 与 Docker Hub 介绍按当前功能与两种部署形态重写：一键安装放首位，识别规则改为「公开库 / 本地自学习 / 社区共享 / 笼统兜底」四层说明，环境变量表补齐共享与 AdGuard 相关项，英文部分同步。
+- CI 新增 linux-binary 任务：每个版本自动构建 Linux 二进制并附加到 GitHub Release（amd64），install.sh 从 Release 下载。
+
 ## [0.6.11] - 2026-10-25
 
 域名学习并共享（debug17）

@@ -189,6 +189,19 @@
     <CompliancePanel v-if="tab === 'compliance'" />
 
     <ScenePicker v-if="isAdmin && tab === 'system'" class="scene-pick" />
+    <div class="panel" v-if="isAdmin && tab === 'system'" id="update">
+      <div class="panel-h"><h2>{{ t('upd.title') }}</h2>
+        <span class="pill" :class="upd && upd.available ? 'ok' : 'grey'">
+          {{ upd ? (upd.available ? t('upd.available', { v: upd.latest }) : t('upd.uptodate')) : '…' }}</span></div>
+      <div class="panel-b form">
+        <div class="small muted">{{ t('upd.current', { v: upd ? upd.current : '-' }) }}<span v-if="upd && !upd.supported"> · {{ t('upd.docker') }}</span></div>
+        <div class="acts">
+          <span class="err" v-if="updErr">{{ updErr }}</span><span class="muted small" v-if="updMsg">{{ updMsg }}</span><span class="sp" />
+          <button class="btn primary" :disabled="!upd || !upd.available || !upd.supported || updating" @click="doUpdate">
+            {{ updating ? t('upd.running') : t('upd.btn') }}</button>
+        </div>
+      </div>
+    </div>
     <div class="grid g2 sys" v-if="tab === 'system'">
       <div class="panel" v-if="s">
         <div class="panel-h">{{ t('settings.network') }}</div>
@@ -237,7 +250,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import http, { auth, isAdmin } from '../api.js'
@@ -337,6 +350,8 @@ async function testSources() {
   } catch (e) { srcErr.value = e.message } finally { testing.value = false }
 }
 
+watch(() => route.query.tab, v => { if (v === 'system' && isAdmin) loadUpdate() }, { immediate: true })
+
 async function save() {
   saveErr.value = ''
   try {
@@ -344,6 +359,25 @@ async function save() {
     saved.value = true
     setTimeout(() => (saved.value = false), 1500)
   } catch (e) { saveErr.value = e.message }
+}
+
+// ---------- 版本更新（debug18：Linux 二进制一键自更新） ----------
+const upd = ref(null)
+const updErr = ref('')
+const updMsg = ref('')
+const updating = ref(false)
+async function loadUpdate() {
+  try { upd.value = await http.get('/system/update') } catch (e) { upd.value = { supported: false, available: false } }
+}
+async function doUpdate() {
+  if (!confirm(t('upd.confirm'))) return
+  updating.value = true
+  updErr.value = ''
+  updMsg.value = ''
+  try {
+    const r = await http.post('/system/update')
+    updMsg.value = r.message || t('upd.done')
+  } catch (e) { updErr.value = e.message } finally { updating.value = false }
 }
 
 async function testRos() {

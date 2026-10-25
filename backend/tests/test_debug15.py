@@ -64,3 +64,16 @@ def test_proxy_remote_stores_ip_only():
     remotes = {k[1] for k in e.sessions}
     assert "" in remotes and "93.184.216.34" in remotes
     assert not any(r and "example-cdn-cluster" in r for r in remotes)
+
+
+def test_selfupdate_status_and_guard():
+    from app import selfupdate
+    # 版本比较
+    assert selfupdate._ver_tuple("0.6.12") > selfupdate._ver_tuple("0.6.9")
+    assert selfupdate._ver_tuple("0.6.10") > selfupdate._ver_tuple("0.6.9")
+    assert selfupdate._ver_tuple("0.6.11") == selfupdate._ver_tuple("0.6.11")
+    st = selfupdate.status("0.6.11")
+    assert st["current"] == "0.6.11" and st["supported"] is False   # Windows/非冻结不支持一键更新
+    import pytest
+    with pytest.raises(RuntimeError):
+        selfupdate.perform("0.6.11")                                # 非冻结环境直接拒绝
