@@ -11,6 +11,8 @@
 - 每次上报限量，中转按实例 ID 去重投票、过期清理。
 """
 import ipaddress
+import re
+import threading
 import time
 import uuid
 from collections import defaultdict
@@ -24,6 +26,18 @@ MAX_UPLOAD = 50_000          # 单次上报的条数上限
 MAX_REPORTER = 100_000       # 中转上每个实例最多保留的条数
 PUBLISH_REPORTERS = 2        # 至少几个不同实例见过才对外发布
 ENTRY_TTL = 30 * 24 * 3600   # 上报条目 30 天没再出现就清理
+# 域名格式（debug20：中转拒收格式错误的域名条目）
+_DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+MAX_BYTES = 10 ** 15         # 单条字节票数的上限，防脏数据
+
+# 最近一次与中转同步的结果（连接状态指示，debug20 第 1 条）
+_sync_lock = threading.Lock()
+_sync = {"ts": 0, "ok": None, "error": "", "community_ips": 0, "community_domains": 0}
+
+
+def sync_state() -> dict:
+    with _sync_lock:
+        return dict(_sync)
 
 
 def instance_id(db) -> str:
@@ -91,16 +105,24 @@ def export_domains(engine, db) -> list[dict]:
     return out[:MAX_UPLOAD]
 
 
-def collect(db, reporter: str, entries: list[dict], domains: list[dict] | None = None) -> int:
-    """中转：记录一次上报（调用方提交事务）。返回接受的条数"""
+def _valid_app(classifier, app: str) -> bool:
+    """应用白名单（debug20）：只收所有实例都认识的应用；自定义应用和编造的 ID 拒收"""
+    info = classifier.apps.get(app)
+    return info is not None and not info.custom
+
+
+def collect(db, reporter: str, entries: list[dict], domains: list[dict] | None = None,
+            classifier=None) -> int:
+    """中转：记录一次上报（调用方提交事务）。返回接受的条数。
+    校验（debug20 第 2 条）：IP 可共享性、域名格式、应用白名单（自定义应用和编造的 ID 拒收）、字节上限"""
     now = int(time.time())
     accepted = 0
     from app.classify.local import _v6key
     for e in entries[:MAX_UPLOAD]:
-        ip, app, b = str(e.get("ip", "")), str(e.get("app", "")), max(int(e.get("bytes", 0) or 0), 0)
+        ip, app, b = str(e.get("ip", "")), str(e.get("app", "")), min(max(int(e.get("bytes", 0) or 0), 0), MAX_BYTES)
         # IPv6 条目（不管上报的是精确地址还是 /64）统一按 /64 前缀存储：不同实例的精确地址才能凑齐投票
         base = ip[:-3] if ip.endswith("/64") else ip
-        if not _shareable_ip(base) or len(app) > 48 or app == "other":
+        if not _shareable_ip(base) or not _valid_app(classifier, app):
             continue
         key = _v6key(base) or base
         row = db.get(ShareEntry, {"ip": key, "app": app, "reporter": reporter})
@@ -112,13 +134,14 @@ def collect(db, reporter: str, entries: list[dict], domains: list[dict] | None =
         accepted += 1
     for e in (domains or [])[:MAX_UPLOAD]:
         dom, app = str(e.get("domain", "")).lower().rstrip("."), str(e.get("app", ""))
-        if not dom or "/" in dom or len(dom) > 255 or len(app) > 48 or app == "other":
+        b = min(max(int(e.get("bytes", 0) or 0), 0), MAX_BYTES)
+        if not _DOMAIN_RE.match(dom) or not _valid_app(classifier, app):
             continue
         row = db.get(ShareDomain, {"domain": dom, "app": app, "reporter": reporter})
         if row is None:
-            db.add(ShareDomain(domain=dom, app=app, reporter=reporter, bytes=max(int(e.get("bytes", 0) or 0), 0), ts=now))
+            db.add(ShareDomain(domain=dom, app=app, reporter=reporter, bytes=b, ts=now))
         else:
-            row.bytes = max(row.bytes, int(e.get("bytes", 0) or 0))
+            row.bytes = max(row.bytes, b)
             row.ts = now
         accepted += 1
     # 清理：30 天没再出现、或单个实例超出上限的旧条目
@@ -218,21 +241,25 @@ def client_cycle(engine, db, url: str, token: str = "") -> dict:
     except Exception:  # noqa: BLE001  心跳失败不影响库同步
         pass
     entries, domains = export_entries(engine, db)
-    uploaded = 0
+    uploaded, c_ips, c_doms, error = 0, 0, 0, ""
     try:
         r = httpx.post(base + "/api/share/collect", json={"instance": iid, "entries": entries, "domains": domains},
                        headers=headers, timeout=30.0)
         r.raise_for_status()
         uploaded = int(r.json().get("accepted", 0))
-    except Exception:  # noqa: BLE001
-        pass
-    merged = 0
+    except Exception as e:  # noqa: BLE001
+        error = f"{type(e).__name__}: {str(e)[:120]}"
     try:
         r2 = httpx.get(base + "/api/share/library.json", headers=headers, timeout=30.0)
         r2.raise_for_status()
-        merged = merge_community(db, r2.json())
-    except Exception:  # noqa: BLE001
-        pass
+        data = r2.json()
+        c_ips, c_doms = len(data.get("entries") or []), len(data.get("domains") or [])
+        merged = merge_community(db, data)
+    except Exception as e:  # noqa: BLE001
+        error = error or f"{type(e).__name__}: {str(e)[:120]}"
+    with _sync_lock:
+        _sync.update(ts=int(time.time()), ok=(not error), error=error,
+                     community_ips=c_ips, community_domains=c_doms)
     # 中转之间自动同步（debug19 第 2 条）：从主中转的部署名单里发现其它中转，把它们的社区库并进本地，
     # 保证所有中转对外发布的数据一致
     if is_hub and base.rstrip("/") != url.rstrip("/"):

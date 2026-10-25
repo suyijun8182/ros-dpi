@@ -164,7 +164,14 @@
           <div class="src-box">
             <div class="sec">{{ t('sources.shareTitle') }}<span class="sp" />
               <span v-if="s.share_hub" class="pill ok">{{ t('sources.shareHubOn') }}</span>
-              <span v-else class="pill grey">{{ t('sources.off') }}</span></div>
+              <span v-if="!s.share_enabled" class="pill grey">{{ t('sources.off') }}</span>
+              <template v-else-if="!src.share_url"><span class="pill grey">{{ t('sources.shareNoUrl') }}</span></template>
+              <template v-else>
+                <span v-if="deploys && deploys.sync && deploys.sync.ts" class="pill" :class="deploys.sync.ok ? 'ok' : 'bad'">
+                  {{ deploys.sync.ok ? t('sources.connected') : t('sources.failed') }}</span>
+                <span v-else class="pill grey">{{ t('sources.shareWait') }}</span>
+              </template>
+              <span v-if="s.share_hub" class="pill ok">{{ t('sources.shareHubOn') }}</span></div>
             <p class="faint small">{{ t('sources.shareWhy') }}</p>
             <label class="chk" style="display:flex;gap:6px;align-items:center;cursor:pointer">
               <input type="checkbox" :checked="s.share_enabled" @change="src.share_enabled = $event.target.checked" /> {{ t('sources.shareEnabled') }}
@@ -175,7 +182,11 @@
               <input id="share-hub" type="checkbox" :checked="s.share_hub" @change="src.share_hub = $event.target.checked" /> {{ t('sources.shareHub') }}
             </label>
             <div class="faint small">{{ t('sources.shareHint') }}</div>
-            <div class="small" style="margin-top:8px" v-if="deploys">
+            <div class="small" style="margin-top:8px" v-if="deploys && deploys.sync && deploys.sync.ts">
+              <b>{{ t('sources.communitySize') }}</b>：{{ t('sources.communityDetail', { ip: (deploys.sync.community_ips || 0).toLocaleString(), dom: (deploys.sync.community_domains || 0).toLocaleString() }) }}
+              <span class="faint small">（{{ t('settings.last') }} {{ ago(deploys.sync.ts) }}）</span>
+            </div>
+            <div class="small" style="margin-top:8px" v-if="deploys && (s.share_hub || deploys.total)">
               <b>{{ t('sources.deploys') }}</b>：{{ t('sources.deployed', { n: deploys.total }) }} ·
               <span style="color:var(--up)">{{ t('sources.online', { n: deploys.online }) }}</span> ·
               {{ t('sources.offline', { n: deploys.offline }) }}

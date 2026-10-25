@@ -214,10 +214,11 @@ def share_status():
 
 
 def deployments_with_relays():
-    """全球部署量 + 可用中转列表（debug19）：中转实例直接读本地，其它实例从中转拉取"""
+    """全球部署量 + 可用中转列表 + 本实例的同步状态（debug19/20）：中转实例直接读本地，其它实例从中转拉取"""
     from app import share
     s = get_settings()
     url, hub, published, relays = getattr(s, "share_url", ""), s.share_hub, 0, []
+    enabled = _get(db, "share_enabled", "1" if s.share_enabled else "0") == "1"
     if database.is_configured():
         try:
             with database.session() as db:
@@ -227,14 +228,14 @@ def deployments_with_relays():
                 hub = (h_row.value == "1") if h_row is not None else s.share_hub
                 if hub:
                     d = share.deployments(db)
-                    return d
-                if url:
+                    return {**d, "sync": share.sync_state()}
+                if enabled and url:
                     got = share.deployments_remote(url, s.share_token)
                     if got:
-                        return got
+                        return {**got, "sync": share.sync_state()}
         except Exception:  # noqa: BLE001
             pass
-    return {"total": 0, "online": 0, "offline": 0, "relays": relays}
+    return {"total": 0, "online": 0, "offline": 0, "relays": relays, "sync": share.sync_state()}
 
 
 def _db_info():
@@ -356,9 +357,9 @@ def library(db: Session = Depends(get_db)):
 
 
 @router.get("/system/deployments")
-def system_deployments():
+def system_deployments(db: Session = Depends(get_db)):
     """全球部署量 + 可用中转列表（debug19）"""
-    return deployments_with_relays()
+    return deployments_with_relays(db)
 
 
 @router.get("/system/update")
