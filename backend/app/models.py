@@ -233,3 +233,13 @@ class ShareDeployment(Base):
     version = Column(String(16))
     first_seen = Column(BigInteger, nullable=False)
     last_seen = Column(BigInteger, nullable=False)
+
+
+class ShareDomain(Base):
+    """社区共享库的域名学习（debug17）：各实例实测的「域名 → 应用」匿名投票，聚合规则同 ShareEntry"""
+    __tablename__ = "share_domains"
+    domain = Column(String(255), primary_key=True)
+    app = Column(String(48), primary_key=True)
+    reporter = Column(String(36), primary_key=True)
+    bytes = Column(BigInteger, nullable=False, default=0)
+    ts = Column(BigInteger, nullable=False)

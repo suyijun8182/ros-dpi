@@ -2,9 +2,10 @@
 import time
 
 from app import share
+from app.classify import Classifier
 from app.classify.local import local
 from app.engine import Engine
-from app.models import HostDomainDay, ShareDeployment, ShareEntry
+from app.models import HostDomainDay, ShareDeployment, ShareDomain, ShareEntry
 
 DAY = 1792900000
 HOST = "IP:192.168.8.40"
@@ -31,7 +32,7 @@ def test_export_filters_private_and_custom():
         s.add(HostDomainDay(ts=DAY, host=HOST, domain="239.255.255.250", app="douyin", base=None, bytes=999))  # 组播：不共享
         s.add(HostDomainDay(ts=DAY, host=HOST, domain="45.57.10.1", app="my_custom_app", base=None, bytes=999))  # 自定义应用：不共享
         s.commit()
-        entries = share.export_entries(_engine(), s)
+        entries, _doms = share.export_entries(_engine(), s)
         mine = {e["ip"]: e["app"] for e in entries if e["ip"] == "93.184.216.34"}
         assert mine == {"93.184.216.34": "douyin"}
         assert "192.168.8.5" not in {e["ip"] for e in entries}            # 私网
@@ -127,7 +128,7 @@ def test_ipv6_prefix_shared_and_matched():
         s.add(HostDomainDay(ts=DAY, host=HOST, domain="2408:8556:1234:5678::1", app="douyin", base=None, bytes=600))
         s.add(HostDomainDay(ts=DAY, host=HOST, domain="fd00::5", app="douyin", base=None, bytes=999))   # ULA：不共享
         s.commit()
-        entries = share.export_entries(_engine(), s)
+        entries, _doms = share.export_entries(_engine(), s)
         v6 = {e["ip"]: e["app"] for e in entries if e["ip"].endswith("/64")}
         assert v6 == {"2408:8556:1234:5678::/64": "douyin"}
         assert "fd00::/64" not in v6
@@ -144,6 +145,68 @@ def test_ipv6_prefix_shared_and_matched():
     finally:
         s.query(HostDomainDay).filter(HostDomainDay.host == HOST).delete(synchronize_session=False)
         s.query(ShareEntry).filter(ShareEntry.ip.like("%/64")).delete(synchronize_session=False)
+        s.commit()
+        s.close()
+        local.reset()
+
+
+def test_domain_learning_and_matching():
+    """域名学习（debug17）：本地实测按字节数取多数，精确匹配，分类管线用得上"""
+    import app.database as database
+    database.connect_from_saved(force=True)
+    s = database.SessionLocal()
+    try:
+        s.query(HostDomainDay).filter(HostDomainDay.domain == "media.example.com").delete(synchronize_session=False)
+        HOST2 = "IP:192.168.8.41"
+        s.query(HostDomainDay).filter(HostDomainDay.host.in_([HOST, HOST2])).delete(synchronize_session=False)
+        s.add(HostDomainDay(ts=DAY, host=HOST, domain="media.example.com", app="douyin", base=None, bytes=500))
+        s.add(HostDomainDay(ts=DAY, host=HOST2, domain="media.example.com", app="web", base=None, bytes=100))
+        s.commit()
+        local.reset()
+        local.load(s)
+        s.commit()
+        assert local.domain_app("media.example.com") == "douyin"       # 字节多的应用赢
+        assert local.domain_app("media.example.com.") == "douyin"      # 根点归一
+        assert local.domain_app("other.example.com") is None
+        c = Classifier()
+        assert c.classify("0.0.0.0", 6, 443, "media.example.com", None) == "douyin"
+        assert c.classify("0.0.0.0", 6, 443, "unknown.example.net", None) != "douyin"
+    finally:
+        s.query(HostDomainDay).filter(HostDomainDay.domain == "media.example.com").delete(synchronize_session=False)
+        s.commit()
+        s.close()
+        local.reset()
+
+
+def test_hub_domains_two_reporters_and_merge():
+    """域名共享（debug17）：≥2 个实例见过才发布；合并后本地实测优先、社区补空白"""
+    import app.database as database
+    database.connect_from_saved(force=True)
+    s = database.SessionLocal()
+    try:
+        s.query(ShareDomain).filter(ShareDomain.domain == "media.example.com").delete(synchronize_session=False)
+        s.commit()
+        share.collect(s, CLIENT_A, [], domains=[{"domain": "media.example.com", "app": "douyin", "bytes": 500}])
+        s.commit()
+        lib = share.published_library(s)
+        assert all(d["domain"] != "media.example.com" for d in lib["domains"])   # 单实例不发布
+        share.collect(s, CLIENT_B, [], domains=[{"domain": "media.example.com", "app": "douyin", "bytes": 300}])
+        s.commit()
+        lib = share.published_library(s)
+        assert {"domain": "media.example.com", "app": "douyin"} in lib["domains"]
+        # 客户端合并：本地没学过的域名用社区结论
+        local.reset()
+        share.merge_community(s, {"entries": [], "domains": [{"domain": "media.example.com", "app": "douyin"}]})
+        assert local.domain_app("media.example.com") == "douyin"
+        # 本地实测优先：同域名本地学的是 web，就不被社区覆盖
+        s.add(HostDomainDay(ts=DAY, host=HOST, domain="media.example.com", app="web", base=None, bytes=100))
+        s.commit()
+        local.load(s)
+        s.commit()
+        assert local.domain_app("media.example.com") == "web"
+    finally:
+        s.query(ShareDomain).filter(ShareDomain.domain == "media.example.com").delete(synchronize_session=False)
+        s.query(HostDomainDay).filter(HostDomainDay.domain == "media.example.com").delete(synchronize_session=False)
         s.commit()
         s.close()
         local.reset()

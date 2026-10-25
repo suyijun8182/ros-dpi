@@ -185,7 +185,7 @@ def _integrations(db):
 def local_status():
     """本地自学习库（debug15）：本网络实测的 IP→应用 记忆规模"""
     from app.classify.local import local
-    return {"ips": len(local.ips), "updated": local.version}
+    return {"ips": len(local.ips), "domains": len(local.domains), "updated": local.version}
 
 
 def share_status():
@@ -320,7 +320,7 @@ def _library(db):
             *sources.rows(),
             # 本地自学习库（debug15）：本网络实测的 IP→应用 记忆，排在所有公开库之后做兜底
             {"id": "local", "license": "本地实测", "url": "https://github.com/suyijun8182/ros-dpi",
-             "domains": len(local.ips), "updated": local.updated},
+             "ips": len(local.ips), "domains": len(local.domains), "updated": local.updated},
         ],
     }
 

@@ -30,7 +30,7 @@
               <td class="r num small">
                 <template v-if="x.id === 'bm7'">{{ t('lib.rules', { n: (x.rules || 0).toLocaleString() }) }}<div class="faint">{{ t('lib.apps', { n: x.apps || 0 }) }}</div></template>
                 <template v-else-if="x.id === 'asn'">{{ x.rows ? t('lib.ranges', { n: x.rows.toLocaleString() }) : '-' }}<div class="faint">{{ t('lib.asnApps', { n: x.asns }) }}</div></template>
-                <template v-else-if="x.id === 'local'">{{ t('lib.ips', { n: (x.domains || 0).toLocaleString() }) }}</template>
+                <template v-else-if="x.id === 'local'">{{ t('lib.ips', { n: (x.ips || 0).toLocaleString() }) }}<div class="faint">{{ t('lib.domains', { n: (x.domains || 0).toLocaleString() }) }}</div></template>
                 <template v-else-if="x.domains != null && x.apps == null">{{ t('lib.domains', { n: x.domains.toLocaleString() }) }}</template>
                 <template v-else-if="x.ranges != null">{{ t('lib.ranges', { n: x.ranges.toLocaleString() }) }}</template>
                 <template v-else>{{ t('lib.apps', { n: x.apps.toLocaleString() }) }}<div class="faint">{{ t('lib.domains', { n: x.domains.toLocaleString() }) }}</div></template>

@@ -193,6 +193,10 @@ class Classifier:
             return hit
         app = self.match_domain(qname) or self.match_domain(cname)
         if app is None:
+            # 域名自学习（debug17）：本网络实测 + 社区共享的「域名 → 应用」，精确匹配
+            from app.classify.local import local as local_db
+            app = local_db.domain_app(qname) or local_db.domain_app(cname)
+        if app is None:
             try:
                 addr = ipaddress.ip_address(remote_ip)
                 for net, aid in self.nets:
