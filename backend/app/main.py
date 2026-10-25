@@ -16,7 +16,7 @@ from app.engine import engine
 from app.models import Setting
 from app.ros_poller import poller
 from app import audit  # noqa: F401  挂上审计（engine.audit）
-from app.routers import admin, auth, setup, share as share_router, stats
+from app.routers import admin, auth, setup, stats
 from app.routers import audit as audit_router
 from app.routers import compliance as compliance_router
 from app.routers import people as people_router
@@ -76,24 +76,23 @@ def _auto_update_on() -> bool:
 
 
 def _share_cycle():
-    """社区共享库（debug16）：心跳（部署量统计）+ 上报本地实测 + 拉取社区库。开关关闭或未配置地址时跳过"""
+    """社区共享库（debug22）：心跳（部署量统计）+ 投票共享，走 NAS 的 WebDAV。开关关闭或未配置地址时跳过"""
     if not database.is_configured():
         return
-    from app.config import get_settings
     from app import share
     with database.session() as db:
         if not share.sharing_on(db):
             return
         saved = {k: (db.get(Setting, k).value if db.get(Setting, k) else None) for k in integrations.KEYS}
     cfg = integrations.effective(saved)
-    url = cfg.get("share_url") or ""
+    url = cfg.get("webdav_url") or ""
     if not url:
         return
     with database.session() as db:
-        res = share.client_cycle(engine, db, url, get_settings().share_token)
+        res = share.webdav_cycle(engine, db, url, cfg.get("webdav_user") or "", cfg.get("webdav_password") or "")
         db.commit()
-    if res.get("merged"):
-        print(f"[share] 社区库已同步：上报 {res['uploaded']} 条，并入社区结论 {res['merged']} 条", flush=True)
+    print(f"[share] 共享库已同步：已部署 {res['deployed']} 台（在线 {res['online']}），"
+          f"社区库 {res['community_ips'] + res['community_domains']} 条", flush=True)
 
 
 def _auto_update_rules():
@@ -211,7 +210,7 @@ async def _unhandled(request: Request, exc: Exception):
 
 
 for r in (setup.router, auth.router, stats.router, admin.router, audit_router.router, people_router.router,
-          compliance_router.router, share_router.router):
+          compliance_router.router):
     app.include_router(r)
 
 

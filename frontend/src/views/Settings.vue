@@ -163,24 +163,27 @@
           </div>
           <div class="src-box">
             <div class="sec">{{ t('sources.shareTitle') }}<span class="sp" />
-              <span v-if="s.share_hub" class="pill ok">{{ t('sources.shareHubOn') }}</span>
               <span v-if="!s.share_enabled" class="pill grey">{{ t('sources.off') }}</span>
               <template v-else-if="!src.share_url"><span class="pill grey">{{ t('sources.shareNoUrl') }}</span></template>
               <template v-else>
                 <span v-if="deploys && deploys.sync && deploys.sync.ts" class="pill" :class="deploys.sync.ok ? 'ok' : 'bad'">
                   {{ deploys.sync.ok ? t('sources.connected') : t('sources.failed') }}</span>
                 <span v-else class="pill grey">{{ t('sources.shareWait') }}</span>
-              </template>
-              <span v-if="s.share_hub" class="pill ok">{{ t('sources.shareHubOn') }}</span></div>
+              </template></div>
             <p class="faint small">{{ t('sources.shareWhy') }}</p>
             <label class="chk" style="display:flex;gap:6px;align-items:center;cursor:pointer">
               <input type="checkbox" :checked="s.share_enabled" @change="src.share_enabled = $event.target.checked" /> {{ t('sources.shareEnabled') }}
             </label>
             <label for="share-url">{{ t('sources.shareUrl') }}</label>
-            <input id="share-url" class="input addr" v-model.trim="src.share_url" placeholder="https://share.example.com" autocomplete="off" />
-            <label class="chk" style="display:flex;gap:6px;align-items:center;cursor:pointer;margin-top:8px">
-              <input id="share-hub" type="checkbox" :checked="s.share_hub" @change="src.share_hub = $event.target.checked" /> {{ t('sources.shareHub') }}
-            </label>
+            <input id="share-url" class="input addr" v-model.trim="src.share_url" placeholder="http://192.168.8.10:5005/ros-dpi" autocomplete="off" />
+            <label for="share-user">{{ t('sources.shareUser') }}</label>
+            <input id="share-user" class="input" v-model.trim="src.share_user" autocomplete="off" />
+            <label for="share-password">{{ t('sources.sharePassword') }}</label>
+            <div class="row">
+              <input id="share-password" class="input" type="password" v-model="src.share_password" autocomplete="new-password"
+                     :placeholder="s.has_webdav_password ? t('sources.agKept') : t('sources.agNone')" />
+              <button v-if="s.has_webdav_password" type="button" class="btn sm" @click="clearSharePassword">{{ t('sources.agClear') }}</button>
+            </div>
             <div class="faint small">{{ t('sources.shareHint') }}</div>
             <div class="small" style="margin-top:8px" v-if="deploys && deploys.sync && deploys.sync.ts">
               <b>{{ t('sources.communitySize') }}</b>：{{ t('sources.communityDetail', { ip: (deploys.sync.community_ips || 0).toLocaleString(), dom: (deploys.sync.community_domains || 0).toLocaleString() }) }}
@@ -191,11 +194,6 @@
               <span style="color:var(--up)">{{ t('sources.online', { n: deploys.online }) }}</span> ·
               {{ t('sources.offline', { n: deploys.offline }) }}
               <span class="faint small">（{{ t('sources.deployHint') }}）</span>
-              <div v-if="(deploys.relays || []).length" class="faint small" style="margin-top:4px">
-                {{ t('sources.relaysLabel') }}：
-                <a v-for="r in deploys.relays" :key="r" href="javascript:void(0)" class="link"
-                   style="margin-right:8px" @click="src.share_url = r">{{ r }}</a>
-              </div>
             </div>
           </div>
           <div class="acts">
@@ -332,7 +330,7 @@ onMounted(async () => {
 })
 
 // ---------- 外部数据源 ----------
-const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '', share_url: '', share_enabled: true, share_hub: false })
+const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '', share_url: '', share_enabled: true, share_user: '', share_password: '' })
 const deploys = ref(null)
 const srcErr = ref('')
 const srcSaved = ref(false)
@@ -341,7 +339,7 @@ function fillSources() {
   const i = s.value.integrations
   Object.assign(src, { singbox_url: i.singbox_url, singbox_secret: '', proxy_ips: i.proxy_ips, mosdns_url: i.mosdns_url,
                        adguard_url: i.adguard_url, adguard_username: i.adguard_username, adguard_password: '',
-                       share_url: i.share_url, share_enabled: !!s.value.share_enabled, share_hub: !!s.value.share_hub })
+                       share_url: i.webdav_url, share_user: i.webdav_user || '', share_enabled: !!s.value.share_enabled, share_password: '' })
 }
 async function saveSources() {
   srcErr.value = ''
@@ -349,9 +347,10 @@ async function saveSources() {
     // 密钥留空表示不修改；要清除用“清除密钥/密码”按钮
     const body = { singbox_url: src.singbox_url, proxy_ips: src.proxy_ips, mosdns_url: src.mosdns_url,
                    adguard_url: src.adguard_url, adguard_username: src.adguard_username,
-                   share_url: src.share_url, share_enabled: !!src.share_enabled, share_hub: !!src.share_hub }
+                   share_url: src.share_url, share_user: src.share_user }
     if (src.singbox_secret) body.singbox_secret = src.singbox_secret
     if (src.adguard_password) body.adguard_password = src.adguard_password
+    if (src.share_password) body.webdav_password = src.share_password
     s.value = await http.put('/settings', body)
     fillSources()
     srcSaved.value = true
@@ -361,6 +360,9 @@ async function saveSources() {
 }
 async function clearSecret() {
   try { s.value = await http.put('/settings', { singbox_secret: '' }); fillSources() } catch (e) { srcErr.value = e.message }
+}
+async function clearSharePassword() {
+  try { s.value = await http.put('/settings', { webdav_password: '' }); fillSources() } catch (e) { srcErr.value = e.message }
 }
 async function clearAdguardPassword() {
   try { s.value = await http.put('/settings', { adguard_password: '' }); fillSources() } catch (e) { srcErr.value = e.message }

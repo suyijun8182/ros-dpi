@@ -132,10 +132,11 @@ class SettingsIn(BaseModel):
     adguard_url: str | None = Field(None, max_length=255)
     adguard_username: str | None = Field(None, max_length=255)
     adguard_password: str | None = Field(None, max_length=255)
-    share_url: str | None = Field(None, max_length=255)
+    webdav_url: str | None = Field(None, max_length=255)
+    webdav_user: str | None = Field(None, max_length=255)
+    webdav_password: str | None = Field(None, max_length=255)
     rules_auto_update: bool | None = None
     share_enabled: bool | None = None
-    share_hub: bool | None = None
 
 
 def _get(db, key, default=""):
@@ -165,7 +166,6 @@ def get_settings_api(db: Session = Depends(get_db)):
         "ros_url": s.ros_url, "ros_user": s.ros_user,
         "ports": {"http": s.http_port, "ipfix": s.ipfix_port, "tzsp": s.tzsp_port},
         "share_enabled": _get(db, "share_enabled", "1" if s.share_enabled else "0") == "1",
-        "share_hub": _get(db, "share_hub", "1" if s.share_hub else "0") == "1",
         "tz": s.tz,
         "database": _db_info(),
         "integrations": _integrations(db),
@@ -179,7 +179,8 @@ def _integrations(db):
             "mosdns_url": cfg["mosdns_url"],
             "adguard_url": cfg["adguard_url"], "adguard_username": cfg["adguard_username"],
             "has_adguard_password": bool(cfg["adguard_password"]),
-            "share_url": cfg["share_url"],
+            "webdav_url": cfg["webdav_url"], "webdav_user": cfg["webdav_user"],
+            "has_webdav_password": bool(cfg["webdav_password"]),
             "proxy_auto": integrations.singbox.host_ip()}
 
 
@@ -189,53 +190,8 @@ def local_status():
     return {"ips": len(local.ips), "domains": len(local.domains), "updated": local.version}
 
 
-def share_status():
-    """社区共享库（debug16）：本实例的角色与社区库规模（自带会话：/api/system 没有 db 参数）"""
-    from app import share
-    from app.classify.local import local
-    s = get_settings()
-    url, hub, published = getattr(s, "share_url", ""), s.share_hub, 0
-    if database.is_configured():
-        try:
-            with database.session() as db:
-                from app.models import Setting
-                u_row, h_row = db.get(Setting, "share_url"), db.get(Setting, "share_hub")
-                url = (u_row.value if u_row and u_row.value else url)
-                hub = (h_row.value == "1") if h_row is not None else s.share_hub
-                if hub:
-                    from sqlalchemy import func, select
-                    from app.models import ShareEntry
-                    rows = db.execute(select(ShareEntry.ip, func.count(func.distinct(ShareEntry.reporter)))
-                                      .group_by(ShareEntry.ip)).all()
-                    published = sum(1 for _ip, n in rows if n >= share.PUBLISH_REPORTERS)
-        except Exception:  # noqa: BLE001  状态展示不拖垮 /api/system
-            pass
-    return {"url": url, "hub": hub, "published": published, "community": len(local.community)}
 
 
-def deployments_with_relays(db):
-    """全球部署量 + 可用中转列表 + 本实例的同步状态（debug19/20）：中转实例直接读本地，其它实例从中转拉取"""
-    from app import share
-    s = get_settings()
-    url, hub, published, relays = getattr(s, "share_url", ""), s.share_hub, 0, []
-    enabled = _get(db, "share_enabled", "1" if s.share_enabled else "0") == "1"
-    if database.is_configured():
-        try:
-            with database.session() as db:
-                from app.models import Setting
-                u_row, h_row = db.get(Setting, "share_url"), db.get(Setting, "share_hub")
-                url = (u_row.value if u_row and u_row.value else url)
-                hub = (h_row.value == "1") if h_row is not None else s.share_hub
-                if hub:
-                    d = share.deployments(db)
-                    return {**d, "sync": share.sync_state()}
-                if enabled and url:
-                    got = share.deployments_remote(url, s.share_token)
-                    if got:
-                        return {**got, "sync": share.sync_state()}
-        except Exception:  # noqa: BLE001
-            pass
-    return {"total": 0, "online": 0, "offline": 0, "relays": relays, "sync": share.sync_state()}
 
 
 def _db_info():
@@ -273,8 +229,6 @@ def put_settings(req: SettingsIn, request: Request, user: str = Depends(current_
         _put(db, "rules_auto_update", "1" if req.rules_auto_update else "0")
     if req.share_enabled is not None:
         _put(db, "share_enabled", "1" if req.share_enabled else "0")
-    if req.share_hub is not None:
-        _put(db, "share_hub", "1" if req.share_hub else "0")
     if req.wan_interface is not None:
         _put(db, "wan_interface", req.wan_interface.strip())
         poller.wan_override = req.wan_interface.strip()
@@ -311,7 +265,6 @@ def system():
         "mosdns": integrations.mosdns.status(),
         "adguard": integrations.adguard.status(),
         "local": local_status(),
-        "share": share_status(),
         "asn": asndb.status(),
         "proxied_skipped": st["proxied_skipped"], "dns_mosdns": st["dns_mosdns"],
         "generic_apps": sorted(GENERIC_APPS),
