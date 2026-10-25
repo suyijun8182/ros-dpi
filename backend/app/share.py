@@ -154,23 +154,30 @@ def published_library(db) -> dict:
     return {"version": 1, "generated": int(time.time()), "entries": entries, "domains": doms}
 
 
-def heartbeat(db, instance: str, version: str) -> None:
-    """中转：记录一次部署心跳（调用方提交事务）。只含实例匿名 ID 和版本号"""
+def heartbeat(db, instance: str, version: str, public_url: str = "") -> None:
+    """中转：记录一次部署心跳（调用方提交事务）。只含实例匿名 ID、版本号；中转实例附带自己的公开地址"""
     now = int(time.time())
     row = db.get(ShareDeployment, instance)
     if row is None:
-        db.add(ShareDeployment(instance=instance, version=version[:16], first_seen=now, last_seen=now))
+        db.add(ShareDeployment(instance=instance, version=version[:16], first_seen=now, last_seen=now,
+                               public_url=public_url or None))
     else:
         row.version, row.last_seen = version[:16], now
+        if public_url:
+            row.public_url = public_url
 
 
 def deployments(db, online_after: int = 7200) -> dict:
-    """中转：全球部署概况（所有人可见）：已部署总数 / 在线（最近 2 小时有心跳）/ 离线"""
+    """中转：全球部署概况（所有人可见）：已部署总数 / 在线（最近 2 小时有心跳）/ 离线 / 可用中转列表"""
     now = int(time.time())
     total = db.scalar(select(func.count()).select_from(ShareDeployment)) or 0
     online = db.scalar(select(func.count()).select_from(ShareDeployment)
                        .where(ShareDeployment.last_seen >= now - online_after)) or 0
-    return {"total": total, "online": online, "offline": total - online}
+    relays = [r[0] for r in db.execute(select(ShareDeployment.public_url)
+                                       .where(ShareDeployment.public_url.is_not(None),
+                                              ShareDeployment.last_seen >= now - online_after * 12)
+                                       .distinct()).all() if r[0]]
+    return {"total": total, "online": online, "offline": total - online, "relays": sorted(relays)}
 
 
 def deployments_remote(url: str, token: str = "") -> dict | None:
@@ -194,14 +201,19 @@ def sharing_on(db) -> bool:
 
 
 def client_cycle(engine, db, url: str, token: str = "") -> dict:
-    """客户端一轮同步：心跳（部署量统计）+ 上报本地实测 + 拉取社区库"""
+    """客户端一轮同步：心跳（部署量统计）+ 上报本地实测 + 拉取社区库；中转实例还会与其它中转同步保持一致"""
     import httpx
     iid = instance_id(db)
     headers = {"X-Share-Token": token} if token else {}
     base = url.rstrip("/")
     from app import __version__
+    # 本实例是中转时，心跳带上自己的公开地址（默认中转地址即本实例对外地址）
+    hub_row = db.get(__import__("app.models", fromlist=["Setting"]).Setting, "share_hub")
+    is_hub = (hub_row.value == "1") if hub_row is not None else False
+    public_url = url if is_hub else ""
     try:
-        httpx.post(base + "/api/share/heartbeat", json={"instance": iid, "version": __version__},
+        httpx.post(base + "/api/share/heartbeat",
+                   json={"instance": iid, "version": __version__, "public_url": public_url},
                    headers=headers, timeout=15.0)
     except Exception:  # noqa: BLE001  心跳失败不影响库同步
         pass
@@ -219,6 +231,40 @@ def client_cycle(engine, db, url: str, token: str = "") -> dict:
         r2 = httpx.get(base + "/api/share/library.json", headers=headers, timeout=30.0)
         r2.raise_for_status()
         merged = merge_community(db, r2.json())
+    except Exception:  # noqa: BLE001
+        pass
+    # 中转之间自动同步（debug19 第 2 条）：从主中转的部署名单里发现其它中转，把它们的社区库并进本地，
+    # 保证所有中转对外发布的数据一致
+    if is_hub and base.rstrip("/") != url.rstrip("/"):
+        pass
+    try:
+        d = httpx.get(base + "/api/share/deployments", headers=headers, timeout=15.0).json()
+        for peer in d.get("relays") or []:
+            peer = peer.rstrip("/")
+            if not peer or peer == base:
+                continue
+            try:
+                pr = httpx.get(peer + "/api/share/library.json", timeout=30.0)
+                pr.raise_for_status()
+                data = pr.json()
+                for e in data.get("entries") or []:
+                    row = db.get(ShareEntry, {"ip": e.get("ip"), "app": e.get("app"), "reporter": "relay:" + peer})
+                    if row is None:
+                        db.add(ShareEntry(ip=e.get("ip"), app=e.get("app"), reporter="relay:" + peer,
+                                          bytes=0, ts=int(time.time())))
+                    else:
+                        row.ts = int(time.time())
+                for e in data.get("domains") or []:
+                    row = db.get(ShareDomain, {"domain": e.get("domain"), "app": e.get("app"),
+                                               "reporter": "relay:" + peer})
+                    if row is None:
+                        db.add(ShareDomain(domain=e.get("domain"), app=e.get("app"), reporter="relay:" + peer,
+                                           bytes=0, ts=int(time.time())))
+                    else:
+                        row.ts = int(time.time())
+                db.commit()
+            except Exception:  # noqa: BLE001  单个中转不通不影响其它
+                continue
     except Exception:  # noqa: BLE001
         pass
     return {"uploaded": uploaded, "merged": merged}

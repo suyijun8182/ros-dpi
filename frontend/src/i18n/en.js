@@ -156,7 +156,7 @@ export default {
     agKept: 'Set; leave empty to keep', agNone: 'Leave empty if none', agClear: 'Clear password',
     agHint: 'AdGuard Home query log must be on (enabled by default); empty username and password mean unauthenticated access.',
     shareTitle: 'Community sharing', shareHubOn: 'Relay mode',
-    deploys: 'Global deployments', deployed: '{n} deployed', online: '{n} online', offline: '{n} offline', deployHint: 'from the relay, refreshed hourly',
+    deploys: 'Global deployments', relaysLabel: 'Available relays', deployed: '{n} deployed', online: '{n} online', offline: '{n} offline', deployHint: 'from the relay, refreshed hourly',
     shareEnabled: 'Share the learned library (on by default)',
     shareWhy: 'Every deployment learns different IP→app mappings. Pooling anonymous votes makes the shared identification sharper for everyone. Reports contain remote-IP→app votes only — no local devices, no domain records, no custom apps; private ranges are stripped.',
     shareUrl: 'Community relay address', shareHub: 'This instance acts as the relay (must be publicly reachable)',
