@@ -188,6 +188,9 @@ class FlowDecoder:
         if not fields:
             return []
         min_len = sum(f.length if f.length != 65535 else 1 for f in fields)
+        if min_len == 0:
+            # 字段长度全是 0 的模板：下面的循环永远不前进（任何人往 2055 发一个包就能让进程卡死）
+            raise DecodeError("zero-length template")
         out = []
         off = 0
         while len(body) - off >= min_len:

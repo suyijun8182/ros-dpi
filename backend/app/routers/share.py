@@ -33,18 +33,33 @@ def _run(fn):
         raise HTTPException(e.status, e.detail) from None
 
 
+async def _read_body(request: Request, limit: int) -> bytes:
+    """流式读取请求体，超过上限立即中止（只看 Content-Length 挡不住 chunked 传输）"""
+    try:
+        declared = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        raise HTTPException(400, "Content-Length 不对") from None
+    if declared > limit:
+        raise HTTPException(413, "请求内容太大")
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf += chunk
+        if len(buf) > limit:
+            raise HTTPException(413, "请求内容太大")
+    return bytes(buf)
+
+
 @router.post("/register")
 async def register(request: Request):
     _need_hub()
-    if int(request.headers.get("content-length") or 0) > share.MAX_BODY:
-        raise HTTPException(413, "请求内容太大")
-    raw = await request.body()
+    raw = await _read_body(request, share.MAX_REGISTER_BODY)
     ip = _source(request)
 
     def work():
         body = share.inflate(raw, request.headers.get("content-encoding"))
         with database.session() as db:
-            iid, token = share.register(db, share.net_of(db, ip), str(body.get("version") or ""))
+            iid, token = share.register(db, share.net_of(db, ip), str(body.get("version") or ""),
+                                        share.block_of(db, ip))
             db.commit()
         return {"instance": iid, "token": token}
     return await run_in_threadpool(_run, work)
@@ -53,16 +68,21 @@ async def register(request: Request):
 @router.post("/report")
 async def report(request: Request):
     _need_hub()
-    if int(request.headers.get("content-length") or 0) > share.MAX_BODY:
-        raise HTTPException(413, "上报内容太大")
-    raw = await request.body()
+    auth = request.headers.get("authorization")
+
+    def check():
+        with database.session() as db:
+            share.authenticate(db, auth)
+    # 先认证再读请求体：没有令牌的人连解压、解析的机会都没有
+    await run_in_threadpool(_run, check)
+    raw = await _read_body(request, share.MAX_BODY)
     ip = _source(request)
 
     def work():
         from app.engine import engine
         body = share.inflate(raw, request.headers.get("content-encoding"))
         with database.session() as db:
-            row = share.authenticate(db, request.headers.get("authorization"))
+            row = share.authenticate(db, auth)
             res = share.report(db, row, share.net_of(db, ip), body, engine.classifier)
             db.commit()
         return res

@@ -238,6 +238,7 @@ class ShareDeployment(Base):
     token_hash = Column(String(64))                  # 实例令牌的 SHA-256（令牌本身只在实例那边）
     net = Column(String(16))                         # 来源网络（IPv4 /24、IPv6 /56）的加盐哈希：防一人伪造多个实例刷票
     last_votes = Column(BigInteger)                  # 最近一次带投票的上报时间
+    block = Column(String(16))                       # 来源 /48（IPv6）或 /24（IPv4）的加盐哈希：注册限额用
 
 
 class ShareDomain(Base):

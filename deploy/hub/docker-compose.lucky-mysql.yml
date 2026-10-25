@@ -1,0 +1,25 @@
+# ROS-DPI 社区主站：VPS 上已经有 Lucky（反向代理 + HTTPS 证书）和 MySQL 时用这份（不需要 Caddy）
+# 用法：
+#   1. 在 MySQL 里建库和账号（见 docs/社区主站部署.md「已有 Lucky + MySQL」）
+#   2. 在本目录建 .env：HUB_DATABASE_URL、ADMIN_PASSWORD（示例见 .env.example）
+#   3. docker compose -f docker-compose.lucky-mysql.yml up -d
+#   4. Lucky 加一条 Web 服务规则：https://<主站域名> → http://127.0.0.1:18080
+# 主站只监听 VPS 本机 127.0.0.1:18080，不直接暴露公网；由 Lucky 对外提供 HTTPS
+services:
+  hub:
+    image: suyijun8182/ros-dpi:latest        # 也可用 ghcr.io/suyijun8182/ros-dpi:latest
+    container_name: ros-dpi-hub
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      SHARE_HUB: "true"
+      # 例：mysql+pymysql://rosdpi_hub:密码@host.docker.internal:3306/rosdpi_hub?charset=utf8mb4
+      #    MySQL 也是 Docker 容器时，把下面 networks 换成它所在的网络，主机名写容器名
+      DATABASE_URL: ${HUB_DATABASE_URL:?请在 .env 里设置 HUB_DATABASE_URL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请在 .env 里设置 ADMIN_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # 容器里用这个名字访问 VPS 本机上的 MySQL
+    ports:
+      - "127.0.0.1:18080:8080"   # 只给本机的 Lucky 转发用
+    volumes:
+      - ./data:/app/data

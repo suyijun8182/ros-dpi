@@ -37,6 +37,7 @@ def hub(monkeypatch, tmp_path):
     monkeypatch.setattr(s, "share_hub", True)
     monkeypatch.setattr(s, "share_hub_url", HUB)
     monkeypatch.setattr(share, "LIB_REBUILD_GAP", 0)
+    monkeypatch.setattr(share, "VOTE_MIN_AGE", 0)
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     monkeypatch.setattr(share_router, "_source", lambda req: req.headers.get("x-test-ip") or "203.0.113.9")
     database.connect_from_saved(force=True)
@@ -114,7 +115,9 @@ def test_client_ip_behind_proxy():
     assert share.client_ip("8.8.8.8", "1.1.1.1", None) == "8.8.8.8"
     # 反向代理在内网：取代理追加在最右边的公网地址
     assert share.client_ip("192.168.8.1", "1.1.1.1, 9.9.9.9", None) == "9.9.9.9"
-    assert share.client_ip("127.0.0.1", "10.0.0.5", "9.9.9.9") == "9.9.9.9"
+    # 最右一跳不是公网地址：不再往左找（左边的值客户端可以随便写），退回代理地址
+    assert share.client_ip("127.0.0.1", "9.9.9.9, 10.0.0.5", None) == "127.0.0.1"
+    assert share.client_ip("127.0.0.1", None, "9.9.9.9") == "9.9.9.9"
 
 
 def test_two_networks_publish_end_to_end(hub):
@@ -271,3 +274,41 @@ def test_hub_url_from_settings(monkeypatch):
         c.put("/api/settings", json={"share_hub_url": ""}, headers=h)
         st = c.get("/api/system/deployments", headers=h).json()
         assert st["hub_url"] == "https://builtin.example:8443" and not st["custom_hub"]
+
+
+def test_hub_abuse_limits(hub, monkeypatch):
+    """新注册的实例满 1 天才计票；同一网络最多 2 个投票实例；未认证的上报不读请求体；条目数粗算超限拒收"""
+    c, _state = hub
+    url = HUB + share.API
+    cls = engine.classifier
+    with database.session() as db:
+        rows = []
+        for ip in ("1.0.0.1", "2.0.0.1"):
+            iid, _t = share.register(db, share.net_of(db, ip), "t")
+            db.flush()
+            rows.append(db.get(ShareDeployment, iid))
+        for r in rows:
+            share.report(db, r, r.net, {"entries": [{"ip": "8.8.8.8", "app": "douyin", "bytes": 1}]}, cls)
+        db.commit()
+        monkeypatch.setattr(share, "VOTE_MIN_AGE", 86400)
+        assert share.build_library(db)["entries"] == []          # 刚注册：不计票
+        for r in rows:
+            r.first_seen -= 2 * 86400
+        db.commit()
+        assert share.build_library(db)["entries"] == [{"ip": "8.8.8.8", "app": "douyin"}]
+        # 同一网络第 3 个实例的投票不收
+        net = rows[0].net
+        extra = []
+        for _ in range(2):
+            iid, _t = share.register(db, net, "t")
+            db.flush()
+            extra.append(db.get(ShareDeployment, iid))
+        assert share.report(db, extra[0], net, {"entries": []}, cls)["accepted"] == 0
+        db.commit()
+        res = share.report(db, extra[1], net, {"entries": [{"ip": "9.9.9.9", "app": "douyin", "bytes": 1}]}, cls)
+        assert res.get("skipped") == "同一网络的投票实例已满"
+    # 没有令牌：直接 401，不会去解压一个巨大的请求体
+    bomb = gzip.compress(b"{}," * 3_000_000)
+    assert c.post(url + "/report", content=bomb, headers={"Content-Encoding": "gzip"}).status_code == 401
+    with pytest.raises(share.ShareError):
+        share.inflate(b"[" + b"{}," * (2 * share.MAX_UPLOAD + 100) + b"{}]", None)
