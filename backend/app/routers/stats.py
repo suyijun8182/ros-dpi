@@ -330,3 +330,37 @@ def destination_hosts(dest: str, range: str = Query("today", pattern=RANGES), me
                       db: Session = Depends(get_db)):
     """某个访问目标被哪些终端访问"""
     return stats.destination_hosts(db, dest, *_bounds(range), merge=merge)
+
+
+# ---------- 给 Home Assistant 等外部程序的汇总（0.6.25）：一次请求拿到首页要的数，配合只读 API 令牌使用 ----------
+@router.get("/ha/summary")
+def ha_summary(limit: int = Query(30, ge=1, le=200), db: Session = Depends(get_db)):
+    """字节数都是 bytes，速率都是 bytes/s（最近一分钟平均）。hosts 按今日流量排序，只给前 limit 台；
+    每台的 apps 是今日前 3 个具体应用（不含 HTTPS / 国内网络这类笼统分类）"""
+    from app import __version__
+    t0, t1 = _bounds("today")
+    apps = stats.top_apps(db, t0, t1)
+    groups = stats.top_groups(stats.top_categories(apps))
+    rows = stats.all_hosts(db)[:limit]
+    keys = {r["key"] for r in rows}
+    per: dict[str, list] = {}
+    for a in stats.app_bytes_per_host(db, t0, t1, keys):
+        per.setdefault(a[0], []).append(a[1:])
+    pair = lambda d: [d["up"], d["down"]]  # noqa: E731
+    return {
+        "version": __version__,
+        "ts": int(time.time()),
+        "rate": [engine.total_rate[0], engine.total_rate[1]],
+        "totals": {r: pair(v) for r, v in stats.totals3(db).items()},
+        "online": stats.online_count(db),
+        "hosts_total": db.query(Host).count(),
+        "identified": round(stats.identified_ratio(apps), 4),
+        "health": health.compute(db, apps)["score"],
+        "groups": [{"id": g["id"], "name": g["name"], "bytes": g["total"]} for g in groups],
+        "top_apps": [{"id": a["id"], "name": a["name"], "group": a["group_name"], "bytes": a["total"], "hosts": a["hosts"]} for a in apps[:10]],
+        "hosts": [{"key": r["key"], "name": r["name"], "ip": r["ip"], "mac": r["mac"], "type": r["dtype"], "online": r["online"],
+                   "person": (r.get("person") or {}).get("name"),
+                   "rate": [r["rate_up"], r["rate_down"]], "today": pair(r["today"]), "week": pair(r["week"]), "month": pair(r["month"]),
+                   "apps": [{"id": i, "name": n, "bytes": b} for i, n, b in sorted(per.get(r["key"], []), key=lambda x: -x[2])[:3]]}
+                  for r in rows],
+    }

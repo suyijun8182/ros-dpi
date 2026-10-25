@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 import time
 
@@ -8,7 +9,7 @@ from passlib.context import CryptContext
 
 from app import database
 from app.config import get_settings
-from app.models import Setting, User
+from app.models import ApiToken, Setting, User
 
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 _bearer = HTTPBearer(auto_error=False)
@@ -50,7 +51,46 @@ def make_token(username: str, version: int | None = None) -> str:
 
 # 普通用户（role=user）只读：除了改自己的密码，所有写操作都要管理员；这些读接口也只给管理员
 USER_WRITABLE = {"/api/auth/password"}
-ADMIN_ONLY_GET = ("/api/settings", "/api/audit/notify", "/api/audit/oplog", "/api/auth/users", "/api/compliance")
+ADMIN_ONLY_GET = ("/api/settings", "/api/audit/notify", "/api/audit/oplog", "/api/auth/users", "/api/auth/tokens", "/api/compliance")
+API_PREFIX = "rdp_"   # 只读 API 令牌的前缀；登录令牌是 JWT（eyJ 开头），两者不会混淆
+_api_cache: dict[str, tuple[str | None, float]] = {}   # 令牌哈希 -> (名称，不存在为 None, 缓存时间)
+_api_used: dict[int, float] = {}                       # 令牌 id -> 上次写 last_used 的时间（5 分钟写一次）
+
+
+def new_api_token() -> tuple[str, str]:
+    """(令牌原文, SHA-256)"""
+    t = API_PREFIX + secrets.token_urlsafe(32)
+    return t, hashlib.sha256(t.encode()).hexdigest()
+
+
+def forget_api_tokens():
+    _api_cache.clear()
+
+
+def _api_token_name(token: str) -> str | None:
+    h = hashlib.sha256(token.encode()).hexdigest()
+    hit = _api_cache.get(h)
+    if hit and time.time() - hit[1] < 30:
+        return hit[0]
+    with database.session() as db:
+        row = db.query(ApiToken).filter(ApiToken.token_hash == h).first()
+        name = row.name if row else None
+        if row and time.time() - _api_used.get(row.id, 0) > 300:
+            _api_used[row.id] = time.time()
+            row.last_used = int(time.time())
+            db.commit()
+    if len(_api_cache) > 1000:
+        _api_cache.clear()
+    _api_cache[h] = (name, time.time())
+    return name
+
+
+def _read_only(request: Request):
+    path = request.url.path
+    if request.method not in ("GET", "HEAD") and path not in USER_WRITABLE:
+        raise HTTPException(403, "只有管理员可以修改")
+    if request.method in ("GET", "HEAD") and path.startswith(ADMIN_ONLY_GET):
+        raise HTTPException(403, "只有管理员可以查看")
 _roles: dict[str, tuple[str | None, int, float]] = {}   # username -> (role，账号不存在时为 None, token_version, 缓存时间)
 
 
@@ -80,6 +120,16 @@ def forget_roles():
 def current_user(request: Request, cred: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:
     if cred is None:
         raise HTTPException(401, "未登录")
+    if cred.credentials.startswith(API_PREFIX):
+        # 只读 API 令牌：等同只读用户，连改自己密码都不行
+        name = _api_token_name(cred.credentials)
+        if name is None:
+            raise HTTPException(401, "API 令牌无效或已被删除")
+        request.state.role = "user"
+        if request.method not in ("GET", "HEAD"):
+            raise HTTPException(403, "API 令牌只能读取数据")
+        _read_only(request)
+        return "api:" + name
     try:
         data = jwt.decode(cred.credentials, secret_key(), algorithms=["HS256"])
     except JWTError:
@@ -96,11 +146,7 @@ def current_user(request: Request, cred: HTTPAuthorizationCredentials | None = D
         raise HTTPException(401, "登录状态已失效（密码或权限已变更），请重新登录")
     request.state.role = role
     if role != "admin":
-        path = request.url.path
-        if request.method not in ("GET", "HEAD") and path not in USER_WRITABLE:
-            raise HTTPException(403, "只有管理员可以修改")
-        if request.method in ("GET", "HEAD") and path.startswith(ADMIN_ONLY_GET):
-            raise HTTPException(403, "只有管理员可以查看")
+        _read_only(request)
     return user
 
 

@@ -111,6 +111,19 @@ class Setting(Base):
     value = Column(Text)
 
 
+class ApiToken(Base):
+    """只读 API 令牌（0.6.25）：给 Home Assistant 等外部程序长期读取数据用，不过期、可随时删除。
+    只存 SHA-256，令牌原文只在创建时显示一次"""
+    __tablename__ = "api_tokens"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(64), nullable=False)
+    token_hash = Column(String(64), unique=True, nullable=False)
+    prefix = Column(String(12))                       # 令牌前几位，列表里用来辨认
+    created = Column(Integer)
+    created_by = Column(String(64))
+    last_used = Column(Integer)
+
+
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, autoincrement=True)

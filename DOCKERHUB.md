@@ -36,6 +36,7 @@ services:
 
 ## What's new
 
+- **0.6.25**: 只读 API 令牌（系统设置 → 用户管理），给 Home Assistant 等外部程序长期读取；新增汇总接口 `/api/ha/summary`（流量、在线、识别率、健康指数、应用构成、终端及其主要应用）。Read-only API tokens and a `/api/ha/summary` endpoint for Home Assistant.
 - **0.6.24**: Linux 一键安装改为专用账号 `ros-dpi` 运行（不再是 root），systemd 加固；审计规则的按天累计和“已提醒”在重启后接着算，不再重复提醒；系统设置 → 外部数据源 打开时就加载社区共享库状态；CI 的 action 全部钉到 commit SHA。Linux service now runs as a dedicated non-root user; audit rule progress survives restarts; CI actions pinned to commit SHAs.
 - **0.6.23**: 内置社区主站改为有公网 IPv4 的 VPS（`https://rosdpi.vviip.dpdns.org:8443`），Docker 实例不用再开 IPv6。Built-in community hub moved to an IPv4-reachable VPS.
 - **0.6.22**: 全站审计修复（落库容错、采集端口防护 `COLLECTOR_ALLOWED`、管控脚本防注入、一键更新校验 SHA256、arm64 二进制等）；社区主站地址可在网页填写，新增 VPS 主站部署模板（`deploy/hub/`，Docker + Caddy 自动 HTTPS）；接入向导与文档补上 IPv6 嗅探（`/ipv6 firewall mangle` 4 条）和 FastTrack（IPv4 / IPv6）命令；自检检查 IPv6 的 FastTrack。Setup guide and docs now include IPv6 sniff rules and FastTrack commands for both families; the self-check also flags IPv6 FastTrack without a connection-bytes limit.

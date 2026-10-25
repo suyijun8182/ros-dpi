@@ -216,6 +216,31 @@ RouterOS ◀── REST 只读（可选）── 主机名、IP↔MAC、WAN 速�
 
 每个版本改了什么见 [CHANGELOG.md](CHANGELOG.md)。
 
+### 接入 Home Assistant 等外部程序
+
+在 **系统设置 → 用户管理 → API 令牌** 新建一个令牌（只读、不过期，删除后立即失效；原文只在创建时显示一次），请求时放在请求头里：
+
+```
+Authorization: Bearer rdp_xxxxxxxx
+GET http://<ROS-DPI 地址>:8080/api/ha/summary?limit=30
+```
+
+`/api/ha/summary` 一次返回首页常用的数：今日 / 本周 / 本月流量、实时速率、在线终端数、识别率、健康指数、应用大类构成、Top 应用，以及按今日流量排序的前 `limit` 台终端（名称、IP、MAC、类型、实时速率、今日 / 本周 / 本月流量、今日前 3 个应用）。字节数单位是 bytes，速率是 bytes/s。令牌也能读其它只读接口（等同普通用户），但不能修改任何设置。
+
+Home Assistant 里用 RESTful 传感器读取即可，例如：
+
+```yaml
+rest:
+  - resource: http://192.168.88.10:8080/api/ha/summary
+    headers:
+      Authorization: !secret rosdpi_token     # secrets.yaml 里写 "Bearer rdp_..."
+    scan_interval: 60
+    sensor:
+      - name: rosdpi_summary
+        value_template: "{{ value_json.online }}"
+        json_attributes: [totals, rate, hosts, groups, top_apps, identified, health]
+```
+
 ### 安全建议
 
 - 内网有不可信设备时，设 `COLLECTOR_ALLOWED=<路由器IP>`，采集端口只接收路由器发来的包，防止别人伪造流量或 DNS 记录。
@@ -352,6 +377,10 @@ Instances share anonymous votes (remote IP / domain → app) through the built-i
 ### Optional sources
 
 sing-box (Clash API) adds per-host, per-domain byte counts for proxied traffic; MosDNS adds per-host DNS lookups; AdGuard Home fills in domains behind a second NAT. Configure them under **Settings → External sources**.
+
+### Home Assistant and other programs
+
+Create a read-only API token under **Settings → Users → API tokens** (it never expires and stops working when deleted; the token is shown only once). Send it as `Authorization: Bearer rdp_…`. `GET /api/ha/summary?limit=30` returns today / week / month totals, live rate, online hosts, identification rate, health score, app groups, top apps and the top hosts by today's traffic with their top three apps (bytes and bytes/s). See the Chinese section for a Home Assistant RESTful sensor example.
 
 ### Security notes
 
