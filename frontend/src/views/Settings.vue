@@ -434,6 +434,17 @@ const guide = computed(() => {
 /ip firewall mangle add chain=forward protocol=tcp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=${ip} sniff-target-port=${p.tzsp} comment=ROSDPI-SNI
 /ip firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=${ip} sniff-target-port=${p.tzsp} comment=ROSDPI-SNI
 
+# 3b. 路由器开了 IPv6 时（国内宽带默认都有）：IPv6 的 DNS 应答和握手只经过 /ipv6 firewall mangle，再加一份
+#     镜像包照样发到 ROS-DPI 的 IPv4 地址；ROS 提示 sniff-target 无效时改填 ROS-DPI 的 IPv6 地址
+/ipv6 firewall mangle add chain=output protocol=udp src-port=53 action=sniff-tzsp sniff-target=${ip} sniff-target-port=${p.tzsp} comment=ROSDPI-DNS
+/ipv6 firewall mangle add chain=forward protocol=udp src-port=53 action=sniff-tzsp sniff-target=${ip} sniff-target-port=${p.tzsp} comment=ROSDPI-DNS
+/ipv6 firewall mangle add chain=forward protocol=tcp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=${ip} sniff-target-port=${p.tzsp} comment=ROSDPI-SNI
+/ipv6 firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=${ip} sniff-target-port=${p.tzsp} comment=ROSDPI-SNI
+
+# 3c. 开了 FastTrack 时：让每条连接的前 10KB 不走 FastTrack，握手才镜像得到（没有 FastTrack 规则时这两条什么也不改）
+/ip firewall filter set [find action=fasttrack-connection] connection-bytes=10000-0
+/ipv6 firewall filter set [find action=fasttrack-connection] connection-bytes=10000-0
+
 # 4. 只读 API 账号（可选，用于主机名、WAN 速率）
 /user group add name=rosdpi policy=read,rest-api,api,!write,!policy,!sensitive
 /user add name=rosdpi group=rosdpi password=<强密码> address=${ip}`
@@ -470,10 +481,9 @@ const fixes = computed(() => {
     out.push(`/ipv6 firewall mangle add chain=forward protocol=tcp dst-port=443 connection-bytes=0-4000 ${tail}`)
     out.push(`/ipv6 firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 ${tail}`)
   }
-  if (c.issues.includes('fasttrack')) {
-    // 每条连接的前 10KB 走正常路径（握手能被镜像），之后照常 FastTrack
-    out.push('/ip firewall filter set [find action=fasttrack-connection] connection-bytes=10000-0')
-  }
+  // 每条连接的前 10KB 走正常路径（握手能被镜像），之后照常 FastTrack
+  if (c.issues.includes('fasttrack')) out.push('/ip firewall filter set [find action=fasttrack-connection] connection-bytes=10000-0')
+  if (c.issues.includes('fasttrack6')) out.push('/ipv6 firewall filter set [find action=fasttrack-connection] connection-bytes=10000-0')
   return [...new Set(out)]
 })
 const fixCopied = ref(false)

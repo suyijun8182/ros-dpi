@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.22] - 2026-10-25
+
+接入向导、文档补上 IPv6 嗅探与 FastTrack；自检检查 IPv6 的 FastTrack
+
+- **接入向导**（系统设置 → 接入与自检）新增 3b、3c 两步：路由器开了 IPv6 时在 `/ipv6 firewall mangle` 再加一份 DNS / SNI 嗅探（4 条）；开了 FastTrack 时让 IPv4 / IPv6 每条连接的前 10KB 不走 FastTrack。此前向导只有 IPv4 命令，IPv6 流量的 DNS 应答和握手全都镜像不到。
+- **接入自检**读取 `/ipv6/firewall/filter`：IPv6 的 FastTrack 规则（ROS 7.18 起支持）没有限定 connection-bytes 时提示，并给出修改命令。
+- README 与 `docs/RouterOS配置.md` 补充 IPv6 一节：为什么必须做、4 条命令、镜像目标可以用 ROS-DPI 的 IPv4 地址、流量采集不用另配。
+
 ## [0.6.21] - 2026-10-25
 
 社区共享库重做：项目自带社区主站，不再依赖 WebDAV / 第三方存储（debug13~22 复查）

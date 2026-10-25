@@ -165,6 +165,16 @@ EOF
 /ip firewall mangle add chain=forward protocol=tcp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-SNI
 /ip firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-SNI
 
+# 3b. 路由器开了 IPv6 时必须再加一份（国内宽带默认有 IPv6，大流量应用优先走 IPv6）
+/ipv6 firewall mangle add chain=output protocol=udp src-port=53 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-DNS
+/ipv6 firewall mangle add chain=forward protocol=udp src-port=53 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-DNS
+/ipv6 firewall mangle add chain=forward protocol=tcp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-SNI
+/ipv6 firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-SNI
+
+# 3c. 开了 FastTrack 时：每条连接的前 10KB 不走 FastTrack，握手才镜像得到
+/ip firewall filter set [find action=fasttrack-connection] connection-bytes=10000-0
+/ipv6 firewall filter set [find action=fasttrack-connection] connection-bytes=10000-0
+
 # 4. 只读 API 账号（可选：主机名、WAN 速率）
 /user group add name=rosdpi policy=read,rest-api,api,!write,!policy,!sensitive
 /user add name=rosdpi group=rosdpi password=<强密码> address=192.168.88.10

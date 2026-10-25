@@ -73,7 +73,27 @@
 
 这样每条连接的前 10KB 走正常路径（会被嗅探），之后照常 FastTrack。
 
-**IPv6**：IPv6 流量需要在 `/ipv6 firewall mangle` 下再加一份相同的规则（DNS 嗅探的两条也一样）。
+IPv6 也开了 FastTrack（ROS 7.18 起支持）时同样处理：
+
+```routeros
+/ipv6 firewall filter set [find action=fasttrack-connection] connection-bytes=10000-0
+```
+
+### IPv6（路由器开了 IPv6 时必须做）
+
+国内宽带默认下发 IPv6，抖音、B 站、淘宝等大流量应用会优先走 IPv6。IPv6 的 DNS 应答和 HTTPS / QUIC 握手只经过 `/ipv6 firewall mangle`，只配 IPv4 规则时这部分流量只能按 IP 归类（大多落进「国内网络」）。在 IPv6 下再加一份同样的 4 条规则：
+
+```routeros
+/ipv6 firewall mangle add chain=output protocol=udp src-port=53 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-DNS
+/ipv6 firewall mangle add chain=forward protocol=udp src-port=53 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-DNS
+/ipv6 firewall mangle add chain=forward protocol=tcp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-SNI
+/ipv6 firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-SNI
+```
+
+- 镜像包可以照样发到 ROS-DPI 的 **IPv4 地址**，ROS-DPI 不需要 IPv6 地址；ROS 提示 `sniff-target` 无效时改填 ROS-DPI 的 IPv6 地址（接收端口同时监听 IPv4 / IPv6）。
+- 流量采集不用另配：`/ip traffic-flow` 同时导出 IPv4 和 IPv6 的流。
+- LAN 的 IPv6 前缀：配了只读 API 会自动加入；没配时在 系统设置 → 网络 手动填写。
+- **系统设置 → 接入自检** 会检查：路由器有 IPv6 公网地址却没有 IPv6 嗅探规则、IPv4 / IPv6 的 FastTrack 没有限定 connection-bytes，都会提示并给出要执行的命令。
 
 ## 4. 只读 API 账号（可选）
 

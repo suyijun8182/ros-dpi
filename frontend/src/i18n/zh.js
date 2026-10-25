@@ -178,6 +178,7 @@ export default {
       no_dns: '没有生效的 DNS 嗅探规则。', no_sni: '没有生效的 SNI 规则：HTTPS / QUIC 握手到不了 ROS-DPI。',
       no_quic: '只有 TCP 的 SNI 规则，缺少 UDP 443（QUIC / HTTP3），抖音、YouTube 等大量走 QUIC 的流量认不出来。',
       fasttrack: 'FastTrack 已启用，且规则没有限定 connection-bytes：被 FastTrack 的连接不经过 mangle，握手包镜像不到，大量 HTTPS 只能按 IP 归到「国内网络」。下方命令让每条连接的前 10KB 不走 FastTrack，CPU 占用几乎不变。',
+      fasttrack6: 'IPv6 也开了 FastTrack（/ipv6 firewall filter），且没有限定 connection-bytes：IPv6 连接的握手镜像不到。下方命令同样让每条连接的前 10KB 不走 FastTrack。',
       no_ipv6: '路由器有 IPv6 公网地址，但嗅探规则只有 IPv4 的：走 IPv6 的 DNS 应答和 HTTPS / QUIC 握手都看不到（国内运营商默认下发 IPv6，这部分流量通常很大）。下方命令在 /ipv6 firewall mangle 补一份；若提示 sniff-target 无效，改填 ROS-DPI 的 IPv6 地址。',
     },
   },
