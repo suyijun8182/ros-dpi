@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from app import database, share
 from app.config import get_settings
 
-router = APIRouter(prefix="/share", tags=["share"])
+router = APIRouter(prefix="/api/share", tags=["share"])
 
 
 def _hub_on(db) -> bool:

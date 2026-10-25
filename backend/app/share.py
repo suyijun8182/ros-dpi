@@ -244,7 +244,7 @@ def client_cycle(engine, db, url: str, token: str = "") -> dict:
     except Exception:  # noqa: BLE001  心跳失败不影响库同步
         pass
     entries, domains = export_entries(engine, db)
-    uploaded, c_ips, c_doms, error = 0, 0, 0, ""
+    uploaded, merged, c_ips, c_doms, error = 0, 0, 0, 0, ""
     try:
         r = httpx.post(base + "/api/share/collect", json={"instance": iid, "entries": entries, "domains": domains},
                        headers=headers, timeout=30.0)
