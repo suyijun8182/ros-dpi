@@ -2,11 +2,12 @@
 
 这些接口不需要登录，但只在数据库尚未配置时可用。
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app import bootstrap, database
 from app.config import get_settings
+from app.security import check_setup_code
 
 router = APIRouter(prefix="/api/setup", tags=["setup"])
 
@@ -42,8 +43,9 @@ def _guard():
 
 
 @router.post("/test")
-def test(cfg: DBConfig):
+def test(cfg: DBConfig, request: Request):
     _guard()
+    check_setup_code(request)
     ok, msg = bootstrap.test_connection(cfg.model_dump())
     if not ok:
         raise HTTPException(400, msg)
@@ -51,8 +53,9 @@ def test(cfg: DBConfig):
 
 
 @router.post("/save")
-def save(cfg: DBConfig):
+def save(cfg: DBConfig, request: Request):
     _guard()
+    check_setup_code(request)
     data = cfg.model_dump()
     ok, msg = bootstrap.test_connection(data)
     if not ok:

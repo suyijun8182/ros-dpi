@@ -193,9 +193,11 @@ async def lifespan(app: FastAPI):
     if not os.environ.get("ROSDPI_NO_JOBS"):  # 测试里不跑后台任务，避免整点落库打乱测试数据
         sched.start()
     print(f"[startup] ROS-DPI {__version__} 已启动，Web 端口 {s.http_port}", flush=True)
+    from app.security import setup_code
+    print(f"[startup] 首次设置的安装码：{setup_code()}（只有从公网地址打开安装向导时才需要；内网访问不用）", flush=True)
     yield
     if sched.running:
-        sched.shutdown(wait=False)
+        sched.shutdown(wait=False)   # 不等长任务（历史重算可能跑几分钟）；落库之间由 engine 的落库锁串行
     for t in transports:
         t.close()
     _safe(lambda: engine.flush(final=True), "flush")()  # 关闭前把还没结束的访问也写进访问日志

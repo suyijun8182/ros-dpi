@@ -39,6 +39,7 @@ export default {
     peak: 'Peak {v}', mode: { groups: 'By app group', pair: 'Up / down' },
   },
   setup: {
+    code: 'Setup code', codeNeeded: 'First-time setup from a public address needs the setup code printed in the container / service startup log ("首次设置的安装码: xxxxxxxx"). Not needed on the LAN.',
     title: 'Connect to MySQL', intro: 'Statistics are stored in your MySQL. Enter the database and account you prepared for ROS-DPI.',
     step1: 'Connect database', step2: 'Create admin', host: 'MySQL host', port: 'Port', user: 'User', password: 'Password',
     database: 'Database', hostHint: 'If MySQL runs on this same machine, use its LAN IP, not 127.0.0.1. Tables are created automatically.',

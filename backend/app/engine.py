@@ -59,6 +59,7 @@ class Engine:
         self.sni = SniExtractor()
         self.classifier = Classifier()
         self.lock = threading.Lock()
+        self._flush_lock = threading.Lock()
         # CNAME 链里挑能认出应用的那一跳（按当时的识别器）
         dnsmap.cname_matcher = lambda name: self.classifier.match_domain(name)
         self.allowed_sources = parse_cidrs(s.collector_allowed) if s.collector_allowed else []
@@ -510,6 +511,16 @@ class Engine:
     def flush(self, now: float | None = None, final: bool = False):
         if not database.is_configured():
             return  # 安装向导完成前先留在内存里，配置好后的第一次落库一起写入
+        # 落库串行：关闭时的最后一次落库可能和定时落库撞上，_pending / last_flush 会互相覆盖
+        if not self._flush_lock.acquire(timeout=30):
+            print("[engine] 上一次落库 30 秒还没结束，这次跳过", flush=True)
+            return
+        try:
+            self._flush(now, final)
+        finally:
+            self._flush_lock.release()
+
+    def _flush(self, now: float | None, final: bool):
         now = now or time.time()
         with self.lock:
             visits, visit_upd = self.take_visits(now, final)
@@ -743,13 +754,24 @@ class Engine:
             print(f"[db] 已回填 {len(doms)} 个域名的主域名列", flush=True)
 
     def cleanup(self):
+        # 内存表的清理不依赖数据库：安装向导完成前也要做，否则长时间不配置会一直涨
+        self.dns.purge()
+        with self.lock:
+            self.names.purge()
+            if not database.is_configured():
+                # 还没有数据库：访问记录、域名 / IP 统计攒着也写不出去，超量就丢，别把内存撑爆
+                if len(self._closed_visits) > 100_000:
+                    self._closed_visits = self._closed_visits[-100_000:]
+                for name in ("_dom", "_ipdest", "_seen"):
+                    if len(getattr(self, name)) > 200_000:
+                        getattr(self, name).clear()
         if not database.is_configured():
             return
         from app import compliance
         r = compliance.retention()  # 网页里设置的留存天数优先于环境变量
         now = int(time.time())
         with database.session() as db:
-            # 分批删除（每批单独提交）：存量大的表一次删会造成长事务、大锁
+            # 分批删除（每批单独提交）：存量大的表一次删会造成长事务、大锁；一张表出错不影响其它表
             for model, col, days in ((TrafficMinute, TrafficMinute.ts, r["minute"]),
                                      (TrafficHour, TrafficHour.ts, r["hour"]),
                                      (TrafficDay, TrafficDay.ts, r["day"]),
@@ -758,12 +780,13 @@ class Engine:
                                      (AccessLog, AccessLog.ts_start, r["log"]),
                                      (AuditEvent, AuditEvent.ts, r["event"]),
                                      (OpLog, OpLog.ts, r["event"])):
-                _purge(db, model, col, days)
+                try:
+                    _purge(db, model, col, days)
+                except Exception as e:  # noqa: BLE001
+                    db.rollback()
+                    print(f"[cleanup] {model.__tablename__} 清理失败：{type(e).__name__}: {str(e)[:120]}", flush=True)
             db.execute(delete(DnsCache).where(DnsCache.expires < now))
             db.commit()
-        self.dns.purge()
-        with self.lock:
-            self.names.purge()
 
     def is_generic(self, app: str) -> bool:
         return app in GENERIC_APPS

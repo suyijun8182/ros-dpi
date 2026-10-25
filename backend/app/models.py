@@ -1,4 +1,6 @@
 """数据表。时间一律存 epoch 秒（BigInteger），分桶起点：分钟/小时按 UTC 对齐，天按配置时区的 0 点。"""
+import secrets
+
 from sqlalchemy import BigInteger, Column, Index, Integer, String, Text
 
 from app.database import Base
@@ -80,7 +82,7 @@ class DnsCache(Base):
     ip = Column(String(45), primary_key=True)
     name = Column(String(255), nullable=False)
     cname = Column(String(255))
-    expires = Column(BigInteger, nullable=False)
+    expires = Column(BigInteger, nullable=False, index=True)   # 清理过期条目按它删
 
 
 class DomainGeo(Base):
@@ -89,7 +91,7 @@ class DomainGeo(Base):
     domain = Column(String(255), primary_key=True)
     ip = Column(String(45))
     cc = Column(String(2))
-    updated = Column(BigInteger)
+    updated = Column(BigInteger, index=True)   # 按保留期清理时按它删
 
 
 class CustomRule(Base):
@@ -115,7 +117,9 @@ class User(Base):
     username = Column(String(64), unique=True, nullable=False)
     password_hash = Column(String(128), nullable=False)
     role = Column(String(16), nullable=True)          # admin | user；空 = admin（升级前建的账号都是管理员）
-    token_version = Column(Integer, nullable=True)    # 改密码 / 改权限时 +1，旧 token 立即失效
+    # 改密码 / 改权限时 +1，旧 token 立即失效。新建账号从随机值开始：删掉 alice 再建一个同名账号时，
+    # 被删账号手里 ver=0 的旧 token 不能对上新账号
+    token_version = Column(Integer, nullable=True, default=lambda: secrets.randbelow(1 << 30) + 1)
     created = Column(Integer, nullable=True)
     last_login = Column(Integer, nullable=True)
 

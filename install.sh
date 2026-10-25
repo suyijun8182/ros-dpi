@@ -49,7 +49,9 @@ chmod 700 "$DIR/data"
 chmod -R go-rwx "$DIR/data"   # 旧版本装出来的库文件是 644，一并收紧
 
 # 用户配置单独放在 EnvironmentFile：只在不存在时创建（全是注释示例），重装 / 升级都不覆盖
+NEW_ENV=0
 if [ ! -f "$ENV_FILE" ]; then
+  NEW_ENV=1
   cat > "$ENV_FILE" <<'ENVF'
 # ROS-DPI 自定义配置：取消注释并修改后执行 systemctl restart ros-dpi
 # 本文件不会被 install.sh 覆盖；端口和数据目录由服务文件给出，这里设置会覆盖它们
@@ -65,6 +67,12 @@ if [ ! -f "$ENV_FILE" ]; then
 # ROS_USER=
 # ROS_PASSWORD=
 ENVF
+  # 0.6.21 及以前的配置写在服务文件里（Environment=DATABASE_URL=…）：搬进来，否则重装后会退回 SQLite，看起来像数据全丢了
+  if [ "$REINSTALL" = 1 ]; then
+    grep '^Environment=' /etc/systemd/system/ros-dpi.service \
+      | grep -v -e '^Environment="\{0,1\}HTTP_PORT=' -e '^Environment="\{0,1\}DATA_DIR=' \
+      | sed -e 's/^Environment=//' -e 's/^"\(.*\)"$/\1/' >> "$ENV_FILE" || true
+  fi
 fi
 chmod 600 "$ENV_FILE"
 

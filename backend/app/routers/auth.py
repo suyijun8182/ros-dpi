@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app import oplog
 from app.database import get_db
 from app.models import Setting, User
-from app.security import (check_login_lock, current_user, forget_roles, make_token, note_login_fail, note_login_ok,
+from app.security import (check_login_lock, check_setup_code, current_user, forget_roles, make_token, note_login_fail, note_login_ok,
                           pwd, require_admin, role_of)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -38,7 +38,9 @@ def status(db: Session = Depends(get_db)):
 def setup(req: SetupReq, request: Request, db: Session = Depends(get_db)):
     if db.query(User).count() > 0:
         raise HTTPException(400, "管理员已存在")
-    db.add(User(username=req.username, password_hash=pwd.hash(req.password), role="admin", created=int(time.time())))
+    check_setup_code(request)
+    u = User(username=req.username, password_hash=pwd.hash(req.password), role="admin", created=int(time.time()))
+    db.add(u)
     # settings 主键唯一：两个请求同时走到这里时，只有一个能提交成功（防安装窗口期被并发接管）
     db.add(Setting(key="setup_done", value=str(int(time.time()))))
     try:
@@ -47,7 +49,8 @@ def setup(req: SetupReq, request: Request, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(400, "管理员已存在")
     forget_roles()
-    return {"token": make_token(req.username), "username": req.username, "role": "admin"}
+    db.flush()
+    return {"token": make_token(req.username, u.token_version), "username": req.username, "role": "admin"}
 
 
 @router.post("/login")

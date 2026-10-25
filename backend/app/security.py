@@ -169,3 +169,30 @@ def note_login_fail(request: Request, username: str):
 def note_login_ok(request: Request, username: str):
     _login_fails.pop(_fail_key(request, username), None)
     _user_fails.pop(username, None)
+
+
+# ---------------- 首次设置的安装码 ----------------
+# 安装向导和创建管理员的接口在设置完成前不需要登录：谁先打开网页谁就能把实例接管。内网访问照旧不受影响；
+# 从公网地址访问（例如已经通过反向代理暴露出去）时，要填启动日志里打印的一次性安装码
+_setup_code = secrets.token_hex(4)
+
+
+def setup_code() -> str:
+    return _setup_code
+
+
+def check_setup_code(request: Request):
+    import hmac
+    import ipaddress
+
+    from app.oplog import client_ip
+    ip = client_ip(request)
+    try:
+        a = ipaddress.ip_address(ip)
+        if a.is_private or a.is_loopback or a.is_link_local:
+            return
+    except ValueError:
+        return   # 测试客户端等没有真实地址的情况
+    code = (request.headers.get("x-setup-code") or "").strip().lower()
+    if not hmac.compare_digest(code, _setup_code):
+        raise HTTPException(403, "setup_code_required")

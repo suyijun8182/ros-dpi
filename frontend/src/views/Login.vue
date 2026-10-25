@@ -9,6 +9,7 @@
       <label>{{ t('login.username') }}<input class="input" v-model="username" autocomplete="username" /></label>
       <label>{{ t('login.password') }}<input class="input" type="password" v-model="password" :autocomplete="setup ? 'new-password' : 'current-password'" /></label>
       <label v-if="setup">{{ t('login.password2') }}<input class="input" type="password" v-model="password2" autocomplete="new-password" /></label>
+      <label v-if="needCode">{{ t('setup.code') }}<input class="input" v-model.trim="code" autocomplete="off" /></label>
       <div class="err" v-if="error">{{ error }}</div>
       <button class="btn primary full" :disabled="busy">{{ setup ? t('login.setup') : t('login.submit') }}</button>
     </form>
@@ -31,6 +32,8 @@ const password = ref('')
 const password2 = ref('')
 const error = ref('')
 const busy = ref(false)
+const needCode = ref(false)
+const code = ref('')
 
 onMounted(async () => {
   try { setup.value = !(await http.get('/auth/status')).initialized } catch (e) { error.value = e.message }
@@ -44,11 +47,13 @@ async function submit() {
   }
   busy.value = true
   try {
-    const r = await http.post(setup.value ? '/auth/setup' : '/auth/login', { username: username.value, password: password.value })
+    const r = await http.post(setup.value ? '/auth/setup' : '/auth/login', { username: username.value, password: password.value },
+                              code.value ? { headers: { 'X-Setup-Code': code.value } } : undefined)
     setAuth(r.token, r.username, r.role)
     router.replace(route.query.next || '/')
   } catch (e) {
-    error.value = e.message
+    // 从公网首次设置：要填启动日志里的安装码
+    if (e.message === 'setup_code_required') { needCode.value = true; error.value = t('setup.codeNeeded') } else error.value = e.message
   } finally {
     busy.value = false
   }

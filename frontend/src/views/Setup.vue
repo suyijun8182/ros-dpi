@@ -26,6 +26,7 @@
         <label>{{ t('setup.password') }}<input class="input" type="password" v-model="f.password" autocomplete="new-password" /></label>
         <label>{{ t('setup.database') }}<input class="input" v-model.trim="f.database" required /></label>
         <p class="faint small">{{ t('setup.hostHint') }}</p>
+        <label v-if="needCode">{{ t('setup.code') }}<input class="input" v-model.trim="code" autocomplete="off" /></label>
 
         <div class="ok" v-if="okMsg">{{ okMsg }}</div>
         <div class="err" v-if="error">{{ error }}</div>
@@ -80,21 +81,28 @@ onMounted(async () => {
 })
 onUnmounted(() => clearInterval(timer))
 
+const needCode = ref(false)
+const code = ref('')
+const codeOpt = () => ({ timeout: 60000, headers: code.value ? { 'X-Setup-Code': code.value } : {} })
+function showErr(e) {
+  if (e.message === 'setup_code_required') { needCode.value = true; error.value = t('setup.codeNeeded') } else error.value = e.message
+}
+
 async function test() {
   error.value = okMsg.value = ''
   busy.value = 'test'
-  try { okMsg.value = (await http.post('/setup/test', f, { timeout: 60000 })).message } catch (e) { error.value = e.message } finally { busy.value = '' }
+  try { okMsg.value = (await http.post('/setup/test', f, codeOpt())).message } catch (e) { showErr(e) } finally { busy.value = '' }
 }
 
 async function save() {
   error.value = okMsg.value = ''
   busy.value = 'save'
   try {
-    await http.post('/setup/save', f, { timeout: 60000 })   // 首次建表可能较慢
+    await http.post('/setup/save', f, codeOpt())   // 首次建表可能较慢
     Object.assign(setupState, { configured: true, present: true })
     router.replace({ name: 'login' })
   } catch (e) {
-    error.value = e.message
+    showErr(e)
   } finally {
     busy.value = ''
   }

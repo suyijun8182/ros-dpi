@@ -13,6 +13,11 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # 同时推 main 和 v* tag 时两次运行都会走到这里：串行执行，后到的一次会看到“已发布”直接跳过，
+    # 不会两边同时 gh release create 撞车
+    concurrency:
+      group: github-release
+      cancel-in-progress: false
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -58,9 +63,13 @@ jobs:
             {
               echo '### 升级'
               echo
-              echo '```bash'
-              echo 'docker compose pull && docker compose up -d'
-              echo '```'
+              echo '- Docker：'
+              echo
+              echo '  ```bash'
+              echo '  docker compose pull && docker compose up -d'
+              echo '  ```'
+              echo
+              echo '- Linux 二进制：网页 系统设置 → 版本更新 → 一键更新；或重新运行一键安装命令（配置在 /etc/ros-dpi.env，不会被覆盖）。'
               echo
               echo "$NOTES"
             } > notes.md

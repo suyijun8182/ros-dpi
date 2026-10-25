@@ -15,7 +15,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app import database, notify, people, sharing
 from app.config import get_settings
@@ -39,6 +39,18 @@ def in_window(rule, ts: float) -> bool:
         ok_time = hm >= a or hm < b
         ok_day = str(day if hm >= a else (day - 2) % 7 + 1) in (rule.days or "1234567")
     return ok_time and ok_day
+
+
+def window_start(rule, ts: float) -> float:
+    """这一段生效时段从哪天 0 点算起：跨午夜的时段（22:00-06:00）凌晨那一段属于前一天，
+    累计流量和“一天一次”都按它算，不能到 0 点就清零重报"""
+    d = datetime.fromtimestamp(ts, _tz())
+    a, b = rule.time_from or "00:00", rule.time_to or "24:00"
+    start = d.replace(hour=0, minute=0, second=0, microsecond=0)
+    if a > b and d.strftime("%H:%M") < b:
+        from datetime import timedelta
+        start = (start - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return start.timestamp()
 
 
 def domain_match(domain: str, suffix: str) -> bool:
@@ -76,12 +88,16 @@ class Auditor:
         if not rules:
             return
         cl = self.engine.classifier
-        day = datetime.fromtimestamp(now, _tz()).strftime("%Y%m%d")
         events = []
+        # 只保留近两天的累计（以前按天累积的键永远不删）
+        if len(self._acc) > 1000:
+            keep = _day_start(now) - 86400
+            self._acc = defaultdict(int, {k: v for k, v in self._acc.items() if k[2] >= keep})
         sharing_hits = None
         for rule in rules:
             if not in_window(rule, now):
                 continue
+            day = window_start(rule, now)
             only = people.expand_scope([x for x in (rule.hosts or "").split(",") if x])
             hits: dict[str, dict] = defaultdict(lambda: {"bytes": 0, "items": defaultdict(int)})
             if rule.kind == "new_host":
@@ -136,7 +152,7 @@ class Auditor:
                     self._acc[(rule.id, host, day)] += h["bytes"]
                     if self._acc[(rule.id, host, day)] < rule.min_bytes:
                         continue
-                    if self._fired.get(key, 0) >= _day_start(now):  # 一天一次
+                    if self._fired.get(key, 0) >= day:  # 每个生效时段一次
                         continue
                 elif now - self._fired.get(key, 0) < 3600:          # 一小时一次
                     continue
@@ -206,17 +222,25 @@ class Auditor:
             return
         from app import stats
         with database.session() as db:
+            if not getattr(self, "_sending_reset", False):
+                # 上次进程在发送途中退出：“发送中”的事件放回待发
+                db.execute(update(AuditEvent).where(AuditEvent.notified == 3).values(notified=2))
+                self._sending_reset = True
             evs = db.scalars(select(AuditEvent).where(AuditEvent.notified == 2).order_by(AuditEvent.ts).limit(500)).all()
             if not evs:
+                db.commit()
                 return
             rules = {r.id: r for r in db.scalars(select(AuditRule))}
             meta = stats.host_meta(db, {e.host for e in evs})
-        items = []
-        for e in evs:
-            r = rules.get(e.rule_id)
-            if r is None:
-                continue
-            items.append((e.id, r, e.host, json.loads(e.detail or "{}"), meta[e.host]))
+            items = []
+            for e in evs:
+                r = rules.get(e.rule_id)
+                # 先标成“发送中”（3）再推送：推送比一分钟长时，下一轮不会把同一批再查出来重复发送；
+                # 规则已删除的直接作废，不能一直占着前 500 条让新积压的永远排不上
+                e.notified = 3 if r is not None else 0
+                if r is not None:
+                    items.append((e.id, r, e.host, json.loads(e.detail or "{}"), meta[e.host]))
+            db.commit()
         self._dispatch(items, time.time(), title=f"ROS-DPI 免打扰期间的审计提醒（{len(items)} 条）")
 
     def _label(self, x: str) -> str:

@@ -22,6 +22,12 @@ KEYS = ("singbox_url", "singbox_secret", "proxy_ips", "mosdns_url", "adguard_url
         "adguard_password")
 
 
+
+def _no_userinfo(url: str) -> str:
+    """状态接口里的地址去掉 user:pass@（/api/system 只读用户也能看）"""
+    import re
+    return re.sub(r"://[^/@]*@", "://", url or "")
+
 def effective(db_values: dict) -> dict:
     """网页填写的值优先，其次环境变量"""
     s = get_settings()
@@ -131,7 +137,7 @@ class SingboxPoller:
         self.ok, self.error, self.last = True, "", int(now)
 
     def status(self) -> dict:
-        return {"enabled": self.enabled, "url": self.url, "has_secret": bool(self.secret), "ok": self.ok,
+        return {"enabled": self.enabled, "url": _no_userinfo(self.url), "has_secret": bool(self.secret), "ok": self.ok,
                 "error": self.error, "last": self.last, "conns": self.conns, "bytes": self.bytes,
                 "version": self.version, "proxy_ip": self.host_ip()}
 
@@ -195,7 +201,7 @@ class MosdnsPoller:
         self.ok, self.error, self.last = True, "", int(time.time())
 
     def status(self) -> dict:
-        return {"enabled": self.enabled, "url": self.url, "ok": self.ok, "error": self.error,
+        return {"enabled": self.enabled, "url": _no_userinfo(self.url), "ok": self.ok, "error": self.error,
                 "last": self.last, "answers": self.answers}
 
 
@@ -344,7 +350,7 @@ class AdguardPoller:
                 ips.append((val, ttl))
 
     def status(self) -> dict:
-        return {"enabled": self.enabled, "url": self.url, "ok": self.ok, "error": self.error,
+        return {"enabled": self.enabled, "url": _no_userinfo(self.url), "ok": self.ok, "error": self.error,
                 "last": self.last, "answers": self.answers}
 
 
