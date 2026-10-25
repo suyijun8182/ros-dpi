@@ -384,7 +384,12 @@ async function testSources() {
   } catch (e) { srcErr.value = e.message } finally { testing.value = false }
 }
 
-watch(() => route.query.tab, v => { if (v === 'system' && isAdmin.value) { loadUpdate(); loadDeploys() } }, { immediate: true })
+// 社区共享库显示在“外部数据源”页：以前只在“系统”页加载共享状态，外部数据源页一直显示“等待首次同步”
+watch(tab, v => {
+  if (!isAdmin.value) return
+  if (v === 'system') loadUpdate()
+  if (v === 'sources') loadDeploys()
+}, { immediate: true })
 
 async function save() {
   saveErr.value = ''

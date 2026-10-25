@@ -15,12 +15,16 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app import database, notify, people, sharing
 from app.config import get_settings
 from app.models import AuditEvent, AuditRule, Setting
 
+
+
+ACC_KEY = "audit_acc"
+ACC_MAX_CHARS = 60_000
 
 
 def _tz():
@@ -65,6 +69,8 @@ class Auditor:
         self._loaded = 0
         self._acc: dict[tuple, int] = defaultdict(int)     # (rule, host, 日期) -> 生效时段内累计字节
         self._fired: dict[tuple, float] = {}               # (rule, host) -> 上次命中时间
+        self._restored = False
+        self._acc_dirty = False
         self.events = 0
 
     def reload(self):
@@ -79,10 +85,45 @@ class Auditor:
             self._loaded = time.time()
         return self._rules
 
+    def _restore(self, now: float):
+        """重启后接上进度，否则重启一次就会对同一台终端重复提醒、按天累计的流量从 0 重新算：
+        上次命中时间从审计事件表取（每次命中都会写一条事件），累计字节从设置表 audit_acc 读"""
+        since = _day_start(now) - 86400
+        with database.session() as db:
+            q = (select(AuditEvent.rule_id, AuditEvent.host, func.max(AuditEvent.ts))
+                 .where(AuditEvent.ts >= int(since)).group_by(AuditEvent.rule_id, AuditEvent.host))
+            for rid, host, ts in db.execute(q):
+                self._fired[(rid, host)] = max(self._fired.get((rid, host), 0), ts)
+            row = db.get(Setting, ACC_KEY)
+            saved = json.loads(row.value) if row and row.value else []
+        for rid, host, day, b in saved:
+            if day >= since:
+                self._acc[(rid, host, day)] = max(self._acc[(rid, host, day)], b)
+        self._restored = True
+
+    def _save_acc(self, now: float):
+        """把近两天还没命中的累计写进设置表（每分钟一次）。只存没命中的：已经提醒过的这一时段不会再报。
+        设置表的值在 MySQL 里是 TEXT（64KB），超了就丢掉字节数最小的——它们离阈值最远"""
+        since = _day_start(now) - 86400
+        rows = sorted(([k[0], k[1], k[2], v] for k, v in self._acc.items()
+                       if k[2] >= since and self._fired.get((k[0], k[1]), 0) < k[2]), key=lambda r: -r[3])
+        out, size = [], 2
+        for r in rows:
+            size += len(json.dumps(r, ensure_ascii=False)) + 1
+            if size > ACC_MAX_CHARS:
+                break
+            out.append(r)
+        with database.session() as db:
+            db.merge(Setting(key=ACC_KEY, value=json.dumps(out, ensure_ascii=False, separators=(",", ":"))))
+            db.commit()
+        self._acc_dirty = False
+
     def evaluate(self, buf: dict, dom: dict, new_hosts: list, now: float):
         """buf: {(host, app): [up, down, flows]}；dom: {(host, domain, app): bytes}；new_hosts: [(key, ip, mac)]"""
         try:
             rules = self._rules_now()
+            if rules and not self._restored:
+                self._restore(now)
         except Exception:  # noqa: BLE001  数据库暂时不可用
             return
         if not rules:
@@ -150,6 +191,7 @@ class Auditor:
                     continue
                 if rule.min_bytes:
                     self._acc[(rule.id, host, day)] += h["bytes"]
+                    self._acc_dirty = True
                     if self._acc[(rule.id, host, day)] < rule.min_bytes:
                         continue
                     if self._fired.get(key, 0) >= day:  # 每个生效时段一次
@@ -164,6 +206,11 @@ class Auditor:
             self._acc = defaultdict(int, {k: v for k, v in self._acc.items() if k[2] == day})
         if events:
             self._record(events, now)
+        if self._acc_dirty:
+            try:
+                self._save_acc(now)
+            except Exception as e:  # noqa: BLE001  存不上只影响重启后的接续，不能打断落库
+                print(f"[audit] 保存累计失败：{type(e).__name__}: {str(e)[:120]}", flush=True)
 
     def _record(self, events, now):
         from app import stats

@@ -145,3 +145,26 @@ def test_rules_events_notify_and_oplog(monkeypatch):
         assert all("SECRET-KEY" not in (o["detail"] or "") for o in ops)
         s = c.get("/api/audit/summary", headers=h).json()
         assert s["rules"] >= 4 and s["channels"] == 1
+
+
+def test_auditor_resumes_after_restart(monkeypatch):
+    """重启后接着算：按天累计的字节从设置表恢复，“这一时段已提醒过”从审计事件表恢复（不重复提醒）"""
+    monkeypatch.setattr(notify, "send", lambda *a, **kw: [])
+    host = "AA:00:00:00:0B:01"
+    with TestClient(app) as c:
+        h = _h(c)
+        rid = c.post("/api/audit/rules", json={"name": "重启累计", "kind": "traffic", "min_bytes": 10000,
+                                               "hosts": [host], "notify": False}, headers=h).json()["id"]
+        now = audit._day_start(time.time()) + 12 * 3600   # 当天中午，三次判定不会跨过零点
+        buf = {(host, "other"): [3000, 3000, 1]}
+
+        def fired():
+            with database.session() as db:
+                return db.query(AuditEvent).filter(AuditEvent.rule_id == rid).count()
+
+        audit.Auditor(engine).evaluate(buf, {}, [], now)            # 累计 6000，没到阈值
+        assert fired() == 0
+        audit.Auditor(engine).evaluate(buf, {}, [], now + 60)       # “重启”后再来 6000：累计 12000，命中
+        assert fired() == 1
+        audit.Auditor(engine).evaluate(buf, {}, [], now + 120)      # 再“重启”：这一时段已提醒过
+        assert fired() == 1
