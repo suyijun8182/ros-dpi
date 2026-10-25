@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     adguard_username: str = ""   # AdGuard Home 登录用户名；和密码都留空表示免认证（只在内网监听时）
     adguard_password: str = ""
     share_enabled: bool = True   # 共享识别库总开关（debug16 第 3 条，默认打开）：关掉后不心跳、不上报、不拉取
-    share_url: str = ""          # 社区共享库的中转地址（debug16）：上报本网络实测、拉取社区库；留空不参与
+    share_url: str = "https://rosdpi.suyijun.top:8443"   # 社区共享库的中转（debug16，默认社区中转）：上报本网络实测、拉取社区库；总开关关闭或留空则不参与
     share_hub: bool = False      # 本实例作为共享中转（需要公网可达）：接收其它部署的上报并发布聚合库
     share_token: str = ""        # 中转的上报令牌（可选，环境变量 SHARE_TOKEN）：设置了就要求上报带 X-Share-Token
     oui_db: bool = True          # 自动下载 IEEE 的 MAC 厂商库（OUI，识别终端类型用，每 30 天更新）
