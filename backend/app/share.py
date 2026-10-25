@@ -211,7 +211,7 @@ def deployments_remote(url: str, token: str = "") -> dict | None:
     import httpx
     headers = {"X-Share-Token": token} if token else {}
     try:
-        r = httpx.get(url.rstrip("/") + "/api/share/deployments", headers=headers, timeout=15.0)
+        r = httpx.get(url.rstrip("/") + "/api/share/deployments", headers=headers, timeout=15.0, verify=False)
         r.raise_for_status()
         d = r.json()
         return {"total": d.get("total", 0), "online": d.get("online", 0), "offline": d.get("offline", 0)}
@@ -247,13 +247,13 @@ def client_cycle(engine, db, url: str, token: str = "") -> dict:
     uploaded, merged, c_ips, c_doms, error = 0, 0, 0, 0, ""
     try:
         r = httpx.post(base + "/api/share/collect", json={"instance": iid, "entries": entries, "domains": domains},
-                       headers=headers, timeout=30.0)
+                       headers=headers, timeout=30.0, verify=False)
         r.raise_for_status()
         uploaded = int(r.json().get("accepted", 0))
     except Exception as e:  # noqa: BLE001
         error = f"{type(e).__name__}: {str(e)[:120]}"
     try:
-        r2 = httpx.get(base + "/api/share/library.json", headers=headers, timeout=30.0)
+        r2 = httpx.get(base + "/api/share/library.json", headers=headers, timeout=30.0, verify=False)
         r2.raise_for_status()
         data = r2.json()
         c_ips, c_doms = len(data.get("entries") or []), len(data.get("domains") or [])
@@ -274,7 +274,7 @@ def client_cycle(engine, db, url: str, token: str = "") -> dict:
             if not peer or peer == base:
                 continue
             try:
-                pr = httpx.get(peer + "/api/share/library.json", timeout=30.0)
+                pr = httpx.get(peer + "/api/share/library.json", timeout=30.0, verify=False)
                 pr.raise_for_status()
                 data = pr.json()
                 for e in data.get("entries") or []:
