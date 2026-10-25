@@ -132,7 +132,10 @@ class SettingsIn(BaseModel):
     adguard_url: str | None = Field(None, max_length=255)
     adguard_username: str | None = Field(None, max_length=255)
     adguard_password: str | None = Field(None, max_length=255)
+    share_url: str | None = Field(None, max_length=255)
     rules_auto_update: bool | None = None
+    share_enabled: bool | None = None
+    share_hub: bool | None = None
 
 
 def _get(db, key, default=""):
@@ -161,6 +164,8 @@ def get_settings_api(db: Session = Depends(get_db)):
                       "day": s.retention_day_days, "domain": s.retention_domain_days},
         "ros_url": s.ros_url, "ros_user": s.ros_user,
         "ports": {"http": s.http_port, "ipfix": s.ipfix_port, "tzsp": s.tzsp_port},
+        "share_enabled": _get(db, "share_enabled", "1" if s.share_enabled else "0") == "1",
+        "share_hub": _get(db, "share_hub", "1" if s.share_hub else "0") == "1",
         "tz": s.tz,
         "database": _db_info(),
         "integrations": _integrations(db),
@@ -181,6 +186,30 @@ def local_status():
     """本地自学习库（debug15）：本网络实测的 IP→应用 记忆规模"""
     from app.classify.local import local
     return {"ips": len(local.ips), "updated": local.version}
+
+
+def share_status():
+    """社区共享库（debug16）：本实例的角色与社区库规模（自带会话：/api/system 没有 db 参数）"""
+    from app import share
+    from app.classify.local import local
+    s = get_settings()
+    url, hub, published = getattr(s, "share_url", ""), s.share_hub, 0
+    if database.is_configured():
+        try:
+            with database.session() as db:
+                from app.models import Setting
+                u_row, h_row = db.get(Setting, "share_url"), db.get(Setting, "share_hub")
+                url = (u_row.value if u_row and u_row.value else url)
+                hub = (h_row.value == "1") if h_row is not None else s.share_hub
+                if hub:
+                    from sqlalchemy import func, select
+                    from app.models import ShareEntry
+                    rows = db.execute(select(ShareEntry.ip, func.count(func.distinct(ShareEntry.reporter)))
+                                      .group_by(ShareEntry.ip)).all()
+                    published = sum(1 for _ip, n in rows if n >= share.PUBLISH_REPORTERS)
+        except Exception:  # noqa: BLE001  状态展示不拖垮 /api/system
+            pass
+    return {"url": url, "hub": hub, "published": published, "community": len(local.community)}
 
 
 def _db_info():
@@ -216,6 +245,10 @@ def put_settings(req: SettingsIn, request: Request, user: str = Depends(current_
         integrations.apply({k: _get(db, k, None) for k in integrations.KEYS})
     if req.rules_auto_update is not None:
         _put(db, "rules_auto_update", "1" if req.rules_auto_update else "0")
+    if req.share_enabled is not None:
+        _put(db, "share_enabled", "1" if req.share_enabled else "0")
+    if req.share_hub is not None:
+        _put(db, "share_hub", "1" if req.share_hub else "0")
     if req.wan_interface is not None:
         _put(db, "wan_interface", req.wan_interface.strip())
         poller.wan_override = req.wan_interface.strip()
@@ -252,6 +285,7 @@ def system():
         "mosdns": integrations.mosdns.status(),
         "adguard": integrations.adguard.status(),
         "local": local_status(),
+        "share": share_status(),
         "asn": asndb.status(),
         "proxied_skipped": st["proxied_skipped"], "dns_mosdns": st["dns_mosdns"],
         "generic_apps": sorted(GENERIC_APPS),

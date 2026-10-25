@@ -16,7 +16,7 @@ from app.engine import engine
 from app.models import Setting
 from app.ros_poller import poller
 from app import audit  # noqa: F401  挂上审计（engine.audit）
-from app.routers import admin, auth, setup, stats
+from app.routers import admin, auth, setup, share as share_router, stats
 from app.routers import audit as audit_router
 from app.routers import compliance as compliance_router
 from app.routers import people as people_router
@@ -48,7 +48,7 @@ def _on_db_ready():
     （0.6.0 / 0.6.1 的主域名回填出错时，后面的外部数据源配置、自定义规则都没加载，外部数据源显示“未启用”）"""
     ensure_admin()   # 建管理员失败要报出来（安装向导靠这个提示）
     for name, fn in (("load_state", engine.load_state), ("apply_settings", _apply_saved),
-                     ("local_db", _refresh_local)):
+                     ("local_db", _refresh_local), ("share_lib", _share_cycle)):
         try:
             fn()
         except Exception as e:  # noqa: BLE001
@@ -73,6 +73,27 @@ def _auto_update_on() -> bool:
     with database.session() as db:
         row = db.get(Setting, "rules_auto_update")
     return row is None or row.value != "0"
+
+
+def _share_cycle():
+    """社区共享库（debug16）：心跳（部署量统计）+ 上报本地实测 + 拉取社区库。开关关闭或未配置地址时跳过"""
+    if not database.is_configured():
+        return
+    from app.config import get_settings
+    from app import share
+    with database.session() as db:
+        if not share.sharing_on(db):
+            return
+        saved = {k: (db.get(Setting, k).value if db.get(Setting, k) else None) for k in integrations.KEYS}
+    cfg = integrations.effective(saved)
+    url = cfg.get("share_url") or ""
+    if not url:
+        return
+    with database.session() as db:
+        res = share.client_cycle(engine, db, url, get_settings().share_token)
+        db.commit()
+    if res.get("merged"):
+        print(f"[share] 社区库已同步：上报 {res['uploaded']} 条，并入社区结论 {res['merged']} 条", flush=True)
 
 
 def _auto_update_rules():
@@ -130,6 +151,7 @@ async def lifespan(app: FastAPI):
     sched.add_job(_safe(integrations.mosdns.poll, "mosdns"), "interval", seconds=5, max_instances=1, coalesce=True)
     sched.add_job(_safe(integrations.adguard.poll, "adguard"), "interval", seconds=5, max_instances=1, coalesce=True)
     sched.add_job(_safe(_refresh_local, "local-db"), "interval", hours=1, max_instances=1, coalesce=True)
+    sched.add_job(_safe(_share_cycle, "share"), "interval", minutes=30, max_instances=1, coalesce=True)
     # 识别库更新 / 过了零点后的自动重算：指纹没变时开销只有一次设置查询。启动后等 15 分钟再跑第一次，
     # 第三方库、ASN、国内列表是在后台线程加载的，不能用没加载完的识别器去算历史
     sched.add_job(_safe(_auto_reclassify, "auto-reclass"), "interval", hours=1, max_instances=1, coalesce=True,
@@ -189,7 +211,7 @@ async def _unhandled(request: Request, exc: Exception):
 
 
 for r in (setup.router, auth.router, stats.router, admin.router, audit_router.router, people_router.router,
-          compliance_router.router):
+          compliance_router.router, share_router.router):
     app.include_router(r)
 
 
