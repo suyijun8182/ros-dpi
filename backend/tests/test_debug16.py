@@ -252,3 +252,22 @@ def test_no_ipv6_egress_message():
     import httpx
     msg = share._err(httpx.ConnectError("[Errno 101] Network is unreachable"))
     assert "IPv6" in msg and "Docker" in msg
+
+
+def test_hub_url_from_settings(monkeypatch):
+    """debug23：社区主站地址可在网页填写（优先于环境变量），空字符串恢复内置默认；地址格式校验"""
+    monkeypatch.setattr(get_settings(), "share_hub", False)
+    monkeypatch.setattr(get_settings(), "share_hub_url", "https://builtin.example:8443")
+    with TestClient(app) as c:
+        if not c.get("/api/auth/status").json()["initialized"]:
+            c.post("/api/auth/setup", json={"username": "admin", "password": "secret1"})
+        h = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": "admin", "password": "secret1"}).json()["token"]}
+        assert c.put("/api/settings", json={"share_hub_url": "hub.example.com"}, headers=h).status_code == 400
+        r = c.put("/api/settings", json={"share_hub_url": "https://hub.example.com/"}, headers=h).json()
+        assert r["share_hub_url"] == "https://hub.example.com"
+        st = c.get("/api/system/deployments", headers=h).json()
+        assert st["hub_url"] == "https://hub.example.com" and st["custom_hub"]
+        assert st["default_hub_url"] == "https://builtin.example:8443"
+        c.put("/api/settings", json={"share_hub_url": ""}, headers=h)
+        st = c.get("/api/system/deployments", headers=h).json()
+        assert st["hub_url"] == "https://builtin.example:8443" and not st["custom_hub"]

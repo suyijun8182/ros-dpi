@@ -1,0 +1,14 @@
+# 社区主站对外入口：自动 HTTPS，只转发共享接口；Caddy 会把客户端真实地址放进 X-Forwarded-For，
+# 主站据此按来源网络计票（来源 IP 本身不保存，只存加盐哈希）
+{$HUB_DOMAIN} {
+	encode gzip
+	request_body {
+		max_size 8MB
+	}
+	handle /api/share/v1/* {
+		reverse_proxy hub:8080
+	}
+	handle {
+		respond "ROS-DPI community hub" 200
+	}
+}

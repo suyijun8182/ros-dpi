@@ -1,0 +1,37 @@
+# ROS-DPI 社区主站（debug23）：部署在有公网 IPv4 的 VPS 上，所有 ROS-DPI 实例把匿名投票上报到这里
+# 用法：
+#   1. 域名解析到这台 VPS（A 记录；VPS 有 IPv6 的话再加 AAAA），放行 80 / 443 端口
+#   2. 在本目录建 .env（示例见 .env.example），填域名和管理员密码
+#   3. docker compose up -d   —— Caddy 自动申请 HTTPS 证书
+#   4. 各实例 系统设置 → 外部数据源 → 社区主站地址 填 https://<你的域名>（或等内置默认改成它）
+# 对外只开放 /api/share/v1/*（注册、上报、社区库、部署量）；管理页面只绑在 VPS 本机 127.0.0.1:8080，
+# 需要时用 ssh -L 8080:127.0.0.1:8080 <VPS> 后在自己电脑上打开 http://127.0.0.1:8080
+services:
+  hub:
+    image: suyijun8182/ros-dpi:latest        # 也可用 ghcr.io/suyijun8182/ros-dpi:latest
+    container_name: ros-dpi-hub
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      SHARE_HUB: "true"
+      # 主站数据量小，用 SQLite 即可（数据在 ./data/hub.db）
+      DATABASE_URL: sqlite:////app/data/hub.db
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?请在 .env 里设置 ADMIN_PASSWORD}
+    ports:
+      - "127.0.0.1:8080:8080"   # 只给本机 / SSH 隧道用，不对公网开放
+    volumes:
+      - ./data:/app/data
+
+  caddy:
+    image: caddy:2.8
+    container_name: ros-dpi-hub-caddy
+    restart: unless-stopped
+    depends_on: [hub]
+    environment:
+      HUB_DOMAIN: ${HUB_DOMAIN:?请在 .env 里设置 HUB_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-data:/data

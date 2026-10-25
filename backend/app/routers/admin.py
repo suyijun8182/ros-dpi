@@ -134,6 +134,7 @@ class SettingsIn(BaseModel):
     adguard_password: str | None = Field(None, max_length=255)
     rules_auto_update: bool | None = None
     share_enabled: bool | None = None
+    share_hub_url: str | None = Field(None, max_length=255)   # 社区主站地址；空字符串表示恢复内置默认
 
 
 def _get(db, key, default=""):
@@ -163,6 +164,7 @@ def get_settings_api(db: Session = Depends(get_db)):
         "ros_url": s.ros_url, "ros_user": s.ros_user,
         "ports": {"http": s.http_port, "ipfix": s.ipfix_port, "tzsp": s.tzsp_port},
         "share_enabled": _get(db, "share_enabled", "1" if s.share_enabled else "0") == "1",
+        "share_hub_url": _get(db, "share_hub_url", ""),
         "tz": s.tz,
         "database": _db_info(),
         "integrations": _integrations(db),
@@ -222,8 +224,18 @@ def put_settings(req: SettingsIn, request: Request, user: str = Depends(current_
         integrations.apply({k: _get(db, k, None) for k in integrations.KEYS})
     if req.rules_auto_update is not None:
         _put(db, "rules_auto_update", "1" if req.rules_auto_update else "0")
+    share_changed = False
+    if req.share_hub_url is not None:
+        v = req.share_hub_url.strip().rstrip("/")
+        if v and not v.startswith(("http://", "https://")):
+            raise HTTPException(400, "社区主站地址要以 https:// 或 http:// 开头")
+        if v != _get(db, "share_hub_url", ""):
+            _put(db, "share_hub_url", v)
+            share_changed = True
     if req.share_enabled is not None:
         _put(db, "share_enabled", "1" if req.share_enabled else "0")
+        share_changed = True
+    if share_changed:
         db.commit()
         from app import share
         share.kick(share.run_once)
