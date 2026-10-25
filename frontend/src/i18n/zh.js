@@ -159,7 +159,7 @@ export default {
     deploys: '全球部署量', deployed: '已部署 {n}', online: '在线 {n}', offline: '离线 {n}', deployHint: '来自社区主站，每 30 分钟刷新',
     shareEnabled: '参与社区共享（默认打开）', shareWait: '等待首次同步', shareHub: '本实例是社区主站',
     shareNets: '来源网络', shareNetsWarn: '多个实例却只看到 1 个来源网络：主站前面的反向代理没有传 X-Forwarded-For，所有实例被当成同一网络，社区库凑不够票。请在反向代理里开启传递客户端 IP。',
-    shareHubUrl: '社区主站', shareHubHint: '项目内置，不需要填写；自建私有社区时用环境变量 SHARE_HUB_URL 修改',
+    shareHubUrl: '社区主站', shareHubHint: '留空使用内置主站（上面灰色地址）；改用自己 VPS 上的主站或内网反代地址时填这里，保存后立即重新注册并同步。主站部署见 docs/社区主站部署.md',
     communitySize: '社区库现有', communityDetail: 'IP 记忆 {ip} 条 · 域名记忆 {dom} 条',
     shareWhy: '每个部署实例的自学习库都不一样：把各自实测的「远端 IP / 域名 → 应用」匿名投票汇总到社区主站，至少 2 个不同网络的实例都这样认的才进入社区库，大家的识别就更准。上报内容不含本机终端、访问记录与自定义应用，私网地址自动剔除；关闭后不再上报，也不再使用社区库。',
     asn: 'IP 归属库（ASN）', asnOn: '已启用',

@@ -159,7 +159,7 @@ export default {
     deploys: 'Global deployments', deployed: '{n} deployed', online: '{n} online', offline: '{n} offline', deployHint: 'from the community hub, refreshed every 30 minutes',
     shareEnabled: 'Join community sharing (on by default)', shareWait: 'Waiting for the first sync', shareHub: 'This instance is the community hub',
     shareNets: 'Source networks', shareNetsWarn: 'Several instances but only 1 source network: the reverse proxy in front of the hub does not pass X-Forwarded-For, so every instance looks like the same network and nothing reaches the vote threshold. Enable forwarding the client IP in the proxy.',
-    shareHubUrl: 'Community hub', shareHubHint: 'built in, nothing to fill in; set SHARE_HUB_URL to run a private community',
+    shareHubUrl: 'Community hub', shareHubHint: 'leave empty to use the built-in hub (grey placeholder); fill in your own VPS hub or a LAN reverse-proxy address — saving re-registers and syncs immediately. Hub setup: docs/社区主站部署.md',
     communitySize: 'Community library', communityDetail: '{ip} IP memories · {dom} domain memories',
     shareWhy: 'Every deployment learns different IP/domain→app mappings. Anonymous votes are pooled on the community hub; a mapping is published only when instances on at least 2 different networks agree. Reports contain no local devices, no access records, no custom apps; private ranges are stripped. Turning this off stops reporting and stops using the community library.',
     asn: 'IP ownership (ASN)', asnOn: 'On',

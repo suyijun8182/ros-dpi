@@ -172,9 +172,14 @@
             <label class="chk" style="display:flex;gap:6px;align-items:center;cursor:pointer">
               <input type="checkbox" :checked="src.share_enabled" @change="src.share_enabled = $event.target.checked" /> {{ t('sources.shareEnabled') }}
             </label>
-            <div class="small" style="margin-top:6px" v-if="deploys">
+            <template v-if="!deploys || deploys.role !== 'hub'">
+              <label for="share-hub">{{ t('sources.shareHubUrl') }}</label>
+              <input id="share-hub" class="input addr" v-model.trim="src.share_hub_url" autocomplete="off"
+                     :placeholder="deploys ? deploys.default_hub_url : ''" />
+              <div class="faint small">{{ t('sources.shareHubHint') }}</div>
+            </template>
+            <div class="small" style="margin-top:6px" v-else>
               <b>{{ t('sources.shareHubUrl') }}</b>：<span class="addr">{{ deploys.hub_url || '—' }}</span>
-              <span class="faint small" v-if="deploys.role !== 'hub'">（{{ t('sources.shareHubHint') }}）</span>
             </div>
             <div class="err small" v-if="deploys && deploys.sync.ts && !deploys.sync.ok && deploys.sync.error">{{ deploys.sync.error }}</div>
             <div class="small" style="margin-top:8px" v-if="deploys && deploys.sync.ts">
@@ -326,7 +331,7 @@ onMounted(async () => {
 })
 
 // ---------- 外部数据源 ----------
-const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '', share_enabled: true })
+const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '', share_enabled: true, share_hub_url: '' })
 const deploys = ref(null)
 const srcErr = ref('')
 const srcSaved = ref(false)
@@ -335,7 +340,7 @@ function fillSources() {
   const i = s.value.integrations
   Object.assign(src, { singbox_url: i.singbox_url, singbox_secret: '', proxy_ips: i.proxy_ips, mosdns_url: i.mosdns_url,
                        adguard_url: i.adguard_url, adguard_username: i.adguard_username, adguard_password: '',
-                       share_enabled: !!s.value.share_enabled })
+                       share_enabled: !!s.value.share_enabled, share_hub_url: s.value.share_hub_url || '' })
 }
 async function saveSources() {
   srcErr.value = ''
@@ -343,7 +348,7 @@ async function saveSources() {
     // 密钥留空表示不修改；要清除用“清除密钥/密码”按钮
     const body = { singbox_url: src.singbox_url, proxy_ips: src.proxy_ips, mosdns_url: src.mosdns_url,
                    adguard_url: src.adguard_url, adguard_username: src.adguard_username,
-                   share_enabled: src.share_enabled }
+                   share_enabled: src.share_enabled, share_hub_url: src.share_hub_url }
     if (src.singbox_secret) body.singbox_secret = src.singbox_secret
     if (src.adguard_password) body.adguard_password = src.adguard_password
     s.value = await http.put('/settings', body)

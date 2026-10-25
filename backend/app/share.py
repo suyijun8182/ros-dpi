@@ -87,7 +87,13 @@ def is_hub() -> bool:
     return bool(get_settings().share_hub)
 
 
-def hub_url() -> str:
+def hub_url(db=None) -> str:
+    """社区主站地址：网页填写的优先（debug23：可以改用自己 VPS 上的主站），其次环境变量 / 内置默认"""
+    saved = _setting(db, "share_hub_url") if db is not None else ""
+    return (saved or get_settings().share_hub_url or "").strip().rstrip("/")
+
+
+def default_hub_url() -> str:
     return (get_settings().share_hub_url or "").strip().rstrip("/")
 
 
@@ -461,7 +467,8 @@ def _err(e: Exception) -> str:
     if isinstance(e, httpx.ConnectError) and ("errno 101" in msg or "unreachable" in msg
                                               or "cannot assign requested address" in msg):
         # 实例不需要公网 IP（都是主动连主站），但主站目前只有 IPv6 地址：本机 / 容器要有 IPv6 出口
-        return "连不上社区主站：本机没有 IPv6 出口（主站只有 IPv6 地址）。Docker 部署请按 docker-compose.yml 末尾的说明开启 IPv6，或改用 Linux 一键安装"
+        return ("连不上社区主站：本机没有 IPv6 出口（主站只有 IPv6 地址）。三选一：Docker 按 docker-compose.yml 末尾的说明开启 IPv6；"
+                "或改用 Linux 一键安装；或在内网有 IPv6 的反向代理（Lucky / Nginx）上转发主站，再把 SHARE_HUB_URL 指向这个内网地址")
     return f"{type(e).__name__}: {str(e)[:120]}"
 
 
@@ -481,7 +488,7 @@ def _register(c: httpx.Client, base: str, db) -> tuple[str, str]:
 def client_cycle(engine, db) -> dict:
     """普通实例一轮同步：注册（首次）→ 心跳（每 6 小时带投票）→ 拉社区库 → 拉部署量"""
     from app import __version__
-    base = hub_url()
+    base = hub_url(db)
     if not base:
         raise ShareError(400, "没有配置社区主站地址（SHARE_HUB_URL）")
     with _http() as c:
@@ -568,5 +575,6 @@ def status(db) -> dict:
         st["nets"] = db.scalar(select(func.count(func.distinct(ShareDeployment.net)))
                                .where(ShareDeployment.token_hash.is_not(None),
                                       ShareDeployment.net != HUB_NET)) or 0
-    return {"role": "hub" if is_hub() else "client", "hub_url": hub_url(), "enabled": sharing_on(db),
+    return {"role": "hub" if is_hub() else "client", "hub_url": hub_url(db), "default_hub_url": default_hub_url(),
+            "custom_hub": bool(_setting(db, "share_hub_url")), "enabled": sharing_on(db),
             "verify_tls": bool(get_settings().share_verify_tls), "sync": st}

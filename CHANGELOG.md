@@ -2,8 +2,11 @@
 
 ## [0.6.22] - 2026-10-25
 
-接入向导、文档补上 IPv6 嗅探与 FastTrack；自检检查 IPv6 的 FastTrack
+社区主站地址可在网页填写 + VPS 主站部署模板（debug23）；接入向导、文档补上 IPv6 嗅探与 FastTrack
 
+- **社区主站地址可在网页填写**（debug23）：系统设置 → 外部数据源 → 社区共享库 新增“社区主站地址”，留空用内置主站，填写后优先于 `SHARE_HUB_URL`，保存即重新注册并同步。可以填自己 VPS 上的主站，也可以填内网反向代理（Lucky）转发主站的地址——后者解决“Docker 实例没有 IPv6 出口、连不上只有 IPv6 的主站”。
+- **VPS 主站部署模板** `deploy/hub/`（debug23）：Docker + Caddy 自动 HTTPS、SQLite；公网只开放 `/api/share/v1/*`，管理页面只绑 VPS 本机（SSH 隧道访问）。说明见 `docs/社区主站部署.md`。
+- 连不上主站时的提示补充第三种办法（内网反代转发主站）。
 - **接入向导**（系统设置 → 接入与自检）新增 3b、3c 两步：路由器开了 IPv6 时在 `/ipv6 firewall mangle` 再加一份 DNS / SNI 嗅探（4 条）；开了 FastTrack 时让 IPv4 / IPv6 每条连接的前 10KB 不走 FastTrack。此前向导只有 IPv4 命令，IPv6 流量的 DNS 应答和握手全都镜像不到。
 - **接入自检**读取 `/ipv6/firewall/filter`：IPv6 的 FastTrack 规则（ROS 7.18 起支持）没有限定 connection-bytes 时提示，并给出修改命令。
 - README 与 `docs/RouterOS配置.md` 补充 IPv6 一节：为什么必须做、4 条命令、镜像目标可以用 ROS-DPI 的 IPv4 地址、流量采集不用另配。
