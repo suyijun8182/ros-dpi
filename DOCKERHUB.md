@@ -36,6 +36,7 @@ services:
 
 ## What's new
 
+- **0.6.23**: 内置社区主站改为有公网 IPv4 的 VPS（`https://rosdpi.vviip.dpdns.org:8443`），Docker 实例不用再开 IPv6。Built-in community hub moved to an IPv4-reachable VPS.
 - **0.6.22**: 全站审计修复（落库容错、采集端口防护 `COLLECTOR_ALLOWED`、管控脚本防注入、一键更新校验 SHA256、arm64 二进制等）；社区主站地址可在网页填写，新增 VPS 主站部署模板（`deploy/hub/`，Docker + Caddy 自动 HTTPS）；接入向导与文档补上 IPv6 嗅探（`/ipv6 firewall mangle` 4 条）和 FastTrack（IPv4 / IPv6）命令；自检检查 IPv6 的 FastTrack。Setup guide and docs now include IPv6 sniff rules and FastTrack commands for both families; the self-check also flags IPv6 FastTrack without a connection-bytes limit.
 - **0.6.21**: 社区共享库重做——项目自带社区主站，不再需要 WebDAV / 第三方存储：令牌注册、按来源网络计票（≥2 个不同网络一致才发布，防伪造实例刷票）、ETag 增量拉取、本地缓存；修复 0.6.20 部署量接口 500、共享任务从未运行、开关保存不上。接入自检新增 IPv6 嗅探规则检查，FastTrack 已限定 connection-bytes 时不再误报，并直接给出修改命令。Community library rebuilt around a built-in hub (no WebDAV/third-party storage): per-instance tokens, votes counted per source network, ETag pulls, local cache; fixes the 0.6.20 deployments 500 and the never-running share job. Self-check now flags missing IPv6 sniff rules.
 - **0.6.12 / 0.6.11 / 0.6.10 / 0.6.9 / 0.6.8**: 自学习与共享系列。**本地自学习库**：本网络实测的「IP → 应用」（IPv6 按 /64 前缀聚合）与「域名 → 应用」长期记忆，每小时重建，DNS 缓存过期、DoH、裸 IP 流量都能按记忆归类；**社区共享库**：各部署实例把实测结论匿名共享（中转聚合、至少 2 个实例见过才发布），本地实测优先、社区只补空白；**全球部署量**：实例心跳上报，中转公开已部署 / 在线 / 离线数量；共享总开关默认打开；**一键自更新**：Linux 二进制部署在网页上检测并一键升级（自动下载、替换、重启服务）；**Linux 单文件二进制部署**：`install.sh` 一键安装 systemd 服务（SQLite 零配置起步）；修复落库卡死（代理长域名撑爆 access_log.remote 列导致每分钟落库失败、在线终端归零）；组播 / 广播流量不再计入统计；17 个 DPI 大类配色互异。
@@ -121,7 +122,7 @@ Open `http://<host>:8080`. The setup wizard has two steps. 打开网页后按两
 | `ADMIN_PASSWORD` | empty | initial password for `admin` |
 | `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | empty | RouterOS REST + read-only user |
 | `SINGBOX_URL` / `MOSDNS_URL` / `ADGUARD_URL` | empty | external sources (Clash API, MosDNS audit, AdGuard Home query log) |
-| `SHARE_HUB_URL` | `https://rosdpi.suyijun.top:8443` | community hub (built in); point it at your own hub for a private community |
+| `SHARE_HUB_URL` | `https://rosdpi.vviip.dpdns.org:8443` | community hub (built in); point it at your own hub for a private community |
 | `SHARE_HUB` | `false` | run this instance as the community hub (only the hub sets `true`) |
 | `SHARE_VERIFY_TLS` | `true` | verify the hub certificate; set `false` only for a private hub with a self-signed cert |
 | `COLLECTOR_ALLOWED` | empty | accept IPFIX / TZSP only from these IPs / CIDRs (usually the router); empty = any |

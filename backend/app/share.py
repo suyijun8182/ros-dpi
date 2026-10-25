@@ -513,9 +513,9 @@ def _err(e: Exception) -> str:
     msg = str(e).lower()
     if isinstance(e, httpx.ConnectError) and ("errno 101" in msg or "unreachable" in msg
                                               or "cannot assign requested address" in msg):
-        # 实例不需要公网 IP（都是主动连主站），但主站目前只有 IPv6 地址：本机 / 容器要有 IPv6 出口
-        return ("连不上社区主站：本机没有 IPv6 出口（主站只有 IPv6 地址）。三选一：Docker 按 docker-compose.yml 末尾的说明开启 IPv6；"
-                "或改用 Linux 一键安装；或在内网有 IPv6 的反向代理（Lucky / Nginx）上转发主站，再把 SHARE_HUB_URL 指向这个内网地址")
+        # 实例不需要公网 IP（都是主动连主站）；网络不可达多半是自建主站只有 IPv6、而本机 / 容器没有 IPv6 出口
+        return ("连不上社区主站：网络不可达。主站只有 IPv6 地址时，Docker 默认没有 IPv6 出口——"
+                "按 docker-compose.yml 末尾的说明开启 IPv6，或改用 Linux 一键安装，或把主站放到有公网 IPv4 的服务器上")
     return f"{type(e).__name__}: {str(e)[:120]}"
 
 
