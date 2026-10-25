@@ -29,6 +29,10 @@
 
 ![应用统计](docs/images/apps-light.png)
 
+![流量流向](docs/images/flow-light.png)
+
+![家庭成员](docs/images/people-light.png)
+
 ### 三步上手
 
 1. **部署 ROS-DPI**：Linux 一条命令，或 Docker Compose（见[部署](#部署)）。
