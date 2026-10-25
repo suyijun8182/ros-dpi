@@ -213,7 +213,7 @@ def share_status():
     return {"url": url, "hub": hub, "published": published, "community": len(local.community)}
 
 
-def deployments_with_relays():
+def deployments_with_relays(db):
     """全球部署量 + 可用中转列表 + 本实例的同步状态（debug19/20）：中转实例直接读本地，其它实例从中转拉取"""
     from app import share
     s = get_settings()
