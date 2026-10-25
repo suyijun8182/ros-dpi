@@ -178,6 +178,7 @@ export default {
       no_dns: 'No working DNS sniffing rule.', no_sni: 'No working SNI rule: HTTPS / QUIC handshakes never reach ROS-DPI.',
       no_quic: 'Only a TCP SNI rule; UDP 443 (QUIC / HTTP3) is missing, so QUIC-heavy apps such as Douyin and YouTube are not identified.',
       fasttrack: 'FastTrack is on and its rule has no connection-bytes limit: fast-tracked connections skip mangle, so handshakes are not mirrored and much HTTPS falls back to IP-only buckets. The command below keeps the first 10 KB of each connection off FastTrack; CPU cost barely changes.',
+      fasttrack6: 'IPv6 FastTrack is on (/ipv6 firewall filter) without a connection-bytes limit: handshakes of IPv6 connections are not mirrored. The command below keeps the first 10 KB of each connection off FastTrack as well.',
       no_ipv6: 'The router has public IPv6 addresses but sniff rules exist for IPv4 only: DNS answers and HTTPS / QUIC handshakes over IPv6 are invisible. The commands below add the same rules under /ipv6 firewall mangle; if sniff-target is rejected, use the IPv6 address of ROS-DPI.',
     },
   },

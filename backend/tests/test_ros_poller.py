@@ -112,6 +112,14 @@ def test_fasttrack_check_respects_connection_bytes(monkeypatch):
     poller.poll()
     chk = poller.check()
     assert "fasttrack" not in chk["issues"] and chk["fasttrack_limited"]
+    # IPv6 的 FastTrack 规则同样要限定 connection-bytes
+    rule6 = {".id": "*3", "action": "fasttrack-connection", "chain": "forward", "disabled": "false"}
+    monkeypatch.setitem(ROS, "/rest/ipv6/firewall/filter", [rule6])
+    poller.poll()
+    assert "fasttrack6" in poller.check()["issues"]
+    monkeypatch.setitem(ROS, "/rest/ipv6/firewall/filter", [{**rule6, "connection-bytes": "10000-0"}])
+    poller.poll()
+    assert "fasttrack6" not in poller.check()["issues"]
     # 读不到 filter 表（只读账号没权限）：按旧办法提示
     monkeypatch.delitem(ROS, "/rest/ip/firewall/filter")
     poller.poll()

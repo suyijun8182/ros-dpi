@@ -43,6 +43,7 @@ class RosPoller:
         self.mangle: list[dict] = []        # 接入自检用：RouterOS 的 mangle 规则（只读）
         self.ip_settings: dict = {}
         self.filter_rules: list[dict] | None = None   # /ip/firewall/filter（看 FastTrack 规则有没有限定 connection-bytes）
+        self.filter6_rules: list[dict] = []            # /ipv6/firewall/filter（ROS 7.18 起 IPv6 也能 FastTrack）
         self.has_ipv6 = False                          # 路由器上有没有 IPv6 公网地址
         self._sample_prev: dict[str, tuple[float, int, int]] = {}
 
@@ -98,13 +99,14 @@ class RosPoller:
                     ("pools", "/ip/pool"), ("servers", "/ip/dhcp-server"), ("dhcpc", "/ip/dhcp-client"),
                     ("pppoe", "/interface/pppoe-client"), ("mangle", "/ip/firewall/mangle"),
                     ("mangle6", "/ipv6/firewall/mangle"), ("ipset", "/ip/settings"),
-                    ("filter", "/ip/firewall/filter"))}
+                    ("filter", "/ip/firewall/filter"), ("filter6", "/ipv6/firewall/filter"))}
             self._apply(ifaces, arp, leases, addrs, routes, nb6, addrs6)
             self._apply_status(ifaces, addrs, leases, routes, extra)
             self.mangle = [{**r, "_family": "ipv4"} for r in extra["mangle"] or []] + \
                 [{**r, "_family": "ipv6"} for r in extra["mangle6"] or []]
             self.ip_settings = extra["ipset"] if isinstance(extra["ipset"], dict) else {}
             self.filter_rules = extra["filter"] if isinstance(extra["filter"], list) else None
+            self.filter6_rules = extra["filter6"] if isinstance(extra["filter6"], list) else []
             self.has_ipv6 = any(_global_v6(a.get("address")) and a.get("disabled") != "true"
                                 for a in addrs6 or [])
             # 全部成功后再更新展示用的状态，失败时保留上一次的结果
@@ -307,6 +309,10 @@ class RosPoller:
         ft_limited = bool(ft_rules) and all(r.get("connection-bytes") for r in ft_rules)
         if fasttrack and not ft_limited:
             issues.append("fasttrack")
+        # IPv6 的 FastTrack 没有 ipv4-fasttrack-active 这样的状态位，直接看规则：启用了且没限定 connection-bytes 就提示
+        if any(r.get("action") == "fasttrack-connection" and r.get("disabled") != "true" and not r.get("connection-bytes")
+               for r in self.filter6_rules):
+            issues.append("fasttrack6")
         return {"checked": True, "port": port, "target": ref[0] if ref else None, "rules": rules, "issues": issues,
                 "fasttrack": fasttrack, "fasttrack_limited": fasttrack and ft_limited}
 
