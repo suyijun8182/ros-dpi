@@ -261,6 +261,7 @@ def system():
 # ---------- 识别库：来源、版本、自动更新 ----------
 def _library(db):
     from app.classify.lists import lists
+    from app.classify.local import local
     from app.classify.sources import sources
     from app.classify.updater import updater
     c = engine.classifier
@@ -283,6 +284,9 @@ def _library(db):
             {"id": "asn", "license": "PDDL v1.0", "url": "https://iptoasn.com", "asns": len(c.asn_apps), **asndb.status()},
             *[third[k] for k in ("hagezi", "ut1") if k in third],
             *sources.rows(),
+            # 本地自学习库（debug15）：本网络实测的 IP→应用 记忆，排在所有公开库之后做兜底
+            {"id": "local", "license": "本地实测", "url": "https://github.com/suyijun8182/ros-dpi",
+             "domains": len(local.ips), "updated": local.updated},
         ],
     }
 

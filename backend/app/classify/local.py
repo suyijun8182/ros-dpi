@@ -9,6 +9,7 @@ host_domain_day（31 天）里以 IP 形式记录的行，当初是靠 DNS / SNI
 """
 import ipaddress
 import threading
+import time
 from collections import defaultdict
 
 from sqlalchemy import select
@@ -22,6 +23,7 @@ class LocalDB:
     def __init__(self):
         self.lock = threading.Lock()
         self.version = 0
+        self.updated = 0                 # 上次重建的时间（识别库面板显示用）
         self.ips: dict[str, str] = {}   # IP -> 应用 ID（按历史字节数取最多的应用）
 
     def load(self, db):
@@ -44,6 +46,7 @@ class LocalDB:
             ips[dom] = max(per, key=per.get)
         with self.lock:
             self.ips = ips
+            self.updated = int(time.time())
             self.version += 1
 
     def ip_app(self, ip: str) -> str | None:
