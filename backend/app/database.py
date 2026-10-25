@@ -141,18 +141,27 @@ def init_db(retries: int = 20, delay: float = 3.0):
 
 
 def add_missing_columns():
-    """升级时补上新版本新增的列（create_all 只建新表，不改已有的表）。新增列一律可为空，不需要回填。"""
+    """升级时补上新版本新增的列（create_all 只建新表，不改已有的表）。新增列一律可为空，不需要回填。
+    同时把代码里加宽过的列在存量库上加宽（0.6.8：access_log.remote 45→255；只加宽不缩窄，SQLite 不校验长度跳过）。"""
     insp = inspect(engine)
     with engine.begin() as conn:
         for table in Base.metadata.sorted_tables:
             if not insp.has_table(table.name):
                 continue
-            have = {c["name"] for c in insp.get_columns(table.name)}
+            have = {c["name"]: c for c in insp.get_columns(table.name)}
             for col in table.columns:
-                if col.name not in have and col.nullable:
+                if col.name not in have:
+                    if col.nullable:
+                        ctype = col.type.compile(dialect=engine.dialect)
+                        conn.exec_driver_sql(f"ALTER TABLE `{table.name}` ADD COLUMN `{col.name}` {ctype} NULL")
+                        print(f"[db] 已为 {table.name} 添加列 {col.name}", flush=True)
+                    continue
+                length = getattr(col.type, "length", None)
+                db_len = have[col.name].get("length")
+                if insp.dialect.name == "mysql" and length and db_len and length > int(db_len):
                     ctype = col.type.compile(dialect=engine.dialect)
-                    conn.exec_driver_sql(f"ALTER TABLE {table.name} ADD COLUMN {col.name} {ctype} NULL")
-                    print(f"[db] 已为 {table.name} 添加列 {col.name}", flush=True)
+                    conn.exec_driver_sql(f"ALTER TABLE `{table.name}` MODIFY `{col.name}` {ctype}")
+                    print(f"[db] 已把 {table.name}.{col.name} 从 {db_len} 加宽到 {length}", flush=True)
 
 
 def add_ready_hook(fn):

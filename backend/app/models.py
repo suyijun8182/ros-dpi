@@ -134,7 +134,7 @@ class AccessLog(Base):
     host = Column(String(64), nullable=False)
     host_ip = Column(String(45))
     dest = Column(String(255), nullable=False)   # 域名；没有域名时是远端 IP
-    remote = Column(String(45))                  # 最近一次的远端 IP
+    remote = Column(String(255))                 # 最近一次的远端 IP；0.6.8 从 45 加宽：代理连接曾把域名写进来导致落库卡死
     app = Column(String(48), nullable=False)
     port = Column(Integer)
     proto = Column(Integer)

@@ -180,9 +180,10 @@ class Classifier:
 
     def classify(self, remote_ip: str, proto: int, port: int, qname: str | None, cname: str | None) -> str:
         from app.classify.lists import lists as extra_lists
+        from app.classify.local import local
         from app.classify.sources import sources as extra
-        ver = (extra_lists.version, extra.version)
-        if ver != self._ver:   # 第三方库重新加载过：之前的结果作废
+        ver = (extra_lists.version, extra.version, local.version)
+        if ver != self._ver:   # 第三方库 / 本地自学习库重新加载过：之前的结果作废
             self._cache.clear()
             self._ver = ver
             self._sync_list_apps()
@@ -217,6 +218,9 @@ class Classifier:
             hit = asndb.lookup(remote_ip)
             if hit:
                 app = self.asn_apps.get(hit[0])
+        if app is None:
+            # 本地自学习库（debug15）：本网络实测过的 IP→应用 长期记忆，DNS 缓存过期 / DoH / 裸 IP 都能归类
+            app = local.ip_app(remote_ip)
         if app is None or app.startswith(WEAK_PREFIXES):
             # 分类级列表（Hagezi > UT1）：只认得出类别；也用来细化 v2fly 的地区兜底条目
             cat = extra_lists.category(qname) or extra_lists.category(cname)
