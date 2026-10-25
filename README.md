@@ -42,7 +42,7 @@ RouterOS ◀─REST 只读（可选）── 主机名、IP↔MAC、WAN 口速�
 - **域名 → 应用规则库，四层叠加**：
   1. 公开库：内置手工规则库 + [v2fly](https://github.com/v2fly/domain-list-community)（约 2500 应用）+ [blackmatrix7](https://github.com/blackmatrix7/ios_rule_script)（自动登记上游新目录）+ Hagezi / UT1 分类列表 + 国内域名列表 / 官方 IP 段 / 国内 IP 段兜底；
   2. **本地自学习库**：本网络实测的「IP → 应用」与「域名 → 应用」长期记忆——DNS 缓存过期、DoH、裸 IP 流量都能按记忆归类，每小时自动重建；
-  3. **社区共享库**：各部署实例把实测结论匿名共享（至少 2 个实例见过才发布），本地没有结论时兜底；
+  3. **社区共享库**：各部署实例把实测结论匿名汇总到项目自带的社区主站（至少 2 个不同网络的实例一致才发布），本地没有结论时兜底；
   4. 以上都没有时，才归到 HTTPS / 国内网络这类笼统分类。
 - 终端用 MAC 区分，IP 变化不影响统计。
 
@@ -186,7 +186,7 @@ EOF
 
 1. **公开库**（自动更新）：内置手工库 + v2fly（每天自检更新）+ blackmatrix7（每周，上游新目录自动登记：先下载、再由现有识别库投票定归属）+ Hagezi / UT1 分类列表 + ASN（iptoasn）+ 国内域名列表 / 官方 IP 段 / 国内 IP 段兜底。
 2. **本地自学习库**：本网络实测的「IP → 应用」（IPv6 按 /64 前缀聚合）与「域名 → 应用」长期记忆，每小时从数据库重建；DNS 缓存过期、DoH、裸 IP 流量都能按记忆归类。每次历史重算自动纠正它。
-3. **社区共享库**：各部署实例把实测结论匿名共享——只含远端 IP / 域名、应用 ID 和字节票数，不含本机终端、域名记录与自定义应用，私网地址剔除；中转聚合**至少 2 个实例见过**的映射才发布。系统设置 → 外部数据源 填中转地址即参与（总开关默认打开），也可把自己的实例开成中转（公网可达）。中转的 `/api/share/deployments` 公开显示全球已部署 / 在线 / 离线数量。
+3. **社区共享库**：项目自带社区主站，不依赖任何第三方存储。各实例每 30 分钟向主站心跳、每 6 小时上报一次匿名投票——只含远端 IP / 域名、应用 ID 和字节票数，不含本机终端、访问记录与自定义应用，私网地址剔除；主站按**来源网络**计票（IPv4 /24、IPv6 /56，只存加盐哈希），**至少 2 个不同网络的实例投给同一应用且票数领先**才发布，一个人伪造多个实例也只算一票；每个实例有主站发的令牌，别人无法冒充。社区库缓存在本地，主站暂时不可达时继续可用。各实例**不需要公网 IP**（都是主动连主站），但要能访问主站：主站目前只有 IPv6 地址，Linux 一键安装直接用主机网络即可；Docker 默认网桥没有 IPv6 出口，需按 `docker-compose.yml` 末尾的说明开启（Docker 27+）。系统设置 → 外部数据源 可看连接状态、社区库规模与全球已部署 / 在线 / 离线数量；开关默认打开，关闭后不再上报也不再使用社区库。自建私有社区：一台实例设 `SHARE_HUB=true`，其它实例把 `SHARE_HUB_URL` 指向它（主站要能被各实例访问，建议 HTTPS）。
 4. 以上都没有时，才归到 HTTPS / 国内网络这类笼统分类。
 
 识别库有变化或过了零点，自动把今天以前的历史流量按新规则重算（只升级不降级）；识别规则页也可手动执行。世界地图使用 [Natural Earth](https://www.naturalearthdata.com/)（公有领域）简化数据。
@@ -204,8 +204,9 @@ EOF
 | `SINGBOX_URL` / `SINGBOX_SECRET` / `PROXY_IPS` | 空 | 旁路代理 sing-box 的 Clash API（也可在网页填写，网页优先） |
 | `MOSDNS_URL` | 空 | MosDNS 审计 API 地址 |
 | `ADGUARD_URL` / `ADGUARD_USERNAME` / `ADGUARD_PASSWORD` | 空 | 自有 DNS 服务器 AdGuard Home 的查询日志（双层 NAT 场景） |
-| `SHARE_URL` | 空 | 社区共享库中转地址（debug16）：上报本网络实测、拉取社区库；留空不参与 |
-| `SHARE_TOKEN` | 空 | 中转的上报令牌（中转设置了才需要） |
+| `SHARE_HUB_URL` | `https://rosdpi.suyijun.top:8443` | 社区主站地址（内置，一般不用改）；自建私有社区时改成自己的主站 |
+| `SHARE_HUB` | `false` | 本实例作为社区主站（只有主站部署设为 `true`） |
+| `SHARE_VERIFY_TLS` | `true` | 校验主站证书；私有社区用自签证书时才设 `false` |
 | `FAKEIP_CIDRS` | `198.18.0.0/15,fc00::/18` | FakeIP 地址段 |
 | `ASN_DB` / `CHINA_DB` / `IPLIST_DB` / `BM7_DB` / `HAGEZI_DB` / `UT1_DB` / `OUI_DB` | `true` | 各识别库自动下载开关；没有外网时设 `false` |
 | `WAN_INTERFACE` | 自动 | WAN 接口名，默认按默认路由识别 |
@@ -252,7 +253,7 @@ backend/.venv/bin/python scripts/simulate.py --minutes 5
 - **Flows**: live connections (sing-box connections show their policy group and outbound node), top destinations with a flow map from your location to each country, and proxy routing per sing-box policy group and node.
 - **Family members / Employees**: pick the Home or Business scenario under **Settings → Scenario & network**; group each person's devices and see their traffic, online time, top apps and behaviour tags for the last 7 days.
 - **Audit**: access log (CSV export), audit rules (app, domain, time window, traffic, large upload, rogue router, new device) with 14 push-notification channels, daily / weekly reports, operation log, TTL-based shared-access check, and a RouterOS control-command generator.
-- **Self-learning & community library**: mappings observed on YOUR network (IP → app, domain → app) are kept as long-term memory and classify traffic even after DNS caches expire, with DoH clients, or for bare-IP flows; deployments can share anonymous votes through a relay, and the relay publishes mappings seen by at least two instances plus a global deployment counter.
+- **Self-learning & community library**: mappings observed on YOUR network (IP → app, domain → app) are kept as long-term memory and classify traffic even after DNS caches expire, with DoH clients, or for bare-IP flows; deployments share anonymous votes through the built-in community hub (no third-party storage); a mapping is published only when instances on at least two different networks agree, and the hub shows global deployed / online / offline counts. Instances need no public IP — they only connect out to the hub.
 - **Self-update** (Linux binary install): a one-line installer sets up a systemd service with SQLite out of the box; new versions are detected automatically and applied with one click from the UI — no SSH needed.
 - Chinese and English UI, light and dark themes, works on phones.
 

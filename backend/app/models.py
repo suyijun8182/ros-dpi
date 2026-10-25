@@ -227,13 +227,17 @@ class ShareEntry(Base):
 
 
 class ShareDeployment(Base):
-    """社区部署心跳（debug16）：实例每小时上报一次存在，中转聚合出 全球已部署 / 在线 / 离线。只含版本号，无任何网络数据"""
+    """社区主站上的实例登记（debug16 / 0.6.21 重做）：注册时发令牌，每次上报更新心跳。
+    全球 已部署 / 在线 / 离线 从这里统计；只含版本号和来源网络的哈希，不存来源 IP"""
     __tablename__ = "share_deployments"
     instance = Column(String(36), primary_key=True)
     version = Column(String(16))
     first_seen = Column(BigInteger, nullable=False)
     last_seen = Column(BigInteger, nullable=False)
-    public_url = Column(String(255))                 # 中转实例的公开地址（部署量里的可用中转列表用）
+    public_url = Column(String(255))                 # 0.6.15~0.6.19 的中转地址，已停用
+    token_hash = Column(String(64))                  # 实例令牌的 SHA-256（令牌本身只在实例那边）
+    net = Column(String(16))                         # 来源网络（IPv4 /24、IPv6 /56）的加盐哈希：防一人伪造多个实例刷票
+    last_votes = Column(BigInteger)                  # 最近一次带投票的上报时间
 
 
 class ShareDomain(Base):

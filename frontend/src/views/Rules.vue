@@ -263,7 +263,8 @@ async function reclassify() {
   reclassing.value = true
   reclassRes.value = ''
   try {
-    const r = await http.post('/rules/reclassify')
+    // 数据多时要一两分钟（审计报告 P1-3：实测 80 秒），默认 20 秒超时会误报失败而后端其实还在跑
+    const r = await http.post('/rules/reclassify', null, { timeout: 600000 })
     reclassRes.value = t('rules.reclassifyDone', { b: bytes(r.bytes_moved), s: r.seconds })
   } catch (e) { reclassRes.value = e.message } finally { reclassing.value = false }
 }
