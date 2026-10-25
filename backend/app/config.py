@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     share_hub_url: str = "https://rosdpi.suyijun.top:8443"   # 社区主站地址；自建私有社区时改成自己的主站
     share_hub: bool = False      # 本实例就是社区主站（只有主站部署设为 true）：接收上报、发布社区库与全球部署量
     share_verify_tls: bool = True  # 校验主站证书；私有社区用自签证书时才设 false
+    share_trusted_proxies: str = ""  # 主站：可信反向代理地址 / 网段（逗号分隔），只信它们传来的 X-Forwarded-For；留空 = 内网和回环地址
     oui_db: bool = True          # 自动下载 IEEE 的 MAC 厂商库（OUI，识别终端类型用，每 30 天更新）
     asn_db: bool = True          # 自动下载 iptoasn 的 IP→ASN 库（公有领域，每天更新）
     china_db: bool = True        # 自动下载国内域名列表（dnsmasq-china-list）与国内 IP 段（每天更新）

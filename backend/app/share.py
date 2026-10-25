@@ -49,8 +49,13 @@ ENTRY_TTL = 30 * 86400       # 30 天没再上报投票的实例，投票作废
 VOTES_EVERY = 6 * 3600       # 客户端每 6 小时附带一次投票（心跳每轮都发）
 VOTES_MIN_GAP = 3600         # 主站对同一实例的投票每小时最多收一次
 REGISTER_PER_NET = 5         # 同一来源网络每天最多注册几个实例
+REGISTER_PER_BLOCK = 20      # 同一 IPv6 /48（隧道商一次给一整段）每天最多注册几个实例
+VOTERS_PER_NET = 2           # 同一来源网络最多几个实例的投票被收下（一户人家通常只有一台）
+MAX_VOTE_ROWS = 5_000_000    # 主站投票总行数上限：超过后只接受已有投票的实例更新，不再收新实例
+VOTE_MIN_AGE = 86400         # 实例注册满 1 天，它的投票才参与计票（刚注册的一批伪造实例不能立刻投毒）
 MAX_BODY = 8 * 1024 * 1024   # 上报请求体上限（压缩后）
-MAX_INFLATED = 48 * 1024 * 1024  # 解压后上限，防压缩炸弹
+MAX_INFLATED = 16 * 1024 * 1024  # 解压后上限，防压缩炸弹（5 万 IP + 5 万域名约 6MB）
+MAX_REGISTER_BODY = 4096     # 注册请求只有版本号
 LIB_REBUILD_GAP = 60         # 社区库最快每分钟重建一次
 MAX_BYTES = 10 ** 15         # 单条字节票数上限
 HUB_NET = "hub"              # 主站自己的投票的来源网络标记
@@ -207,6 +212,25 @@ def _save_cache(data: dict, etag: str):
 
 # ---------- 社区主站 ----------
 
+def _salt(db) -> str:
+    salt = _setting(db, "share_salt")
+    if not salt:
+        salt = secrets.token_hex(16)
+        _put_setting(db, "share_salt", salt)
+        db.flush()     # 同一个事务里第二次取盐（net_of 之后 block_of）要能读到，不能再插一行
+    return salt
+
+
+def block_of(db, ip: str) -> str:
+    """IPv6 来源的 /48 段哈希（注册限额用；IPv4 就是 /24，和 net_of 一样）"""
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return "unknown"
+    net = ipaddress.ip_network(f"{a}/{24 if a.version == 4 else 48}", strict=False)
+    return hashlib.sha256(f"{_salt(db)}|{net}".encode()).hexdigest()[:16]
+
+
 def net_of(db, ip: str) -> str:
     """来源网络的加盐哈希（IPv4 /24、IPv6 /56）：同一网络里伪造多个实例也只算一票；主站不保存来源 IP 本身。
     IPv6 按 /56：国内家庭宽带一般分到 /56 或 /60，按 /48 会把几百户人家算成同一个网络"""
@@ -215,26 +239,27 @@ def net_of(db, ip: str) -> str:
     except ValueError:
         return "unknown"
     net = ipaddress.ip_network(f"{a}/{24 if a.version == 4 else 56}", strict=False)
-    salt = _setting(db, "share_salt")
-    if not salt:
-        salt = secrets.token_hex(16)
-        _put_setting(db, "share_salt", salt)
-    return hashlib.sha256(f"{salt}|{net}".encode()).hexdigest()[:16]
+    return hashlib.sha256(f"{_salt(db)}|{net}".encode()).hexdigest()[:16]
 
 
 def client_ip(peer: str, forwarded: str | None, real_ip: str | None) -> str:
-    """主站看到的来源地址。直接暴露在公网时用 TCP 对端；对端是内网（前面有反向代理）时，取代理追加在
-    X-Forwarded-For 最右边的公网地址——直连的人伪造这个头没用，因为那时对端是公网地址、头会被忽略"""
+    """主站看到的来源地址。直接暴露在公网时用 TCP 对端；对端是可信反向代理（默认：内网 / 回环地址，
+    或 SHARE_TRUSTED_PROXIES 列出的地址）时，只取代理追加在 X-Forwarded-For **最右边**的那一跳——
+    更左边的值是客户端自己写的，可以伪造；最右一跳不是公网地址就退回 TCP 对端，不再往左找"""
     try:
         p = ipaddress.ip_address(peer)
-        behind_proxy = p.is_private or p.is_loopback
     except ValueError:
-        behind_proxy = False
+        return peer
+    trusted = [x.strip() for x in (get_settings().share_trusted_proxies or "").split(",") if x.strip()]
+    if trusted:
+        behind_proxy = any(p in ipaddress.ip_network(t, strict=False) for t in trusted)
+    else:
+        behind_proxy = p.is_private or p.is_loopback
     if not behind_proxy:
         return peer
-    for cand in reversed([x.strip() for x in (forwarded or "").split(",") if x.strip()]):
-        if _shareable_ip(cand):
-            return cand
+    hops = [x.strip() for x in (forwarded or "").split(",") if x.strip()]
+    if hops:
+        return hops[-1] if _shareable_ip(hops[-1]) else peer
     if real_ip and _shareable_ip(real_ip.strip()):
         return real_ip.strip()
     return peer
@@ -244,16 +269,19 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def register(db, net: str, version: str) -> tuple[str, str]:
-    """主站：登记一个新实例并发放令牌（调用方提交事务）。同一来源网络每天限 REGISTER_PER_NET 个"""
+def register(db, net: str, version: str, block: str | None = None) -> tuple[str, str]:
+    """主站：登记一个新实例并发放令牌（调用方提交事务）。同一来源网络每天限 REGISTER_PER_NET 个，
+    同一 IPv6 /48 每天限 REGISTER_PER_BLOCK 个"""
     now = int(time.time())
-    recent = db.scalar(select(func.count()).select_from(ShareDeployment)
-                       .where(ShareDeployment.net == net, ShareDeployment.first_seen >= now - 86400)) or 0
-    if net != HUB_NET and recent >= REGISTER_PER_NET:
-        raise ShareError(429, "注册太频繁，请明天再试")
+    q = select(func.count()).select_from(ShareDeployment).where(ShareDeployment.first_seen >= now - 86400)
+    if net != HUB_NET:
+        if (db.scalar(q.where(ShareDeployment.net == net)) or 0) >= REGISTER_PER_NET:
+            raise ShareError(429, "注册太频繁，请明天再试")
+        if block and (db.scalar(q.where(ShareDeployment.block == block)) or 0) >= REGISTER_PER_BLOCK:
+            raise ShareError(429, "注册太频繁，请明天再试")
     iid, token = str(uuid.uuid4()), secrets.token_urlsafe(32)
     db.add(ShareDeployment(instance=iid, version=version[:16], first_seen=now, last_seen=now,
-                           token_hash=_hash_token(token), net=net))
+                           token_hash=_hash_token(token), net=net, block=block or net))
     return iid, token
 
 
@@ -285,6 +313,16 @@ def report(db, row: ShareDeployment, net: str, body: dict, classifier) -> dict:
         return {"ok": True, "accepted": 0}
     if row.last_votes and now - row.last_votes < VOTES_MIN_GAP:
         return {"ok": True, "accepted": 0, "skipped": "投票每小时最多收一次"}
+    if net != HUB_NET and not row.last_votes:
+        # 新投票者：同一网络已有 VOTERS_PER_NET 个实例在投票、或主站投票总量已满时，只记心跳
+        voters = db.scalar(select(func.count()).select_from(ShareDeployment)
+                           .where(ShareDeployment.net == net, ShareDeployment.last_votes.is_not(None),
+                                  ShareDeployment.instance != row.instance)) or 0
+        if voters >= VOTERS_PER_NET:
+            return {"ok": True, "accepted": 0, "skipped": "同一网络的投票实例已满"}
+        total = (db.scalar(select(func.count()).select_from(ShareEntry)) or 0) +             (db.scalar(select(func.count()).select_from(ShareDomain)) or 0)
+        if total >= MAX_VOTE_ROWS:
+            return {"ok": True, "accepted": 0, "skipped": "主站投票总量已满"}
     ips: dict = {}
     for e in (entries or [])[:MAX_UPLOAD]:
         if not isinstance(e, dict):
@@ -343,7 +381,11 @@ def _aggregate(rows, nets: dict) -> dict:
 
 
 def build_library(db) -> dict:
-    nets = {i: n for i, n in db.execute(select(ShareDeployment.instance, ShareDeployment.net)).all() if n}
+    # 只有注册满 VOTE_MIN_AGE 的实例参与计票（主站自己除外）
+    aged = int(time.time()) - VOTE_MIN_AGE
+    nets = {i: n for i, n, first in db.execute(select(ShareDeployment.instance, ShareDeployment.net,
+                                                      ShareDeployment.first_seen)).all()
+            if n and (n == HUB_NET or first <= aged)}
     ips = _aggregate(db.execute(select(ShareEntry.ip, ShareEntry.app, ShareEntry.reporter, ShareEntry.bytes)).all(), nets)
     doms = _aggregate(db.execute(select(ShareDomain.domain, ShareDomain.app, ShareDomain.reporter,
                                         ShareDomain.bytes)).all(), nets)
@@ -400,6 +442,9 @@ def inflate(body: bytes, encoding: str | None) -> dict:
         if d.unconsumed_tail:
             raise ShareError(413, "上报内容太大")
         body = out
+    # 条目数上限先粗算：JSON 里每个对象一个 "{"，远超上限就不解析（防小包撑出几百万个 dict）
+    if body.count(b"{") > 2 * MAX_UPLOAD + 16:
+        raise ShareError(413, "上报条目太多")
     try:
         data = json.loads(body or b"{}")
     except ValueError:

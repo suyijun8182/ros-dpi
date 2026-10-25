@@ -70,3 +70,17 @@ def test_tzsp_dns_and_vlan():
 def test_tzsp_ignores_non_dns():
     assert parse_tzsp_dns(b"\x01\x00\x00\x01\x01" + b"\x00" * 10) is None
     assert parse_tzsp_dns(b"garbage") is None
+
+
+def test_ipfix_zero_length_template_does_not_hang():
+    """模板字段长度全为 0：以前 _records 的循环永远不前进，任何人往 2055 发一个包就能让进程卡死"""
+    import struct
+    tmpl = struct.pack("!HHHH", 256, 1, 1, 0)                    # tid=256，1 个字段：octets，长度 0
+    sets = struct.pack("!HH", 2, 4 + len(tmpl)) + tmpl + struct.pack("!HH", 256, 4)   # 模板集 + 空数据集
+    pkt = struct.pack("!HHIII", 10, 16 + len(sets), 0, 0, 0) + sets
+    d = FlowDecoder()
+    try:
+        recs = d.decode(pkt, "192.168.88.1")
+    except Exception:  # noqa: BLE001  丢弃坏包即可，关键是要返回
+        recs = []
+    assert recs == []
