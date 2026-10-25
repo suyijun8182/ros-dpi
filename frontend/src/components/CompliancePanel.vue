@@ -40,6 +40,8 @@
     </div>
     <div class="err" v-if="err">{{ err }}</div>
   </div>
+  <div v-else-if="loadErr" class="empty"><span class="err">{{ t('common.loadFail') }}：{{ loadErr }}</span>
+    <button class="btn sm" @click="load">{{ t('common.retry') }}</button></div>
   <div v-else class="empty">{{ t('common.loading') }}</div>
 </template>
 
@@ -56,7 +58,11 @@ const err = ref('')
 const saved = ref('')
 const msg = ref('')
 const msgOk = ref(false)
-async function load() { c.value = await http.get('/compliance') }
+const loadErr = ref('')
+async function load() {
+  loadErr.value = ''
+  try { c.value = await http.get('/compliance') } catch (e) { loadErr.value = e.message }
+}
 async function save(k) {
   err.value = ''
   try {

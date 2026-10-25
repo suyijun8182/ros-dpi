@@ -27,6 +27,7 @@ export default {
     edit: '编辑', add: '添加', search: '搜索', refresh: '刷新', back: '返回', online: '在线', offline: '离线',
     name: '名称', category: '分类', share: '占比', never: '从未', confirmDelete: '确定删除？', unknown: '未知',
     theme: '切换深浅色', lang: 'English', allApps: '全部应用', allHosts: '全部终端', otherGroups: '其他大类', details: '详情', export: '导出', close: '关闭',
+    retry: '重试', loadFail: '加载失败', saveFail: '保存失败',
   },
   traffic: {
     tab: { live: '实时流量', history: '历史流量', online: '历史用户' }, unit: '单位', view: '显示方式', all: '全部',

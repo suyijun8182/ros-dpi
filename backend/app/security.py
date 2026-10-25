@@ -114,6 +114,9 @@ def require_admin(request: Request, user: str = Depends(current_user)) -> str:
 MAX_LOGIN_FAILS = 5
 LOGIN_LOCK_SECONDS = 900
 _login_fails: dict[tuple[str, str], list] = {}  # (ip, username) -> [连续失败次数, 锁定到]
+# 不看来源地址、只按用户名的总失败数：攻击者换 IP 池爆破同一个账号时兜底
+MAX_USER_FAILS = 20
+_user_fails: dict[str, list] = {}               # username -> [失败次数, 锁定到]
 
 
 def _fail_key(request: Request, username: str) -> tuple[str, str]:
@@ -121,12 +124,24 @@ def _fail_key(request: Request, username: str) -> tuple[str, str]:
     return client_ip(request), username
 
 
+def _trim(d: dict):
+    """满了淘汰最早的一批（以前整表清空，攻击者用 1 万个假用户名就能把目标账号的锁定全部重置）"""
+    if len(d) > 10_000:
+        for k in list(d)[:1000]:
+            d.pop(k, None)
+
+
 def check_login_lock(request: Request, username: str):
+    now = time.time()
+    u = _user_fails.get(username)
+    if u and u[0] >= MAX_USER_FAILS:
+        if now < u[1]:
+            raise HTTPException(429, f"这个账号失败次数过多，请 {max(int((u[1] - now) / 60), 1)} 分钟后再试")
+        _user_fails.pop(username, None)
     key = _fail_key(request, username)
     e = _login_fails.get(key)
     if not e:
         return
-    now = time.time()
     if e[0] >= MAX_LOGIN_FAILS:
         if now < e[1]:
             raise HTTPException(429, f"失败次数过多，请 {max(int((e[1] - now) / 60), 1)} 分钟后再试")
@@ -134,8 +149,13 @@ def check_login_lock(request: Request, username: str):
 
 
 def note_login_fail(request: Request, username: str):
-    if len(_login_fails) > 10_000:  # 被大 IP 池爆破时兜底，避免字典无限涨
-        _login_fails.clear()
+    _trim(_login_fails)
+    _trim(_user_fails)
+    u = _user_fails.get(username) or [0, 0.0]
+    u[0] += 1
+    if u[0] >= MAX_USER_FAILS:
+        u[1] = time.time() + LOGIN_LOCK_SECONDS
+    _user_fails[username] = u
     key = _fail_key(request, username)
     e = _login_fails.get(key) or [0, 0.0]
     if e[0] >= MAX_LOGIN_FAILS and time.time() >= e[1]:
@@ -148,3 +168,4 @@ def note_login_fail(request: Request, username: str):
 
 def note_login_ok(request: Request, username: str):
     _login_fails.pop(_fail_key(request, username), None)
+    _user_fails.pop(username, None)

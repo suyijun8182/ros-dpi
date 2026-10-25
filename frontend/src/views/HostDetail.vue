@@ -25,17 +25,18 @@
         <div><span class="k">{{ t('hosts.lastSeen') }}</span>{{ ago(d.last_seen) }}</div>
         <div><span class="k">{{ t('common.rate') }}</span><span class="num"><span class="up">↑{{ rate(d.rate_up) }}</span> <span class="down">↓{{ rate(d.rate_down) }}</span></span></div>
         <div><span class="k">{{ t('people.dtype') }}</span>
-          <select v-if="isAdmin" class="input sel" :value="d.dtype_manual || ''" :aria-label="t('people.dtype')" @change="setDtype($event.target.value)">
+          <select v-if="isAdmin" class="input sel" :value="d.dtype_manual || ''" :aria-label="t('people.dtype')" @change="setDtype($event.target)">
             <option value="">{{ t('people.dtypeAuto', { t: t('dev.' + (d.dtype_auto || 'unknown')) }) }}</option>
             <option v-for="x in DTYPES" :key="x" :value="x">{{ t('dev.' + x) }}</option></select>
           <span v-else><Icon :name="'dev-' + (d.dtype || 'unknown')" :size="15" /> {{ t('dev.' + (d.dtype || 'unknown')) }}</span>
           <span class="faint small" v-if="d.vendor"> {{ d.vendor }}</span></div>
         <div><span class="k">{{ L('person') }}</span>
-          <select v-if="isAdmin" class="input sel" :value="d.person ? d.person.id : ''" :aria-label="L('person')" @change="setPerson($event.target.value)">
+          <select v-if="isAdmin" class="input sel" :value="d.person ? d.person.id : ''" :aria-label="L('person')" @change="setPerson($event.target)">
             <option value="">—</option>
             <option v-for="p in scene.people" :key="p.id" :value="p.id">{{ p.name }}</option></select>
           <router-link v-else-if="d.person" :to="`/people/${d.person.id}`" class="link">{{ d.person.name }}</router-link><span v-else>-</span>
           <router-link v-if="isAdmin && d.person" :to="`/people/${d.person.id}`" class="link small"> {{ t('common.details') }} ›</router-link></div>
+        <div class="err" v-if="infoErr">{{ t('common.saveFail') }}：{{ infoErr }}</div>
         <div class="alias" v-if="isAdmin">
           <span class="k">{{ t('hosts.alias') }}</span>
           <input class="input" v-model="alias" :placeholder="t('hosts.aliasPlaceholder')" @keyup.enter="saveAlias" />
@@ -139,13 +140,21 @@ const openGroup = ref('')
 const ctl = ref(false)
 const DTYPES = ['phone', 'tablet', 'computer', 'tv', 'console', 'camera', 'iot', 'nas', 'network', 'unknown']
 loadScene()
-async function setDtype(v) {
-  const r = await http.put(`/hosts/${enc(props.hostKey)}/dtype`, { dtype: v || null })
-  Object.assign(d.value, { dtype: r.dtype, dtype_manual: r.dtype_manual })
+// 下拉框改完立即保存；失败时把下拉框退回原值（:value 绑定的数据没变，DOM 不会自己回去）
+const infoErr = ref('')
+async function setDtype(el) {
+  infoErr.value = ''
+  try {
+    const r = await http.put(`/hosts/${enc(props.hostKey)}/dtype`, { dtype: el.value || null })
+    Object.assign(d.value, { dtype: r.dtype, dtype_manual: r.dtype_manual })
+  } catch (e) { el.value = d.value.dtype_manual || ''; infoErr.value = e.message }
 }
-async function setPerson(v) {
-  const r = await http.put('/devices/bind', { host: props.hostKey, person_id: v ? +v : null })
-  d.value.person = r.person
+async function setPerson(el) {
+  infoErr.value = ''
+  try {
+    const r = await http.put('/devices/bind', { host: props.hostKey, person_id: el.value ? +el.value : null })
+    d.value.person = r.person
+  } catch (e) { el.value = d.value.person ? d.value.person.id : ''; infoErr.value = e.message }
 }
 const HTABS = ['overview', 'log', 'timeline']
 const route = useRoute()

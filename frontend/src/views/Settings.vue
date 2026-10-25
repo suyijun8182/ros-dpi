@@ -7,6 +7,10 @@
       </div>
       <span class="sp" /><span class="faint small" v-if="sys">{{ t('settings.version') }} {{ sys.version }}</span>
     </div>
+    <div class="panel" v-if="cfgErr">
+      <div class="panel-b"><span class="err">{{ t('common.loadFail') }}：{{ cfgErr }}</span>
+        <button class="btn sm" @click="loadCfg">{{ t('common.retry') }}</button></div>
+    </div>
 
     <div class="panel" v-if="sys && tab === 'status'">
       <div class="panel-h">{{ t('settings.status') }}<span class="sp" /><button class="btn sm" @click="loadSys">{{ t('common.refresh') }}</button></div>
@@ -274,7 +278,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import http, { auth, isAdmin } from '../api.js'
+import http, { auth, isAdmin, setAuth } from '../api.js'
 import UsersPanel from '../components/UsersPanel.vue'
 import ScenePicker from '../components/ScenePicker.vue'
 import CompliancePanel from '../components/CompliancePanel.vue'
@@ -321,13 +325,20 @@ async function loadSys() {
 }
 const matchParts = computed(() => (sys.value ? ['proxy', 'conn', 'pair', 'ip', 'none'].map(k => ({ k, v: sys.value.match[k] || 0 })) : []))
 const matchTotal = computed(() => matchParts.value.reduce((n, m) => n + m.v, 0))
-onMounted(async () => {
+const cfgErr = ref('')
+async function loadCfg() {
+  cfgErr.value = ''
+  try {
+    s.value = await http.get('/settings')
+    lan.value = s.value.lan_cidrs.split(',').join('\n')
+    wan.value = s.value.wan_interface
+    fillSources()
+  } catch (e) { cfgErr.value = e.message }
+}
+onMounted(() => {
   loadSys()
   if (!isAdmin.value) return  // 普通用户看不到系统配置
-  s.value = await http.get('/settings')
-  lan.value = s.value.lan_cidrs.split(',').join('\n')
-  wan.value = s.value.wan_interface
-  fillSources()
+  loadCfg()
 })
 
 // ---------- 外部数据源 ----------
@@ -368,12 +379,12 @@ async function clearAdguardPassword() {
 async function testSources() {
   testing.value = true
   try {
-    const r = await http.post('/integrations/test')
+    const r = await http.post('/integrations/test', null, { timeout: 60000 })   // 三个数据源逐个探测，可能较慢
     if (sys.value) Object.assign(sys.value, r)
   } catch (e) { srcErr.value = e.message } finally { testing.value = false }
 }
 
-watch(() => route.query.tab, v => { if (v === 'system' && isAdmin) { loadUpdate(); loadDeploys() } }, { immediate: true })
+watch(() => route.query.tab, v => { if (v === 'system' && isAdmin.value) { loadUpdate(); loadDeploys() } }, { immediate: true })
 
 async function save() {
   saveErr.value = ''
@@ -401,7 +412,7 @@ async function doUpdate() {
   updErr.value = ''
   updMsg.value = ''
   try {
-    const r = await http.post('/system/update')
+    const r = await http.post('/system/update', null, { timeout: 600000 })   // 下载 + 校验几十 MB 的二进制，给足 10 分钟
     updMsg.value = r.message || t('upd.done')
   } catch (e) { updErr.value = e.message } finally { updating.value = false }
 }
@@ -413,7 +424,9 @@ async function testRos() {
 async function changePw() {
   pwErr.value = ''
   try {
-    await http.post('/auth/password', { old_password: pw.old, new_password: pw.new })
+    const r = await http.post('/auth/password', { old_password: pw.old, new_password: pw.new })
+    // 后端换发了新版本 token：当前会话继续用，不会被踢回登录页（其它设备的旧 token 已失效）
+    if (r && r.token) setAuth(r.token, r.username || auth.username, r.role || auth.role)
     pw.old = pw.new = ''
     pwOk.value = true
     setTimeout(() => (pwOk.value = false), 1500)

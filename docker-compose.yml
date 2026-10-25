@@ -8,7 +8,7 @@ services:
     container_name: ros-dpi
     restart: unless-stopped
     ports:
-      - "8080:8080/tcp"     # Web 界面
+      - "8080:8080/tcp"     # Web 界面；只想让内网访问可写成 "192.168.88.10:8080:8080/tcp"（绑定本机内网 IP）
       - "2055:2055/udp"     # IPFIX / NetFlow：RouterOS Traffic Flow 发到这里
       - "37008:37008/udp"   # TZSP：RouterOS 镜像的 DNS 应答和 HTTPS/QUIC 握手包发到这里
     environment:
@@ -17,6 +17,7 @@ services:
       # 「必改」内网网段，逗号分隔（之后也可在 系统设置 → 网络 里改）
       LAN_CIDRS: 192.168.88.0/24
       # 管理员 admin 的初始密码；留空则首次打开网页时设置
+      # 「建议设置」留空时，在你打开网页设置密码之前，任何能访问 8080 的人都可以抢先设置管理员
       ADMIN_PASSWORD: ""
       # RouterOS 只读 API（可选：显示主机名、WAN 速率）
       ROS_URL: ""                 # 例如 https://192.168.88.1

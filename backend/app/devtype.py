@@ -194,6 +194,7 @@ def refresh_all():
             apps.setdefault(host, set()).add(app)
         for h in db.query(Host):
             t, v, _by = classify(h.mac, h.hostname, apps.get(h.key))
+            v = (v or "")[:64]    # hosts.vendor 是 64：个别 IEEE 机构名更长，超长会让整次刷新回滚
             if (h.dtype_auto, h.vendor) != (t, v or None):
                 h.dtype_auto, h.vendor = t, v or None
                 n += 1

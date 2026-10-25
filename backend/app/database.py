@@ -82,10 +82,30 @@ def is_mysql() -> bool:
     return engine is not None and engine.dialect.name == "mysql"
 
 
+_str_lens: dict = {}
+
+
+def fit(table, rows: list[dict]) -> list[dict]:
+    """按列定义截断字符串：网络来的主机名、域名、规则名可能超长，MySQL 严格模式下一行超长会让整批写入失败
+    （0.6.8 的 VARCHAR(45)、全站审计的 DHCP 主机名 >128）。SQLite 不校验长度，测试里发现不了"""
+    lens = _str_lens.get(table.name)
+    if lens is None:
+        lens = _str_lens[table.name] = {c.name: c.type.length for c in table.columns
+                                         if getattr(c.type, "length", None)}
+    if not lens:
+        return rows
+    out = []
+    for r in rows:
+        bad = [k for k, n in lens.items() if isinstance(r.get(k), str) and len(r[k]) > n]
+        out.append({**r, **{k: r[k][:lens[k]] for k in bad}} if bad else r)
+    return out
+
+
 def upsert_add(session, table, rows: list[dict], keys: list[str], add_cols: list[str], set_cols: list[str] = ()):
-    """批量 upsert：主键冲突时 add_cols 累加、set_cols 覆盖。MySQL / SQLite 通用。"""
+    """批量 upsert：主键冲突时 add_cols 累加、set_cols 覆盖。MySQL / SQLite 通用。字符串按列长截断"""
     if not rows:
         return
+    rows = fit(table, rows)
     if is_mysql():
         stmt = mysql_insert(table).values(rows)
         upd = {c: table.c[c] + stmt.inserted[c] for c in add_cols}

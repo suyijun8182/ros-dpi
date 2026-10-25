@@ -63,7 +63,7 @@ def _refresh_local():
         return
     from app.classify.local import local
     with database.session() as db:
-        local.load(db)
+        local.load(db, engine.classifier)
         db.commit()
 
 

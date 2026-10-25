@@ -14,7 +14,7 @@ import threading
 import time
 from collections import defaultdict
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.models import HostDomainDay
 
@@ -51,14 +51,20 @@ class LocalDB:
         self.community: dict[str, str] = {}  # 社区共享（debug16）：其它实例的 IP 结论，只补本地空白
         self.community_domains: dict[str, str] = {}  # 社区共享（debug17）：其它实例的域名结论，只补本地空白
 
-    def load(self, db):
-        """从 host_domain_day 聚合：IP（IPv6 聚到 /64）与域名分别取历史字节数最多的应用；调用方提交事务"""
+    def load(self, db, classifier=None):
+        """从 host_domain_day 聚合：IP（IPv6 聚到 /64）与域名分别取历史字节数最多的应用；调用方提交事务。
+        聚合在数据库里做（GROUP BY），不把几百万行逐行读进 Python——那会抢住 GIL，UDP 收包跟着丢。
+        笼统结论（HTTPS / QUIC / 国内网络 / 未识别……）不进记忆：它们会挡住后面更准的识别，还会自我强化"""
+        from app.reclass import _vague
         ip_votes: dict = defaultdict(dict)
         dom_votes: dict = defaultdict(dict)
         rows = db.execute(
-            select(HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)
+            select(HostDomainDay.domain, HostDomainDay.app, func.sum(HostDomainDay.bytes))
+            .group_by(HostDomainDay.domain, HostDomainDay.app)
         ).all()
         for dom, app, b in rows:
+            if classifier is not None and _vague(classifier, app):
+                continue
             if _is_ip(dom):
                 key = _v6key(dom) or dom
                 votes = ip_votes

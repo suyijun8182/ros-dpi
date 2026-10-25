@@ -27,6 +27,7 @@ export default {
     edit: 'Edit', add: 'Add', search: 'Search', refresh: 'Refresh', back: 'Back', online: 'Online', offline: 'Offline',
     name: 'Name', category: 'Category', share: 'Share', never: 'Never', confirmDelete: 'Delete this?', unknown: 'Unknown',
     theme: 'Toggle light/dark', lang: '中文', allApps: 'All applications', allHosts: 'All hosts', otherGroups: 'Other groups', details: 'Details', export: 'Export', close: 'Close',
+    retry: 'Retry', loadFail: 'Failed to load', saveFail: 'Failed to save',
   },
   traffic: {
     tab: { live: 'Live traffic', history: 'History', online: 'Online hosts' }, unit: 'Unit', view: 'View', all: 'Total',

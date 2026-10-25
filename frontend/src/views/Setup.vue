@@ -83,14 +83,14 @@ onUnmounted(() => clearInterval(timer))
 async function test() {
   error.value = okMsg.value = ''
   busy.value = 'test'
-  try { okMsg.value = (await http.post('/setup/test', f)).message } catch (e) { error.value = e.message } finally { busy.value = '' }
+  try { okMsg.value = (await http.post('/setup/test', f, { timeout: 60000 })).message } catch (e) { error.value = e.message } finally { busy.value = '' }
 }
 
 async function save() {
   error.value = okMsg.value = ''
   busy.value = 'save'
   try {
-    await http.post('/setup/save', f)
+    await http.post('/setup/save', f, { timeout: 60000 })   // 首次建表可能较慢
     Object.assign(setupState, { configured: true, present: true })
     router.replace({ name: 'login' })
   } catch (e) {

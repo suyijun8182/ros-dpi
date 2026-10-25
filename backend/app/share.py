@@ -124,9 +124,10 @@ def _put_setting(db, key: str, value: str):
 
 
 def _is_shareable_app(classifier, app: str) -> bool:
-    """自定义应用（每家不一样）和未识别不共享"""
+    """自定义应用（每家不一样）、未识别和笼统结论（HTTPS / 国内网络……）不共享"""
+    from app.reclass import _vague
     info = classifier.apps.get(app)
-    return info is not None and not info.custom and app != "other"
+    return info is not None and not info.custom and app != "other" and not _vague(classifier, app)
 
 
 def _shareable_ip(ip: str) -> bool:
@@ -144,7 +145,8 @@ def export_entries(engine, db) -> tuple[list[dict], list[dict]]:
     classifier = engine.classifier
     ip_votes: dict = defaultdict(dict)
     dom_votes: dict = defaultdict(dict)
-    rows = db.execute(select(HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)).all()
+    rows = db.execute(select(HostDomainDay.domain, HostDomainDay.app, func.sum(HostDomainDay.bytes))
+                      .group_by(HostDomainDay.domain, HostDomainDay.app)).all()
     for dom, app, b in rows:
         if not dom or not _is_shareable_app(classifier, app):
             continue

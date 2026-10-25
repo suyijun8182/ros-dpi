@@ -6,6 +6,7 @@ import time
 from collections import Counter, OrderedDict, defaultdict
 
 from sqlalchemy import bindparam, delete, func, insert, select, tuple_, update
+from sqlalchemy.exc import DataError, IntegrityError
 
 from app import timeutil
 from app.classify import GENERIC_APPS, Classifier
@@ -26,6 +27,8 @@ SESSION_IDLE = 300    # 实时连接：5 分钟没有新流量就从列表里去
 MAX_SESSIONS = 50_000
 VISIT_GAP = 300        # 访问日志：同一目标间隔不超过 5 分钟的连接合成一次访问
 VISIT_SPLIT = 3600     # 持续超过 1 小时的访问分段写入
+# 一条访问记录最长跨度（分段 + 合并间隔留足余量）：查询访问日志时给 ts_start 加下界，走索引不扫全部保留期
+VISIT_MAX_SPAN = VISIT_SPLIT + 3600
 MAX_VISITS = 100_000
 IP_DEST_PER_HOST = 30  # 没有域名的访问目标（只有 IP），每台终端每分钟只记流量最大的 30 个，防止 P2P 撑爆表
 PENDING_MAX_AGE = 7200  # 落库失败的数据在内存里最多保留 2 小时，超过就放弃（避免数据库长期故障时内存无限涨）
@@ -72,7 +75,7 @@ class Engine:
         # 进行中的访问每分钟也写库（首次插入、之后按行 ID 更新），访问日志和时间线只慢一分钟
         self.visits: OrderedDict[tuple, list] = OrderedDict()
         self._vid = 0
-        self._pending: dict | None = None  # 上次落库失败遗留的数据，下次 flush 一起写（数据库抖动不丢数据）
+        self._pending: list[dict] | None = None  # 落库失败遗留的数据（按时间桶分开），下次 flush 依次写（数据库抖动不丢数据）
         # 私接路由检测：终端 -> {TTL: 包数}，镜像的 TLS / QUIC 首包里取，每天清零（sharing.py）
         self.ttl: dict[str, Counter] = {}
         self.ttl_day = 0
@@ -502,44 +505,101 @@ class Engine:
         self.app_rate = {a: (u / elapsed, d / elapsed) for a, (u, d) in ar.items()}
         self.total_rate = (sum(v[0] for v in hr.values()) / elapsed, sum(v[1] for v in hr.values()) / elapsed)
 
-        payload = {"ts": (timeutil.minute_bucket(now), timeutil.hour_bucket(now), timeutil.day_bucket(now)),
+        # 第 0 秒执行的 flush 装的是上一分钟的数据：按 now - 1 分桶（否则 23:59 的流量会记进第二天）
+        ref = now - 1
+        payload = {"ts": (timeutil.minute_bucket(ref), timeutil.hour_bucket(ref), timeutil.day_bucket(ref)),
                    "buf": dict(buf), "dom": dict(dom), "dom_ip": dict(dom_ip), "seen": dict(seen),
                    "ipdest": dict(ipdest), "visits": visits, "visit_upd": visit_upd,
                    "dns": self.dns.take_dirty(), "finished": getattr(self, "finished_visits", [])}
-        # 上次落库失败遗留的数据合并进来一起写；数据库故障超过 PENDING_MAX_AGE 秒则放弃，只丢过期部分
-        pend = self._pending
-        self._pending = None
-        if pend:
-            if now - pend.get("fail_ts", now) > PENDING_MAX_AGE:
-                print(f"[engine] 数据库已 {int(now - pend.get('fail_ts', now))} 秒写不进去，"
-                      f"放弃遗留的 {len(pend['visits'])} 条访问、{len(pend['buf'])} 组流量", flush=True)
+        # 上次落库失败遗留的数据按各自的时间桶排队、依次写入（只合并同一时间桶的，跨天不会记错日期）；
+        # 数据库故障超过 PENDING_MAX_AGE 秒的部分放弃
+        queue: list[dict] = []
+        for p in (self._pending or []) + [payload]:
+            if now - p.get("fail_ts", now) > PENDING_MAX_AGE:
+                print(f"[engine] 数据库已 {int(now - p['fail_ts'])} 秒写不进去，"
+                      f"放弃遗留的 {len(p['visits'])} 条访问、{len(p['buf'])} 组流量", flush=True)
+                continue
+            if queue and queue[-1]["ts"] == p["ts"]:
+                fail_ts = queue[-1].get("fail_ts")
+                queue[-1] = _merge_payload(queue[-1], p)
+                if fail_ts:
+                    queue[-1]["fail_ts"] = fail_ts
             else:
-                payload = _merge_payload(pend, payload)
+                queue.append(p)
+        self._pending = None
+        for i, p in enumerate(queue):
+            new_hosts = self._write_payload(p)
+            if new_hosts is None:
+                for q in queue[i:]:
+                    q.setdefault("fail_ts", now)
+                self._pending = queue[i:]
+                return
+            if p["finished"]:
+                from app import compliance
+                compliance.send_visits(p["finished"])
+            if self.audit:
+                # 审计规则：按这一分钟的流量和新出现的终端检查
+                self.audit.evaluate(p["buf"], p["dom"], new_hosts, now)
+
+    def _write_payload(self, p: dict) -> list | None:
+        """写一份落库数据，返回新出现的终端；数据库暂时不可用时返回 None（留到下次重试）"""
+        committed = False
         try:
             with database.session() as db:
-                new_hosts = self._write_flush(db, payload)
+                new_hosts = self._write_flush(db, p)
                 db.commit()
+                committed = True
+            return new_hosts
         except Exception as e:  # noqa: BLE001
-            payload["fail_ts"] = (pend or {}).get("fail_ts", now)
-            self._pending = payload
+            if committed:   # 已经提交，只是关闭连接出错：不能重写，否则字节会重复累加
+                print(f"[engine] 落库已提交，关闭连接时出错：{type(e).__name__}", flush=True)
+                return []
+            if isinstance(e, (DataError, IntegrityError)):
+                # 数据本身有问题（重试也不会好）：逐段单独写，写不进去的那段丢弃并记日志，其余照常入库，
+                # 不能让一行坏数据拖着所有终端的流量重试 2 小时后一起丢掉
+                print(f"[engine] 落库遇到坏数据（{type(e).__name__}: {str(e)[:200]}），改为逐段写入", flush=True)
+                return self._write_sections(p)
             print(f"[engine] 落库失败（{type(e).__name__}: {str(e)[:200]}），数据保留在内存，下次一起写入", flush=True)
-            return
-        finished = payload["finished"]
-        if finished:
-            from app import compliance
-            compliance.send_visits(finished)
-        if self.audit:
-            # 审计规则：按这一分钟的流量和新出现的终端检查
-            self.audit.evaluate(payload["buf"], payload["dom"], new_hosts, now)
+            return None
+
+    def _write_sections(self, p: dict) -> list:
+        new_hosts: list = []
+        for name, fn in self._sections():
+            try:
+                with database.session() as db:
+                    res = fn(db, p)
+                    db.commit()
+                if name == "hosts":
+                    new_hosts = res
+            except Exception as e:  # noqa: BLE001
+                print(f"[engine] 落库丢弃「{name}」这一段：{type(e).__name__}: {str(e)[:200]}", flush=True)
+        return new_hosts
+
+    def _sections(self):
+        return (("traffic", self._w_traffic), ("domains", self._w_domains), ("hosts", self._w_hosts),
+                ("visits", self._w_visits), ("dns", self._w_dns), ("geo", self._w_geo))
 
     def _write_flush(self, db, p: dict) -> list:
-        """把一次（或合并后多次）分钟窗口的数据写进数据库。返回新出现的终端。"""
+        """把一次（或同一时间桶合并后的多次）分钟窗口的数据写进数据库。返回新出现的终端。"""
+        new_hosts = []
+        for name, fn in self._sections():
+            res = fn(db, p)
+            if name == "hosts":
+                new_hosts = res
+        return new_hosts
+
+    @staticmethod
+    def _w_traffic(db, p):
         m, h, d = p["ts"]
         rows = [{"host": host, "app": app, "up": up, "down": down, "flows": f}
                 for (host, app), (up, down, f) in p["buf"].items()]
         for table, ts in ((TrafficMinute.__table__, m), (TrafficHour.__table__, h), (TrafficDay.__table__, d)):
             for chunk in _chunks([{**r, "ts": ts} for r in rows], 500):
                 upsert_add(db, table, chunk, ["ts", "host", "app"], ["up", "down", "flows"])
+
+    @staticmethod
+    def _w_domains(db, p):
+        d = p["ts"][2]
         from app.stats import base_domain
         drows = [{"ts": d, "host": host, "domain": name[:255], "app": app, "bytes": n,
                   "base": base_domain(name[:255])} for (host, name, app), n in p["dom"].items()]
@@ -551,8 +611,13 @@ class Engine:
                 drows.append({"ts": d, "host": host, "domain": ip, "app": app, "bytes": n, "base": base_domain(ip)})
         for chunk in _chunks(drows, 500):
             upsert_add(db, HostDomainDay.__table__, chunk, ["ts", "host", "domain"], ["bytes"], ["app", "base"])
-        new_hosts = self._save_hosts(db, p["seen"])
-        for chunk in _chunks(p["visits"], 500):
+
+    def _w_hosts(self, db, p):
+        return self._save_hosts(db, p["seen"])
+
+    @staticmethod
+    def _w_visits(db, p):
+        for chunk in _chunks(database.fit(AccessLog.__table__, p["visits"]), 500):
             db.execute(insert(AccessLog.__table__), chunk)
         if p["visit_upd"]:
             t = AccessLog.__table__
@@ -560,17 +625,23 @@ class Engine:
                 remote=bindparam("remote"), ts_end=bindparam("ts_end"), conns=bindparam("conns"),
                 up=bindparam("up"), down=bindparam("down"))
             for chunk in _chunks(p["visit_upd"], 500):
-                db.execute(stmt, [{"_id": r["id"], "remote": r["remote"], "ts_end": r["ts_end"], "conns": r["conns"],
+                db.execute(stmt, [{"_id": r["id"], "remote": (r["remote"] or "")[:255] or r["remote"],
+                                   "ts_end": r["ts_end"], "conns": r["conns"],
                                    "up": r["up"], "down": r["down"]} for r in chunk])
+
+    @staticmethod
+    def _w_dns(db, p):
         if p["dns"]:
             drs = [{"ip": ip, "name": v[0][:255], "cname": (v[1] or "")[:255] or None, "expires": v[2]}
                    for ip, v in p["dns"].items()]
             for chunk in _chunks(drs, 500):
                 upsert_add(db, DnsCache.__table__, chunk, ["ip"], [], ["name", "cname", "expires"])
+
+    @staticmethod
+    def _w_geo(db, p):
         geo = _domain_geo(p["dom_ip"], int(time.time()))
         for chunk in _chunks(geo, 500):
             upsert_add(db, DomainGeo.__table__, chunk, ["domain"], [], ["ip", "cc", "updated"])
-        return new_hosts
 
     def _save_hosts(self, db, seen: dict) -> list:
         """返回新出现的终端 [(key, ip, mac)]"""
@@ -579,7 +650,8 @@ class Engine:
         new = []
         rows = []
         for key, (ip, mac, ts) in seen.items():
-            rows.append({"key": key, "mac": mac, "ip": ip, "hostname": self.mac2name.get(mac) if mac else None,
+            name = self.mac2name.get(mac) if mac else None
+            rows.append({"key": key, "mac": mac, "ip": ip, "hostname": name[:128] if name else None,
                          "first_seen": ts, "last_seen": ts, "online_since": ts})
         # 已存在的终端只更新 ip / last_seen，first_seen 与备注名保持不变
         existing = {h.key: h for h in db.scalars(select(Host).where(Host.key.in_(list(seen))))}

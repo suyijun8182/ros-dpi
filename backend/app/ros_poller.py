@@ -152,7 +152,7 @@ class RosPoller:
                 ip2mac.setdefault(ip, mac)
             name = le.get("comment") or le.get("host-name") or le.get("active-host-name")
             if name:
-                names[mac] = name
+                names[mac] = name[:128]   # hosts.hostname 是 128：超长会让 MySQL 拒绝整批落库
             self.leases[mac] = le
         self.engine.ip2mac.update(ip2mac)
         self.engine.mac2name.update(names)
