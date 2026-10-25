@@ -16,7 +16,8 @@ from app.collector.tzsp import parse_dns_response, tzsp_payload
 from app.config import get_settings
 from app import database, hostnames
 from app.database import upsert_add
-from app.dnsmap import ConnNames, DnsMap
+from app import dnsmap
+from app.dnsmap import ConnNames, DnsMap, pick_cname
 from app.models import (AccessLog, AuditEvent, CustomRule, DnsCache, DomainGeo, Host, HostDomainDay, OpLog, Setting, TrafficDay,
                         TrafficHour,
                         TrafficMinute)
@@ -25,6 +26,8 @@ _ZERO = {"0.0.0.0", "::"}
 ONLINE_SECONDS = 300  # 最近 5 分钟有流量算在线
 SESSION_IDLE = 300    # 实时连接：5 分钟没有新流量就从列表里去掉
 MAX_SESSIONS = 50_000
+# ECH（加密 ClientHello）的外层公共名：真实域名看不到，这个名字不能当成终端访问的网站记下来
+ECH_PUBLIC_NAMES = {"cloudflare-ech.com", "public.cloudflare-ech.com", "encryptedsni.com"}
 VISIT_GAP = 300        # 访问日志：同一目标间隔不超过 5 分钟的连接合成一次访问
 VISIT_SPLIT = 3600     # 持续超过 1 小时的访问分段写入
 # 一条访问记录最长跨度（分段 + 合并间隔留足余量）：查询访问日志时给 ts_start 加下界，走索引不扫全部保留期
@@ -56,6 +59,10 @@ class Engine:
         self.sni = SniExtractor()
         self.classifier = Classifier()
         self.lock = threading.Lock()
+        # CNAME 链里挑能认出应用的那一跳（按当时的识别器）
+        dnsmap.cname_matcher = lambda name: self.classifier.match_domain(name)
+        self.allowed_sources = parse_cidrs(s.collector_allowed) if s.collector_allowed else []
+        self.ros_managed = bool(s.ros_url)   # 配了 ROS 轮询时 IP→MAC 以路由器的 ARP / 租约为准
         self.lan_cidrs_text = s.lan_cidrs
         self.lan_nets = parse_cidrs(s.lan_cidrs)
         self.auto_nets: list = []        # ros_poller 自动发现的 LAN 前缀（主要是 IPv6 公网前缀）
@@ -133,9 +140,9 @@ class Engine:
             self.classifier = new
 
     def reload_rules(self):
-        with database.session() as db:
-            rules = db.scalars(select(CustomRule)).all()
-        self.classifier.load_custom(rules)
+        """自定义规则变了：在新的识别器上建好再整体替换（以前原地清空重建，期间进来的流量查到半成品表，
+        会按错误的应用永久入库）"""
+        self.reload_classifier()
 
     def is_lan(self, ip: str | None) -> bool:
         if not ip or ip in _ZERO:
@@ -157,17 +164,36 @@ class Engine:
         return hit
 
     # ---------- 输入 ----------
+    def source_allowed(self, addr: str) -> bool:
+        """采集端口的来源白名单（COLLECTOR_ALLOWED，逗号分隔的 IP / 网段）：留空表示不限制。
+        设了以后，只收路由器发来的 IPFIX / TZSP——内网其它主机伪造模板、流量、DNS 应答的包直接丢弃"""
+        if not self.allowed_sources:
+            return True
+        try:
+            a = ipaddress.ip_address(addr)
+        except ValueError:
+            return False
+        return any(a.version == n.version and a in n for n in self.allowed_sources)
+
     def on_ipfix(self, data: bytes, exporter: str):
+        if not self.source_allowed(exporter):
+            self.stats["rejected"] = self.stats.get("rejected", 0) + 1
+            return
         recs = self.decoder.decode(data, exporter)
         now = time.time()
         ex = self.stats["exporters"]
+        if exporter not in ex and len(ex) >= 64:
+            del ex[min(ex, key=ex.get)]
         ex[exporter] = int(now)
         with self.lock:
             for r in recs:
                 self.add_flow(r, now)
 
-    def on_tzsp(self, data: bytes):
+    def on_tzsp(self, data: bytes, addr: str | None = None):
         """TZSP 镜像包：DNS 应答（udp 源端口 53）或连接首包（TLS / QUIC 握手，取 SNI）。"""
+        if addr is not None and not self.source_allowed(addr):
+            self.stats["rejected"] = self.stats.get("rejected", 0) + 1
+            return
         self.stats["dns_packets"] += 1
         frame = tzsp_payload(data)
         ip = ethernet_ip(frame) if frame else None
@@ -185,6 +211,11 @@ class Engine:
             now = time.time()
             self.stats["sni_" + kind] += 1
             self.stats["last_sni"] = int(now)
+            if name in ECH_PUBLIC_NAMES:
+                # ECH 的外层公共名（真实域名被加密了）：只记这一条连接，不能覆盖这台终端的 DNS 记录和全网 IP 表
+                with self.lock:
+                    self.names.add_conn_only(client, cport, server, name, now)
+                return
             with self.lock:
                 self.names.add_conn(client, cport, server, name, now)
             self.dns.add(name, [(server, 0)], [], now)
@@ -231,12 +262,14 @@ class Engine:
     def add_dns_answer(self, client: str, qname: str, ips: list, cnames: list, source: str = "sniff"):
         """一条 DNS 应答（来自 TZSP 嗅探或 MosDNS 审计日志）：全网 IP 表 + 终端自己的 (终端, IP) 对应"""
         now = int(time.time())
+        if not qname or len(qname) > 253:   # 合法域名最长 253：超长的是伪造包，别让它进内存表和会话
+            return
         self.stats["dns_answers" if source == "sniff" else "dns_mosdns"] += 1
         self.stats["last_dns"] = now
         self.dns.add(qname, ips, cnames)
         if self.is_lan(client):
             # 终端直接查询的应答：按 (终端, IP) 记一份，比全网共用的 IP 表更准
-            cname = cnames[-1] if cnames else None
+            cname = pick_cname(cnames)
             with self.lock:
                 for ip, _ttl in ips:
                     self.names.add_pair(client, ip, qname, cname, now)
@@ -301,8 +334,10 @@ class Engine:
 
     def host_key(self, ip: str, mac: str | None) -> tuple[str, str | None]:
         m = self.ip2mac.get(ip)
-        if not m and mac:
-            # 没配 ROS 轮询时，靠上行流里的源 MAC 学习 IP→MAC
+        if mac and m != mac and (not m or not self.ros_managed):
+            # 没配 ROS 轮询时，靠上行流里的源 MAC 学习 IP→MAC；DHCP 把 IP 换给别的设备后跟着更新
+            if not m and len(self.ip2mac) >= 200_000:
+                self.ip2mac.pop(next(iter(self.ip2mac)))
             self.ip2mac[ip] = m = mac
         if m:
             return m, m
@@ -335,7 +370,7 @@ class Engine:
             direction, host_ip, remote, rport, hport = "down", dst, src, r.get("sport", 0), r.get("dport", 0)
         elif not src_lan and not dst_lan and self.is_lan(post_dst):
             # WAN 入方向、记录的是 DNAT 前地址：用 post-NAT 目的地址找终端（端口也是 NAT 前的，只能按终端查）
-            direction, host_ip, remote, rport, hport = "down", post_dst, src, r.get("sport", 0), -1
+            direction, host_ip, remote, rport, hport = "down", post_dst, src, r.get("sport", 0), r.get("post_dport", -1)
         else:
             # 内网互访，或路由器自身的流量
             self.stats["flows_dropped"] += 1

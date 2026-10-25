@@ -33,7 +33,7 @@ async def start_listeners(engine, ipfix_port: int, tzsp_port: int):
     transports = []
     for port, handler, name in (
         (ipfix_port, lambda d, a: engine.on_ipfix(d, a), "IPFIX/NetFlow"),
-        (tzsp_port, lambda d, a: engine.on_tzsp(d), "TZSP-DNS"),
+        (tzsp_port, lambda d, a: engine.on_tzsp(d, a), "TZSP-DNS"),
     ):
         try:
             sock = _udp_socket(port)

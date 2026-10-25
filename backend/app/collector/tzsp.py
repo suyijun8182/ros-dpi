@@ -54,7 +54,7 @@ def ethernet_udp(frame: bytes) -> tuple[str, str, int, int, bytes] | None:
         if len(frame) < off + 20:
             return None
         ihl = (frame[off] & 0x0F) * 4
-        if frame[off + 9] != 17:
+        if ihl < 20 or frame[off + 9] != 17:
             return None
         src = str(ipaddress.IPv4Address(frame[off + 12: off + 16]))
         dst = str(ipaddress.IPv4Address(frame[off + 16: off + 20]))
@@ -62,11 +62,13 @@ def ethernet_udp(frame: bytes) -> tuple[str, str, int, int, bytes] | None:
     elif etype == 0x86DD:
         if len(frame) < off + 40:
             return None
-        if frame[off + 6] != 17:  # 不处理扩展头
+        from app.collector.tls import skip_v6_ext
+        got = skip_v6_ext(frame, off + 40, frame[off + 6])
+        if got is None or got[0] != 17:
             return None
         src = str(ipaddress.IPv6Address(frame[off + 8: off + 24]))
         dst = str(ipaddress.IPv6Address(frame[off + 24: off + 40]))
-        off += 40
+        off = got[1]
     else:
         return None
     if len(frame) < off + 8:

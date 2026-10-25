@@ -37,6 +37,25 @@ def ip_ttl(frame: bytes) -> int | None:
     return None
 
 
+def skip_v6_ext(frame: bytes, off: int, nxt: int) -> tuple[int, int] | None:
+    """跳过 IPv6 扩展头（逐跳 0、路由 43、目的选项 60、分片 44），返回 (上层协议, 上层头偏移)；
+    非首个分片返回 None。以前遇到扩展头直接当成未知协议丢掉，带扩展头的 DNS 应答 / 握手就认不出来"""
+    for _ in range(8):
+        if nxt in (0, 43, 60):
+            if len(frame) < off + 2:
+                return None
+            nxt, off = frame[off], off + (frame[off + 1] + 1) * 8
+        elif nxt == 44:
+            if len(frame) < off + 8:
+                return None
+            if struct.unpack_from("!H", frame, off + 2)[0] & 0xFFF8:   # 非首个分片
+                return None
+            nxt, off = frame[off], off + 8
+        else:
+            return nxt, off
+    return None
+
+
 def ethernet_ip(frame: bytes) -> tuple[str, str, int, bytes] | None:
     """以太网帧 → (src_ip, dst_ip, ip_proto, l4_bytes)。不处理分片和 IPv6 扩展头。"""
     if len(frame) < 14:
@@ -53,6 +72,8 @@ def ethernet_ip(frame: bytes) -> tuple[str, str, int, bytes] | None:
         if len(frame) < off + 20:
             return None
         ihl = (frame[off] & 0x0F) * 4
+        if ihl < 20:
+            return None
         total = struct.unpack_from("!H", frame, off + 2)[0]
         if struct.unpack_from("!H", frame, off + 6)[0] & 0x1FFF:  # 非首个分片
             return None
@@ -65,14 +86,21 @@ def ethernet_ip(frame: bytes) -> tuple[str, str, int, bytes] | None:
         if len(frame) < off + 40:
             return None
         plen = struct.unpack_from("!H", frame, off + 4)[0]
-        proto = frame[off + 6]
         src = str(ipaddress.IPv6Address(frame[off + 8: off + 24]))
         dst = str(ipaddress.IPv6Address(frame[off + 24: off + 40]))
-        return src, dst, proto, frame[off + 40: off + 40 + plen]
+        got = skip_v6_ext(frame, off + 40, frame[off + 6])
+        if got is None:
+            return None
+        proto, l4 = got
+        return src, dst, proto, frame[l4: off + 40 + plen]
     return None
 
 
 # ---------------------------------------------------------------- TLS ClientHello
+
+
+MAX_HELLO = 16384   # TLS / QUIC 重组的偏移与总长上限（ClientHello 一般 1~2KB，带 ECH / 后量子密钥也不到 4KB）
+MAX_PARTS = 16      # 一条重组最多保留几段
 
 class Truncated(Exception):
     """数据还不完整（等后续 TCP 段 / CRYPTO 帧）"""
@@ -314,7 +342,13 @@ class SniExtractor:
             self._tcp[key] = st
             self._gc(self._tcp, now)
         seq0, parts, _t = st
-        parts[(seq - seq0) & 0xFFFFFFFF] = data
+        off_ = (seq - seq0) & 0xFFFFFFFF
+        # 重组上限：ClientHello 不会超过 16KB、也不会拆成很多段；超出就放弃这条，
+        # 免得有人对同一四元组塞几千个不相邻的段，让每包都排序拼接（CPU 平方增长）
+        if off_ > MAX_HELLO or len(parts) >= MAX_PARTS:
+            self._tcp.pop(key, None)
+            return None
+        parts[off_] = data
         stream = b""
         for off in sorted(parts):
             if off > len(stream):
@@ -351,6 +385,9 @@ class SniExtractor:
             self._gc(self._quic, now)
         parts = st[0]
         for o, d in frames:
+            if o > MAX_HELLO or len(parts) >= MAX_PARTS:
+                self._quic.pop(key, None)
+                return None
             parts[o] = d
         stream = b""
         for off in sorted(parts):
@@ -360,6 +397,8 @@ class SniExtractor:
         try:
             sni = client_hello_sni(stream)
         except Truncated:
+            if len(stream) > MAX_HELLO:
+                self._quic.pop(key, None)
             return None
         except (struct.error, IndexError):
             sni = None

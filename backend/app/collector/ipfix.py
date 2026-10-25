@@ -64,6 +64,10 @@ def _fmt_mac(b: bytes) -> str:
     return ":".join(f"{x:02X}" for x in b)
 
 
+MAX_FIELDS = 256       # RouterOS 的模板只有二三十个字段
+MAX_TEMPLATES = 1024
+
+
 class FlowDecoder:
     def __init__(self):
         # (exporter, version, domain/source_id, template_id) -> [Field]
@@ -127,7 +131,7 @@ class FlowDecoder:
                     off += 4
                 fields.append(Field(fid, flen, ent))
             # 选项模板（采样率、接口名等）只记下长度用于跳过，不解码
-            self.templates[key + (tid,)] = fields if not options else [Field(-1, f.length, f.enterprise) for f in fields]
+            self._store(key + (tid,), fields if not options else [Field(-1, f.length, f.enterprise) for f in fields])
 
     # ---------- NetFlow v9 ----------
     def _v9(self, data: bytes, exporter: str) -> list[dict]:
@@ -163,7 +167,7 @@ class FlowDecoder:
                 fid, flen = struct.unpack_from("!HH", body, off)
                 off += 4
                 fields.append(Field(fid, flen))
-            self.templates[key + (tid,)] = fields
+            self._store(key + (tid,), fields)
 
     def _v9_options(self, body: bytes, key: tuple):
         off = 0
@@ -177,7 +181,15 @@ class FlowDecoder:
                 _fid, flen = struct.unpack_from("!HH", body, off)
                 off += 4
                 fields.append(Field(-1, flen))
-            self.templates[key + (tid,)] = fields
+            self._store(key + (tid,), fields)
+
+    def _store(self, key: tuple, fields: list):
+        """模板表有上限：一个 64KB 的包能定义上万个字段的模板，不断换 domain / tid 发送就能把内存撑爆"""
+        if len(fields) > MAX_FIELDS:
+            raise DecodeError("too many template fields")
+        if key not in self.templates and len(self.templates) >= MAX_TEMPLATES:
+            self.templates.pop(next(iter(self.templates)))   # 淘汰最早的
+        self.templates[key] = fields
 
     # ---------- 数据记录 ----------
     def _records(self, body: bytes, tkey: tuple, ipfix: bool) -> list[dict]:
