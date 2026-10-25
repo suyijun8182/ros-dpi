@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     adguard_password: str = ""
     share_enabled: bool = True   # 共享识别库总开关（debug16 第 3 条，默认打开）：关掉后不心跳、不上报、不拉取
     # 社区共享库（debug16→debug22 重做）：项目自带的社区主站，不依赖第三方存储
-    share_hub_url: str = "https://rosdpi.suyijun.top:8443"   # 社区主站地址；自建私有社区时改成自己的主站
+    share_hub_url: str = "https://rosdpi.vviip.dpdns.org:8443"   # 社区主站地址；自建私有社区时改成自己的主站
     share_hub: bool = False      # 本实例就是社区主站（只有主站部署设为 true）：接收上报、发布社区库与全球部署量
     share_verify_tls: bool = True  # 校验主站证书；私有社区用自签证书时才设 false
     share_trusted_proxies: str = ""  # 主站：可信反向代理地址 / 网段（逗号分隔），只信它们传来的 X-Forwarded-For；留空 = 内网和回环地址
