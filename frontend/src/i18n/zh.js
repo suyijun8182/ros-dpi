@@ -156,7 +156,7 @@ export default {
     agKept: '已设置，不修改请留空', agNone: '没有设置可留空', agClear: '清除密码',
     agHint: '需要 AdGuard Home 开启查询日志（默认开启）；账号和密码都留空表示免认证访问。',
     shareTitle: '社区共享库', shareHubOn: '中转模式',
-    deploys: '全球部署量', deployed: '已部署 {n}', online: '在线 {n}', offline: '离线 {n}', deployHint: '来自社区中转，每小时刷新',
+    deploys: '全球部署量', relaysLabel: '可用中转', deployed: '已部署 {n}', online: '在线 {n}', offline: '离线 {n}', deployHint: '来自社区中转，每小时刷新',
     shareEnabled: '共享识别库（默认打开）',
     shareWhy: '每个部署实例的自学习库都不一样：把各自实测的「远端 IP → 应用」匿名投票汇总到一起，大家共同的识别就更准。上报内容不含本机终端、域名记录与自定义应用，私网地址自动剔除。',
     shareUrl: '社区中转地址', shareHub: '本实例作为共享中转（需公网可达）',

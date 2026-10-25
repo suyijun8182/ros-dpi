@@ -56,7 +56,8 @@ def heartbeat(req: Request, body: dict):
         reporter = str((body or {}).get("instance") or "")[:36]
         if not reporter:
             raise HTTPException(400, "格式不对：需要 instance")
-        share.heartbeat(db, reporter, str((body or {}).get("version") or ""))
+        share.heartbeat(db, reporter, str((body or {}).get("version") or ""),
+                        str((body or {}).get("public_url") or ""))
         db.commit()
     return {"ok": True}
 

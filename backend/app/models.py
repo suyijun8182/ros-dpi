@@ -233,6 +233,7 @@ class ShareDeployment(Base):
     version = Column(String(16))
     first_seen = Column(BigInteger, nullable=False)
     last_seen = Column(BigInteger, nullable=False)
+    public_url = Column(String(255))                 # 中转实例的公开地址（部署量里的可用中转列表用）
 
 
 class ShareDomain(Base):

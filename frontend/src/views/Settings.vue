@@ -180,6 +180,11 @@
               <span style="color:var(--up)">{{ t('sources.online', { n: deploys.online }) }}</span> ·
               {{ t('sources.offline', { n: deploys.offline }) }}
               <span class="faint small">（{{ t('sources.deployHint') }}）</span>
+              <div v-if="(deploys.relays || []).length" class="faint small" style="margin-top:4px">
+                {{ t('sources.relaysLabel') }}：
+                <a v-for="r in deploys.relays" :key="r" href="javascript:void(0)" class="link"
+                   style="margin-right:8px" @click="src.share_url = r">{{ r }}</a>
+              </div>
             </div>
           </div>
           <div class="acts">

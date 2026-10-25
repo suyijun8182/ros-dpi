@@ -179,6 +179,7 @@ def _integrations(db):
             "mosdns_url": cfg["mosdns_url"],
             "adguard_url": cfg["adguard_url"], "adguard_username": cfg["adguard_username"],
             "has_adguard_password": bool(cfg["adguard_password"]),
+            "share_url": cfg["share_url"],
             "proxy_auto": integrations.singbox.host_ip()}
 
 
@@ -210,6 +211,30 @@ def share_status():
         except Exception:  # noqa: BLE001  状态展示不拖垮 /api/system
             pass
     return {"url": url, "hub": hub, "published": published, "community": len(local.community)}
+
+
+def deployments_with_relays():
+    """全球部署量 + 可用中转列表（debug19）：中转实例直接读本地，其它实例从中转拉取"""
+    from app import share
+    s = get_settings()
+    url, hub, published, relays = getattr(s, "share_url", ""), s.share_hub, 0, []
+    if database.is_configured():
+        try:
+            with database.session() as db:
+                from app.models import Setting
+                u_row, h_row = db.get(Setting, "share_url"), db.get(Setting, "share_hub")
+                url = (u_row.value if u_row and u_row.value else url)
+                hub = (h_row.value == "1") if h_row is not None else s.share_hub
+                if hub:
+                    d = share.deployments(db)
+                    return d
+                if url:
+                    got = share.deployments_remote(url, s.share_token)
+                    if got:
+                        return got
+        except Exception:  # noqa: BLE001
+            pass
+    return {"total": 0, "online": 0, "offline": 0, "relays": relays}
 
 
 def _db_info():
@@ -332,28 +357,8 @@ def library(db: Session = Depends(get_db)):
 
 @router.get("/system/deployments")
 def system_deployments():
-    """全球部署量（debug16）：从中转拉取；本实例是中转时直接读本地"""
-    from app import share, selfupdate as _su  # noqa: F401
-    from app.classify.local import local  # noqa: F401
-    s = get_settings()
-    url = getattr(s, "share_url", "")
-    if database.is_configured():
-        try:
-            with database.session() as db:
-                from app.models import Setting
-                u_row = db.get(Setting, "share_url")
-                url = (u_row.value if u_row and u_row.value else url)
-                if share.sharing_on(db):
-                    hub = _get(db, "share_hub", "1" if s.share_hub else "0") == "1"
-                    if hub:
-                        return share.deployments(db)
-                if url:
-                    got = share.deployments_remote(url, s.share_token)
-                    if got:
-                        return got
-        except Exception:  # noqa: BLE001
-            pass
-    return {"total": 0, "online": 0, "offline": 0}
+    """全球部署量 + 可用中转列表（debug19）"""
+    return deployments_with_relays()
 
 
 @router.get("/system/update")
