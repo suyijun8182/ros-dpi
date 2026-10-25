@@ -26,3 +26,10 @@ services:
       # 旁路代理（sing-box）和内网 DNS（MosDNS）在网页 系统设置 → 外部数据源 里填写，不需要写在这里
     volumes:
       - ./data:/app/data      # 保存数据库连接配置，务必保留这个卷
+
+# 社区共享库：社区主站目前只有 IPv6 地址，而 Docker 默认网桥没有 IPv6 出口，容器会连不上主站
+# （设置页显示“连接失败：本机没有 IPv6 出口”）。Docker 27 及以上取消下面 3 行注释即可（自动分配地址并做 NAT）；
+# 更老的 Docker（群晖 / 部分 NAS 自带的版本）请改用 Linux 一键安装，或在 daemon.json 里开启 ipv6 + ip6tables。
+# networks:
+#   default:
+#     enable_ipv6: true

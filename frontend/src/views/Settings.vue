@@ -163,37 +163,33 @@
           </div>
           <div class="src-box">
             <div class="sec">{{ t('sources.shareTitle') }}<span class="sp" />
-              <span v-if="!s.share_enabled" class="pill grey">{{ t('sources.off') }}</span>
-              <template v-else-if="!src.share_url"><span class="pill grey">{{ t('sources.shareNoUrl') }}</span></template>
-              <template v-else>
-                <span v-if="deploys && deploys.sync && deploys.sync.ts" class="pill" :class="deploys.sync.ok ? 'ok' : 'bad'">
-                  {{ deploys.sync.ok ? t('sources.connected') : t('sources.failed') }}</span>
-                <span v-else class="pill grey">{{ t('sources.shareWait') }}</span>
-              </template></div>
+              <span v-if="deploys && deploys.role === 'hub'" class="pill ok">{{ t('sources.shareHub') }}</span>
+              <span v-else-if="!s.share_enabled" class="pill grey">{{ t('sources.off') }}</span>
+              <span v-else-if="deploys && deploys.sync.ts" class="pill" :class="deploys.sync.ok ? 'ok' : 'bad'">
+                {{ deploys.sync.ok ? t('sources.connected') : t('sources.failed') }}</span>
+              <span v-else class="pill grey">{{ t('sources.shareWait') }}</span></div>
             <p class="faint small">{{ t('sources.shareWhy') }}</p>
             <label class="chk" style="display:flex;gap:6px;align-items:center;cursor:pointer">
-              <input type="checkbox" :checked="s.share_enabled" @change="src.share_enabled = $event.target.checked" /> {{ t('sources.shareEnabled') }}
+              <input type="checkbox" :checked="src.share_enabled" @change="src.share_enabled = $event.target.checked" /> {{ t('sources.shareEnabled') }}
             </label>
-            <label for="share-url">{{ t('sources.shareUrl') }}</label>
-            <input id="share-url" class="input addr" v-model.trim="src.share_url" placeholder="http://192.168.8.10:5005/ros-dpi" autocomplete="off" />
-            <label for="share-user">{{ t('sources.shareUser') }}</label>
-            <input id="share-user" class="input" v-model.trim="src.share_user" autocomplete="off" />
-            <label for="share-password">{{ t('sources.sharePassword') }}</label>
-            <div class="row">
-              <input id="share-password" class="input" type="password" v-model="src.share_password" autocomplete="new-password"
-                     :placeholder="s.has_webdav_password ? t('sources.agKept') : t('sources.agNone')" />
-              <button v-if="s.has_webdav_password" type="button" class="btn sm" @click="clearSharePassword">{{ t('sources.agClear') }}</button>
+            <div class="small" style="margin-top:6px" v-if="deploys">
+              <b>{{ t('sources.shareHubUrl') }}</b>：<span class="addr">{{ deploys.hub_url || '—' }}</span>
+              <span class="faint small" v-if="deploys.role !== 'hub'">（{{ t('sources.shareHubHint') }}）</span>
             </div>
-            <div class="faint small">{{ t('sources.shareHint') }}</div>
-            <div class="small" style="margin-top:8px" v-if="deploys && deploys.sync && deploys.sync.ts">
+            <div class="err small" v-if="deploys && deploys.sync.ts && !deploys.sync.ok && deploys.sync.error">{{ deploys.sync.error }}</div>
+            <div class="small" style="margin-top:8px" v-if="deploys && deploys.sync.ts">
               <b>{{ t('sources.communitySize') }}</b>：{{ t('sources.communityDetail', { ip: (deploys.sync.community_ips || 0).toLocaleString(), dom: (deploys.sync.community_domains || 0).toLocaleString() }) }}
               <span class="faint small">（{{ t('settings.last') }} {{ ago(deploys.sync.ts) }}）</span>
             </div>
-            <div class="small" style="margin-top:8px" v-if="deploys">
-              <b>{{ t('sources.deploys') }}</b>：{{ t('sources.deployed', { n: deploys.total }) }} ·
-              <span style="color:var(--up)">{{ t('sources.online', { n: deploys.online }) }}</span> ·
-              {{ t('sources.offline', { n: deploys.offline }) }}
+            <div class="small" style="margin-top:8px" v-if="deploys && deploys.sync.total != null">
+              <b>{{ t('sources.deploys') }}</b>：{{ t('sources.deployed', { n: deploys.sync.total }) }} ·
+              <span style="color:var(--up)">{{ t('sources.online', { n: deploys.sync.online }) }}</span> ·
+              {{ t('sources.offline', { n: deploys.sync.offline }) }}
               <span class="faint small">（{{ t('sources.deployHint') }}）</span>
+            </div>
+            <div class="small" style="margin-top:6px" v-if="deploys && deploys.role === 'hub'">
+              <b>{{ t('sources.shareNets') }}</b>：{{ deploys.sync.nets }}
+              <div class="err small" v-if="deploys.sync.total > 2 && deploys.sync.nets <= 1">{{ t('sources.shareNetsWarn') }}</div>
             </div>
           </div>
           <div class="acts">
@@ -330,7 +326,7 @@ onMounted(async () => {
 })
 
 // ---------- 外部数据源 ----------
-const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '', share_url: '', share_enabled: true, share_user: '', share_password: '' })
+const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '', share_enabled: true })
 const deploys = ref(null)
 const srcErr = ref('')
 const srcSaved = ref(false)
@@ -339,7 +335,7 @@ function fillSources() {
   const i = s.value.integrations
   Object.assign(src, { singbox_url: i.singbox_url, singbox_secret: '', proxy_ips: i.proxy_ips, mosdns_url: i.mosdns_url,
                        adguard_url: i.adguard_url, adguard_username: i.adguard_username, adguard_password: '',
-                       share_url: i.webdav_url, share_user: i.webdav_user || '', share_enabled: !!s.value.share_enabled, share_password: '' })
+                       share_enabled: !!s.value.share_enabled })
 }
 async function saveSources() {
   srcErr.value = ''
@@ -347,22 +343,19 @@ async function saveSources() {
     // 密钥留空表示不修改；要清除用“清除密钥/密码”按钮
     const body = { singbox_url: src.singbox_url, proxy_ips: src.proxy_ips, mosdns_url: src.mosdns_url,
                    adguard_url: src.adguard_url, adguard_username: src.adguard_username,
-                   share_url: src.share_url, share_user: src.share_user }
+                   share_enabled: src.share_enabled }
     if (src.singbox_secret) body.singbox_secret = src.singbox_secret
     if (src.adguard_password) body.adguard_password = src.adguard_password
-    if (src.share_password) body.webdav_password = src.share_password
     s.value = await http.put('/settings', body)
     fillSources()
     srcSaved.value = true
     setTimeout(() => (srcSaved.value = false), 1500)
     await testSources()
+    setTimeout(loadDeploys, 3000)   // 打开共享开关后后台立刻同步一轮，稍后刷新状态
   } catch (e) { srcErr.value = e.message }
 }
 async function clearSecret() {
   try { s.value = await http.put('/settings', { singbox_secret: '' }); fillSources() } catch (e) { srcErr.value = e.message }
-}
-async function clearSharePassword() {
-  try { s.value = await http.put('/settings', { webdav_password: '' }); fillSources() } catch (e) { srcErr.value = e.message }
 }
 async function clearAdguardPassword() {
   try { s.value = await http.put('/settings', { adguard_password: '' }); fillSources() } catch (e) { srcErr.value = e.message }
@@ -468,6 +461,18 @@ const fixes = computed(() => {
     out.push(`/ip firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 ${tail}`)
   } else if (c.issues.includes('no_quic')) {
     out.push(`/ip firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 ${tail}`)
+  }
+  if (c.issues.includes('no_ipv6')) {
+    // IPv6 再加一份同样的 DNS / SNI 嗅探（镜像包仍发到 ROS-DPI 的 IPv4 地址）
+    const dns = `action=sniff-tzsp sniff-target=${tgt} sniff-target-port=${c.port} comment=ROSDPI-DNS`
+    out.push(`/ipv6 firewall mangle add chain=output protocol=udp src-port=53 ${dns}`)
+    out.push(`/ipv6 firewall mangle add chain=forward protocol=udp src-port=53 ${dns}`)
+    out.push(`/ipv6 firewall mangle add chain=forward protocol=tcp dst-port=443 connection-bytes=0-4000 ${tail}`)
+    out.push(`/ipv6 firewall mangle add chain=forward protocol=udp dst-port=443 connection-bytes=0-4000 ${tail}`)
+  }
+  if (c.issues.includes('fasttrack')) {
+    // 每条连接的前 10KB 走正常路径（握手能被镜像），之后照常 FastTrack
+    out.push('/ip firewall filter set [find action=fasttrack-connection] connection-bytes=10000-0')
   }
   return [...new Set(out)]
 })

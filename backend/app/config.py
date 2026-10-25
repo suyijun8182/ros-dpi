@@ -42,9 +42,10 @@ class Settings(BaseSettings):
     adguard_username: str = ""   # AdGuard Home 登录用户名；和密码都留空表示免认证（只在内网监听时）
     adguard_password: str = ""
     share_enabled: bool = True   # 共享识别库总开关（debug16 第 3 条，默认打开）：关掉后不心跳、不上报、不拉取
-    webdav_url: str = ""         # 社区共享库的 WebDAV 地址（debug22，NAS 自带）：如 http://192.168.8.10:5005/ros-dpi
-    webdav_user: str = ""        # WebDAV 账号；和密码都留空表示免认证
-    webdav_password: str = ""
+    # 社区共享库（debug16→debug22 重做）：项目自带的社区主站，不依赖第三方存储
+    share_hub_url: str = "https://rosdpi.suyijun.top:8443"   # 社区主站地址；自建私有社区时改成自己的主站
+    share_hub: bool = False      # 本实例就是社区主站（只有主站部署设为 true）：接收上报、发布社区库与全球部署量
+    share_verify_tls: bool = True  # 校验主站证书；私有社区用自签证书时才设 false
     oui_db: bool = True          # 自动下载 IEEE 的 MAC 厂商库（OUI，识别终端类型用，每 30 天更新）
     asn_db: bool = True          # 自动下载 iptoasn 的 IP→ASN 库（公有领域，每天更新）
     china_db: bool = True        # 自动下载国内域名列表（dnsmasq-china-list）与国内 IP 段（每天更新）

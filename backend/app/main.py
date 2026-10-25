@@ -17,6 +17,7 @@ from app.models import Setting
 from app.ros_poller import poller
 from app import audit  # noqa: F401  挂上审计（engine.audit）
 from app.routers import admin, auth, setup, stats
+from app.routers import share as share_router
 from app.routers import audit as audit_router
 from app.routers import compliance as compliance_router
 from app.routers import people as people_router
@@ -48,7 +49,7 @@ def _on_db_ready():
     （0.6.0 / 0.6.1 的主域名回填出错时，后面的外部数据源配置、自定义规则都没加载，外部数据源显示“未启用”）"""
     ensure_admin()   # 建管理员失败要报出来（安装向导靠这个提示）
     for name, fn in (("load_state", engine.load_state), ("apply_settings", _apply_saved),
-                     ("local_db", _refresh_local), ("share_lib", _share_cycle)):
+                     ("local_db", _refresh_local), ("share_lib", _share_startup)):
         try:
             fn()
         except Exception as e:  # noqa: BLE001
@@ -76,23 +77,24 @@ def _auto_update_on() -> bool:
 
 
 def _share_cycle():
-    """社区共享库（debug22）：心跳（部署量统计）+ 投票共享，走 NAS 的 WebDAV。开关关闭或未配置地址时跳过"""
+    """社区共享库：普通实例向社区主站心跳、上报、拉库；主站在进程内聚合（见 app/share.py）"""
     if not database.is_configured():
         return
     from app import share
     with database.session() as db:
-        if not share.sharing_on(db):
-            return
-        saved = {k: (db.get(Setting, k).value if db.get(Setting, k) else None) for k in integrations.KEYS}
-    cfg = integrations.effective(saved)
-    url = cfg.get("webdav_url") or ""
-    if not url:
-        return
-    with database.session() as db:
-        res = share.webdav_cycle(engine, db, url, cfg.get("webdav_user") or "", cfg.get("webdav_password") or "")
+        res = share.cycle(engine, db)
         db.commit()
-    print(f"[share] 共享库已同步：已部署 {res['deployed']} 台（在线 {res['online']}），"
-          f"社区库 {res['community_ips'] + res['community_domains']} 条", flush=True)
+    if res:
+        print(f"[share] 社区共享已同步{'（本实例是社区主站）' if share.is_hub() else ''}：已部署 {res['total']} 台"
+              f"（在线 {res['online']}），社区库 {res['community_ips'] + res['community_domains']} 条", flush=True)
+
+
+def _share_startup():
+    """启动时先用上次缓存的社区库，再在后台跑第一轮同步（不挡住启动）"""
+    from app import share
+    if not share.is_hub():
+        share.load_cached_library()
+    share.kick(_safe(_share_cycle, "share"))
 
 
 def _auto_update_rules():
@@ -210,7 +212,7 @@ async def _unhandled(request: Request, exc: Exception):
 
 
 for r in (setup.router, auth.router, stats.router, admin.router, audit_router.router, people_router.router,
-          compliance_router.router):
+          compliance_router.router, share_router.router):
     app.include_router(r)
 
 

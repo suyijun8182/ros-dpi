@@ -92,9 +92,31 @@ def test_poll_success_populates_router_state(monkeypatch):
         assert chk["checked"] and sni["problems"] == ["port"] and sni["target_port"] == 37880
         # SNI 规则存在、只是端口错：建议改端口，不建议重复新增；但缺 UDP（QUIC）规则
         assert "rule_problem" in chk["issues"] and "no_sni" not in chk["issues"] and "no_quic" in chk["issues"]
+        # 路由器有 IPv6 公网地址，嗅探规则却只有 IPv4 的一份
+        assert "no_ipv6" in chk["issues"] and "fasttrack" not in chk["issues"]
         assert not codes["rules"]["ok"] and codes["rules"]["params"]["wrong"] == [37880]
         leases = c.get("/api/dhcp/leases", headers={"Authorization": f"Bearer {tok}"}).json()
         assert leases["leases"][0]["mac"] == "AA:BB:CC:DD:EE:31" and leases["leases"][0]["host_name"] == "iPhone"
+
+def test_fasttrack_check_respects_connection_bytes(monkeypatch):
+    """FastTrack 开着：规则没限定 connection-bytes 要提示；已经限定（连接开头不走 FastTrack）就不再提示"""
+    _use_mock(monkeypatch)
+    monkeypatch.setitem(engine.stats, "dns_answers", 5)
+    monkeypatch.setitem(ROS, "/rest/ip/settings", {"ipv4-fasttrack-active": "true"})
+    rule = {".id": "*2", "action": "fasttrack-connection", "chain": "forward",
+            "connection-state": "established,related", "disabled": "false"}
+    monkeypatch.setitem(ROS, "/rest/ip/firewall/filter", [rule])
+    poller.poll()
+    assert "fasttrack" in poller.check()["issues"]
+    monkeypatch.setitem(ROS, "/rest/ip/firewall/filter", [{**rule, "connection-bytes": "10000-0"}])
+    poller.poll()
+    chk = poller.check()
+    assert "fasttrack" not in chk["issues"] and chk["fasttrack_limited"]
+    # 读不到 filter 表（只读账号没权限）：按旧办法提示
+    monkeypatch.delitem(ROS, "/rest/ip/firewall/filter")
+    poller.poll()
+    assert "fasttrack" in poller.check()["issues"]
+
 
 def test_poll_401_gives_actionable_error_and_keeps_status_usable(monkeypatch):
     _use_mock(monkeypatch, status=401)

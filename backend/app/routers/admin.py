@@ -132,9 +132,6 @@ class SettingsIn(BaseModel):
     adguard_url: str | None = Field(None, max_length=255)
     adguard_username: str | None = Field(None, max_length=255)
     adguard_password: str | None = Field(None, max_length=255)
-    webdav_url: str | None = Field(None, max_length=255)
-    webdav_user: str | None = Field(None, max_length=255)
-    webdav_password: str | None = Field(None, max_length=255)
     rules_auto_update: bool | None = None
     share_enabled: bool | None = None
 
@@ -179,8 +176,6 @@ def _integrations(db):
             "mosdns_url": cfg["mosdns_url"],
             "adguard_url": cfg["adguard_url"], "adguard_username": cfg["adguard_username"],
             "has_adguard_password": bool(cfg["adguard_password"]),
-            "webdav_url": cfg["webdav_url"], "webdav_user": cfg["webdav_user"],
-            "has_webdav_password": bool(cfg["webdav_password"]),
             "proxy_auto": integrations.singbox.host_ip()}
 
 
@@ -229,6 +224,9 @@ def put_settings(req: SettingsIn, request: Request, user: str = Depends(current_
         _put(db, "rules_auto_update", "1" if req.rules_auto_update else "0")
     if req.share_enabled is not None:
         _put(db, "share_enabled", "1" if req.share_enabled else "0")
+        db.commit()
+        from app import share
+        share.kick(share.run_once)
     if req.wan_interface is not None:
         _put(db, "wan_interface", req.wan_interface.strip())
         poller.wan_override = req.wan_interface.strip()
@@ -311,8 +309,9 @@ def library(db: Session = Depends(get_db)):
 
 @router.get("/system/deployments")
 def system_deployments(db: Session = Depends(get_db)):
-    """全球部署量 + 可用中转列表（debug19）"""
-    return deployments_with_relays(db)
+    """社区共享状态 + 全球部署量（设置页 → 外部数据源 → 社区共享库）"""
+    from app import share
+    return share.status(db)
 
 
 @router.get("/system/update")

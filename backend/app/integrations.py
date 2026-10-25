@@ -19,7 +19,7 @@ import httpx
 from app.config import get_settings
 
 KEYS = ("singbox_url", "singbox_secret", "proxy_ips", "mosdns_url", "adguard_url", "adguard_username",
-        "adguard_password", "webdav_url", "webdav_user", "webdav_password")
+        "adguard_password")
 
 
 def effective(db_values: dict) -> dict:

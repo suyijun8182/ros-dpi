@@ -9,6 +9,16 @@ import httpx
 from app.config import get_settings
 
 
+
+def _global_v6(addr: str | None) -> bool:
+    """RouterOS /ipv6/address 的 address（带前缀长度）是不是公网地址"""
+    import ipaddress
+    try:
+        a = ipaddress.ip_interface(addr or "").ip
+    except ValueError:
+        return False
+    return a.version == 6 and a.is_global
+
 class RosPoller:
     def __init__(self, engine):
         self.engine = engine
@@ -32,6 +42,8 @@ class RosPoller:
         self.samples: deque = deque(maxlen=1440)
         self.mangle: list[dict] = []        # 接入自检用：RouterOS 的 mangle 规则（只读）
         self.ip_settings: dict = {}
+        self.filter_rules: list[dict] | None = None   # /ip/firewall/filter（看 FastTrack 规则有没有限定 connection-bytes）
+        self.has_ipv6 = False                          # 路由器上有没有 IPv6 公网地址
         self._sample_prev: dict[str, tuple[float, int, int]] = {}
 
     @property
@@ -85,12 +97,16 @@ class RosPoller:
                 extra = {k: self._opt(c, path) for k, path in (
                     ("pools", "/ip/pool"), ("servers", "/ip/dhcp-server"), ("dhcpc", "/ip/dhcp-client"),
                     ("pppoe", "/interface/pppoe-client"), ("mangle", "/ip/firewall/mangle"),
-                    ("mangle6", "/ipv6/firewall/mangle"), ("ipset", "/ip/settings"))}
+                    ("mangle6", "/ipv6/firewall/mangle"), ("ipset", "/ip/settings"),
+                    ("filter", "/ip/firewall/filter"))}
             self._apply(ifaces, arp, leases, addrs, routes, nb6, addrs6)
             self._apply_status(ifaces, addrs, leases, routes, extra)
             self.mangle = [{**r, "_family": "ipv4"} for r in extra["mangle"] or []] + \
                 [{**r, "_family": "ipv6"} for r in extra["mangle6"] or []]
             self.ip_settings = extra["ipset"] if isinstance(extra["ipset"], dict) else {}
+            self.filter_rules = extra["filter"] if isinstance(extra["filter"], list) else None
+            self.has_ipv6 = any(_global_v6(a.get("address")) and a.get("disabled") != "true"
+                                for a in addrs6 or [])
             # 全部成功后再更新展示用的状态，失败时保留上一次的结果
             self.identity = ident.get("name", "") if isinstance(ident, dict) else ""
             self.resource = resource if isinstance(resource, dict) else {}
@@ -280,10 +296,19 @@ class RosPoller:
             issues.append("no_sni")
         elif not any(x["kind"] == "sni" and x["protocol"] == "udp" for x in rules):
             issues.append("no_quic")
-        if self.ip_settings.get("ipv4-fasttrack-active") == "true":
+        # 有 IPv6 公网地址却只有 IPv4 的嗅探规则：走 IPv6 的 DNS 应答和握手全都看不到（国内运营商默认下发 IPv6）
+        if self.has_ipv6 and any(x["family"] == "ipv4" for x in rules) and                 not any(x["family"] == "ipv6" and not x["disabled"] for x in rules):
+            issues.append("no_ipv6")
+        fasttrack = self.ip_settings.get("ipv4-fasttrack-active") == "true"
+        # FastTrack 规则已经加了 connection-bytes（连接开头几 KB 不走 FastTrack）时握手照样镜像得到，不算问题；
+        # 读不到 filter 表（权限不够时是空列表）时按旧办法提示
+        ft_rules = [r for r in (self.filter_rules or []) if r.get("action") == "fasttrack-connection"
+                    and r.get("disabled") != "true"]
+        ft_limited = bool(ft_rules) and all(r.get("connection-bytes") for r in ft_rules)
+        if fasttrack and not ft_limited:
             issues.append("fasttrack")
         return {"checked": True, "port": port, "target": ref[0] if ref else None, "rules": rules, "issues": issues,
-                "fasttrack": self.ip_settings.get("ipv4-fasttrack-active") == "true"}
+                "fasttrack": fasttrack, "fasttrack_limited": fasttrack and ft_limited}
 
     def status(self) -> dict:
         r = self.resource if isinstance(self.resource, dict) else {}

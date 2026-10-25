@@ -1,48 +1,76 @@
-"""社区共享库（debug16→debug22）：通过 **WebDAV 文件夹**（飞牛 / 群晖等 NAS 自带）共享本地自学习库。
+"""社区共享库（debug16 → 0.6.21 重做）：各部署实例互相共享本地自学习库的实测结论，项目自带社区主站，不依赖第三方存储。
 
-架构（无中心服务、无中转）：
-- 每个实例把各自的匿名投票写到 WebDAV 上的两个文件（文件名是随机 UUID，不含任何可识别信息）：
-    deployments/<uuid>.json   {"version", "ts"}                 —— 部署心跳（全球部署量统计）
-    votes/<uuid>.json         {"entries": [IP→应用], "domains": [域名→应用]}
-- 每 30 分钟：PUT 自己的两个文件（WebDAV 天然按文件去重，不会互相覆盖），然后列出文件夹里
-  所有其它实例的文件、全部拉下来在本地聚合——**至少 2 个不同实例见过的映射**才进入社区层。
-- 本地实测优先：社区条目只补本地没有结论的 IP / 域名。
+架构：
+- 社区主站：和普通实例是同一套程序，部署时设 SHARE_HUB=true（只有主站这样设）。它接收各实例的上报，
+  聚合后发布社区库与全球部署量（/api/share/v1/*，见 routers/share.py）。主站自己的投票在进程内直接计入，
+  不经过网络（之前的中转要通过公网地址访问自己，NAT 回环不通时永远同步不上）。
+- 普通实例：默认参与共享，主站地址内置（SHARE_HUB_URL 可改成自建的私有社区）。每 30 分钟一轮：
+  首次注册领取令牌 → 上报心跳（每 6 小时附带一次投票）→ 拉取社区库（没变化时主站回 304）→ 拉取部署量。
+  社区库缓存在 DATA_DIR/share_community.json，主站暂时不可达时继续用上次的版本。
 
-隐私与防污染：
-- 投票内容只有 (远端 IP / 域名, 应用 ID, 字节票数)；不含本机终端、域名记录、自定义应用；
-- 私网 / 保留 / 组播地址剔除；IPv6 按 /64 前缀聚合（中国环境以 IPv6 公网为主）；
-- 应用白名单：只共享所有实例都认识的应用，自定义应用和编造的 ID 拒收；
-- 单文件限量，防止单实例撑爆共享文件夹。
+隐私：
+- 投票只有 (远端 IP / 域名, 应用 ID, 字节票数)；不含本机终端、访问记录、自定义应用；
+- 私网 / 保留 / 组播地址剔除；IPv6 按 /64 前缀聚合；
+- 主站不保存来源 IP，只保存来源网络（IPv4 /24、IPv6 /56）的加盐哈希。
 
-安全：WebDAV 地址建议用 HTTPS 或仅内网可达；账号密码保存在本实例数据库里，不上报。
+防污染：
+- 每个实例有主站发的令牌，别人不能冒充或覆盖它的投票；同一来源网络每天限注册次数；投票每小时最多收一次；
+- 一条映射要有 ≥2 个**不同来源网络**的实例投给同一个应用，并且票数多于其它应用，才进社区库——
+  一个人伪造再多实例 ID，来自同一个网络也只算一票；
+- 应用白名单（自定义应用、编造的 ID 拒收）、域名格式校验、单实例条数上限、字节票数上限。
 """
+import gzip
+import hashlib
+import hmac
 import ipaddress
 import json
+import os
 import re
+import secrets
 import threading
 import time
-import urllib.parse
 import uuid
 from collections import defaultdict
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 
 from app.classify.local import _is_ip, _v6key
-from app.models import HostDomainDay
+from app.config import get_settings
+from app.models import HostDomainDay, Setting, ShareDeployment, ShareDomain, ShareEntry
 
-MAX_UPLOAD = 50_000          # 单个实例投票文件的条数上限
-MAX_COMMUNITY = 200_000      # 社区聚合后的条数上限
-PUBLISH_FILES = 2            # 至少几个不同实例的投票文件见过才进社区层
-DEPLOY_ONLINE = 7200         # 心跳 2 小时内算在线
+API = "/api/share/v1"
+MAX_UPLOAD = 50_000          # 单次上报 IP / 域名各自的条数上限
+MAX_COMMUNITY = 200_000      # 社区库 IP / 域名各自的条数上限
+PUBLISH_NETS = 2             # 至少几个不同来源网络投给同一应用才发布
+DEPLOY_ONLINE = 7200         # 2 小时内有心跳算在线
+DEPLOY_KEEP = 90 * 86400     # 90 天没心跳的实例不再计入部署量
+ENTRY_TTL = 30 * 86400       # 30 天没再上报投票的实例，投票作废
+VOTES_EVERY = 6 * 3600       # 客户端每 6 小时附带一次投票（心跳每轮都发）
+VOTES_MIN_GAP = 3600         # 主站对同一实例的投票每小时最多收一次
+REGISTER_PER_NET = 5         # 同一来源网络每天最多注册几个实例
+MAX_BODY = 8 * 1024 * 1024   # 上报请求体上限（压缩后）
+MAX_INFLATED = 48 * 1024 * 1024  # 解压后上限，防压缩炸弹
+LIB_REBUILD_GAP = 60         # 社区库最快每分钟重建一次
+MAX_BYTES = 10 ** 15         # 单条字节票数上限
+HUB_NET = "hub"              # 主站自己的投票的来源网络标记
 
-# 域名格式（debug20：格式错误的域名条目直接丢弃）
+# 域名格式：格式错误的域名条目直接丢弃
 _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
-MAX_BYTES = 10 ** 15
+
+
+class ShareError(Exception):
+    def __init__(self, status: int, detail: str):
+        super().__init__(detail)
+        self.status, self.detail = status, detail
+
+
+# ---------- 共用 ----------
 
 _sync_lock = threading.Lock()
 _sync = {"ts": 0, "ok": None, "error": "", "community_ips": 0, "community_domains": 0,
-         "deployed": 0, "online": 0, "offline": 0}
+         "total": None, "online": None, "offline": None}
+_client = {"votes_ts": 0, "etag": ""}
 
 
 def sync_state() -> dict:
@@ -50,19 +78,38 @@ def sync_state() -> dict:
         return dict(_sync)
 
 
-def instance_id(db) -> str:
-    """本实例的匿名 ID：第一次生成后存在 settings 表（不上报任何可识别信息）"""
-    from app.models import Setting
-    row = db.get(Setting, "share_instance_id")
-    if row is not None and row.value:
-        return row.value
-    iid = str(uuid.uuid4())
-    row = db.get(Setting, "share_instance_id")
+def _set_sync(**kw):
+    with _sync_lock:
+        _sync.update(kw)
+
+
+def is_hub() -> bool:
+    return bool(get_settings().share_hub)
+
+
+def hub_url() -> str:
+    return (get_settings().share_hub_url or "").strip().rstrip("/")
+
+
+def sharing_on(db) -> bool:
+    """共享识别库的总开关（debug16 第 3 条）：默认打开；关闭后不心跳、不上报、不拉取（主站不受影响，照常服务其它实例）"""
+    row = db.get(Setting, "share_enabled")
+    if row is not None and row.value is not None:
+        return row.value == "1"
+    return bool(get_settings().share_enabled)
+
+
+def _setting(db, key: str) -> str:
+    row = db.get(Setting, key)
+    return row.value if row is not None and row.value else ""
+
+
+def _put_setting(db, key: str, value: str):
+    row = db.get(Setting, key)
     if row is None:
-        db.add(Setting(key="share_instance_id", value=iid))
+        db.add(Setting(key=key, value=value))
     else:
-        row.value = iid
-    return iid
+        row.value = value
 
 
 def _is_shareable_app(classifier, app: str) -> bool:
@@ -80,166 +127,446 @@ def _shareable_ip(ip: str) -> bool:
     return not (a.is_private or a.is_reserved or a.is_multicast or a.is_loopback or a.is_link_local)
 
 
-def export_entries(engine, db) -> list[dict]:
-    """本地自学习库的 IP 条目：host_domain_day 里以 IP 记录的行，按字节数取最多的应用。
-    IPv4 按精确地址；IPv6 按 /64 前缀聚合（中国环境以 IPv6 公网为主，精确地址不稳定）"""
+def export_entries(engine, db) -> tuple[list[dict], list[dict]]:
+    """本地自学习库整理成投票：host_domain_day 里的行按字节数取最多的应用。
+    IP 条目 IPv4 按精确地址、IPv6 按 /64 前缀（精确地址在不同网络间几乎不重复，凑不满投票）；域名条目按精确域名"""
     classifier = engine.classifier
-    votes: dict = defaultdict(dict)
-    rows = db.execute(select(HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)).all()
-    for dom, app, b in rows:
-        if not _shareable_ip(dom) or not _is_shareable_app(classifier, app):
-            continue
-        key = _v6key(dom) or dom
-        per = votes[key]
-        per[app] = per.get(app, 0) + int(b or 0)
-    out = [{"ip": ip, "app": max(per, key=per.get), "bytes": sum(per.values())}
-           for ip, per in votes.items()]
-    out.sort(key=lambda x: -x["bytes"])
-    doms = export_domains(engine, db)
-    return out[:MAX_UPLOAD], doms
-
-
-def export_domains(engine, db) -> list[dict]:
-    """本地自学习库的域名条目（debug17）：非 IP 的域名行，按字节数取最多的应用，精确域名共享"""
-    classifier = engine.classifier
-    votes: dict = defaultdict(dict)
-    rows = db.execute(select(HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)).all()
-    for dom, app, b in rows:
-        if _is_ip(dom) or not _is_shareable_app(classifier, app):
-            continue
-        per = votes[dom]
-        per[app] = per.get(app, 0) + int(b or 0)
-    out = [{"domain": d, "app": max(p, key=p.get), "bytes": sum(p.values())}
-           for d, p in votes.items()]
-    out.sort(key=lambda x: -x["bytes"])
-    return out[:MAX_UPLOAD]
-
-
-# ---------- WebDAV ----------
-
-def _dav_url(base: str, path: str) -> str:
-    return base.rstrip("/") + "/" + "/".join(urllib.parse.quote(x) for x in path.split("/"))
-
-
-def _dav_put(httpx, base: str, path: str, data, auth) -> bool:
-    """PUT 文件；目标文件夹不存在（409）时逐级 MKCOL 后重试一次"""
-    url = _dav_url(base, path)
-    r = httpx.put(url, content=data, auth=auth, timeout=30.0, verify=False)
-    if r.status_code in (200, 201, 204):
-        return True
-    if r.status_code == 409:   # 上级文件夹不存在：逐级创建
-        parts = path.split("/")
-        for i in range(1, len(parts)):
-            httpx.request("MKCOL", _dav_url(base, "/".join(parts[:i])), auth=auth,
-                          timeout=30.0, verify=False)
-        r = httpx.put(url, content=data, auth=auth, timeout=30.0, verify=False)
-        return r.status_code in (200, 201, 204)
-    return False
-
-
-def _dav_list(httpx, base: str, folder: str, auth) -> list[str]:
-    """PROPFIND 列出文件夹里的 .json 文件，返回 folder/name 相对路径（和 _dav_get 拼接一致）"""
-    r = httpx.request("PROPFIND", _dav_url(base, folder), headers={"Depth": "1"}, auth=auth,
-                      timeout=30.0, verify=False)
-    if r.status_code not in (200, 207):
-        return []
-    hrefs = re.findall(r"<(?:[\w]+:)?href>\s*([^<]+)\s*</(?:[\w]+:)?href>", r.text, re.IGNORECASE)
-    base_path = urllib.parse.quote(_dav_url(base, "").split("//", 1)[-1].split("/", 1)[-1])
-    out = []
-    for h in hrefs:
-        name = urllib.parse.unquote(h.split("?")[0].rstrip("/")).rsplit("/", 1)[-1]
-        if name.endswith(".json") and name != folder:
-            out.append(f"{folder}/{name}")
-    return out
-
-
-def _dav_get(httpx, base: str, path: str, auth):
-    r = httpx.get(_dav_url(base, path), auth=auth, timeout=30.0, verify=False)
-    if r.status_code != 200:
-        return None
-    try:
-        return json.loads(r.text)
-    except Exception:  # noqa: BLE001
-        return None
-
-
-def webdav_cycle(engine, db, base: str, user: str, password: str) -> dict:
-    """一轮 WebDAV 共享（每 30 分钟）：写自己的心跳与投票文件 → 读其它实例的文件 → 本地聚合"""
-    from app import __version__
-    auth = (user, password) if user or password else None
-    iid = instance_id(db)
-    now = int(time.time())
-
-    # 1) 心跳（部署量统计：只有版本号和时间）
-    ok_put_dep = _dav_put(httpx, base, f"deployments/{iid}.json",
-                          json.dumps({"version": __version__, "ts": now}).encode(), auth)
-    # 2) 投票（本网络实测）
-    entries, domains = export_entries(engine, db)
-    ok_put_votes = _dav_put(httpx, base, f"votes/{iid}.json",
-                            json.dumps({"version": __version__, "ts": now,
-                                        "entries": entries, "domains": domains},
-                                       ensure_ascii=False).encode(), auth)
-
-    # 3) 读其它实例的文件，本地聚合（自己写不进去时留给下轮，不空算）
-    other_dep, other_votes = [], []
-    if ok_put_dep and ok_put_votes:
-        for kind, out in (("deployments", other_dep), ("votes", other_votes)):
-            for path in _dav_list(httpx, base, kind, auth):
-                if path == f"{kind}/{iid}.json":
-                    continue
-                data = _dav_get(httpx, base, path, auth)
-                if isinstance(data, dict):
-                    out.append(data)
-
-    # 部署量：心跳文件数 = 已部署；ts 在 2 小时内 = 在线
-    deployed, online = len(other_dep) + (1 if ok_put_dep else 0), 0
-    for d in other_dep:
-        if int(d.get("ts", 0) or 0) >= now - DEPLOY_ONLINE:
-            online += 1
-    if ok_put_dep:
-        online += 1
-
-    # 社区层：出现在 ≥2 个不同投票文件里的映射（自己的文件算一票）。votes[k] = {app: (实例数, 总字节)}
-    def _vote(bucket, key, app, weight):
-        per = bucket[key]
-        n, b = per.get(app, (0, 0))
-        per[app] = (n + 1, b + weight)
-
     ip_votes: dict = defaultdict(dict)
     dom_votes: dict = defaultdict(dict)
-    if ok_put_votes:
-        for e in entries:
-            _vote(ip_votes, e["ip"], e["app"], e["bytes"])
-        for e in domains:
-            _vote(dom_votes, e["domain"], e["app"], e["bytes"])
-    for d in other_votes:
-        for e in d.get("entries") or []:
-            ip, app, b = str(e.get("ip", "")), str(e.get("app", "")), int(e.get("bytes", 0) or 0)
-            if _shareable_ip(ip):
-                _vote(ip_votes, ip, app, b)
-        for e in d.get("domains") or []:
-            dom_, app, b = str(e.get("domain", "")).lower(), str(e.get("app", "")), int(e.get("bytes", 0) or 0)
-            if dom_ and not _is_ip(dom_):
-                _vote(dom_votes, dom_, app, b)
+    rows = db.execute(select(HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)).all()
+    for dom, app, b in rows:
+        if not dom or not _is_shareable_app(classifier, app):
+            continue
+        if _is_ip(dom):
+            if not _shareable_ip(dom):
+                continue
+            per = ip_votes[_v6key(dom) or dom]
+        else:
+            per = dom_votes[dom.lower().rstrip(".")]
+        per[app] = per.get(app, 0) + int(b or 0)
 
-    def top(bucket, cap):
-        out = {}
-        for key, per in sorted(bucket.items(), key=lambda kv: -sum(v[1] for v in kv[1].values()))[:cap]:
-            if any(n >= PUBLISH_FILES for n, _b in per.values()):   # 至少 2 个实例见过
-                out[key] = max(per, key=lambda a: per[a][1])
-        return out
+    def pack(votes, field):
+        out = [{field: k, "app": max(p, key=p.get), "bytes": sum(p.values())} for k, p in votes.items()]
+        out.sort(key=lambda x: -x["bytes"])
+        return out[:MAX_UPLOAD]
+    return pack(ip_votes, "ip"), pack(dom_votes, "domain")
 
-    community_ips = top(ip_votes, MAX_COMMUNITY)
-    community_domains = top(dom_votes, MAX_COMMUNITY)
+
+def apply_library(data: dict) -> tuple[int, int]:
+    """把社区库并入本地自学习库的社区层（本地实测优先，社区只补空白）。返回 (IP 条数, 域名条数)"""
     from app.classify.local import local
-    local.load_community(community_ips, community_domains)
+    ips, doms = {}, {}
+    for e in (data or {}).get("entries") or []:
+        if not isinstance(e, dict):
+            continue
+        ip, app = str(e.get("ip", "")), str(e.get("app", ""))
+        if app and len(app) <= 48 and _shareable_ip(ip[:-3] if ip.endswith("/64") else ip):
+            ips[ip] = app
+    for e in (data or {}).get("domains") or []:
+        if not isinstance(e, dict):
+            continue
+        dom, app = str(e.get("domain", "")).lower().rstrip("."), str(e.get("app", ""))
+        if app and len(app) <= 48 and _DOMAIN_RE.match(dom):
+            doms[dom] = app
+    local.load_community(ips, doms)
+    return len(ips), len(doms)
 
-    ok = ok_put_dep and ok_put_votes
-    error = "" if ok else "WebDAV 写入失败：检查地址 / 账号密码 / 文件夹权限"
-    with _sync_lock:
-        _sync.update(ts=now, ok=ok, error=error, deployed=deployed, online=online,
-                     offline=deployed - online,
-                     community_ips=len(community_ips), community_domains=len(community_domains))
-    return {"deployed": deployed, "online": online, "offline": deployed - online,
-            "community_ips": len(community_ips), "community_domains": len(community_domains),
-            "uploaded": bool(ok_put_dep and ok_put_votes)}
+
+def _cache_path() -> str:
+    return os.path.join(os.environ.get("DATA_DIR", "data"), "share_community.json")
+
+
+def load_cached_library():
+    """启动时先用上次拉到的社区库，不用等第一轮同步；主站暂时不可达时也一直有数据"""
+    try:
+        with open(_cache_path(), encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return
+    n_ip, n_dom = apply_library(data)
+    _client["etag"] = str(data.get("etag") or "")
+    _set_sync(community_ips=n_ip, community_domains=n_dom)
+
+
+def _save_cache(data: dict, etag: str):
+    try:
+        os.makedirs(os.path.dirname(_cache_path()) or ".", exist_ok=True)
+        tmp = _cache_path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({**data, "etag": etag}, f, ensure_ascii=False)
+        os.replace(tmp, _cache_path())
+    except OSError as e:
+        print(f"[share] 社区库缓存写入失败：{e}", flush=True)
+
+
+# ---------- 社区主站 ----------
+
+def net_of(db, ip: str) -> str:
+    """来源网络的加盐哈希（IPv4 /24、IPv6 /56）：同一网络里伪造多个实例也只算一票；主站不保存来源 IP 本身。
+    IPv6 按 /56：国内家庭宽带一般分到 /56 或 /60，按 /48 会把几百户人家算成同一个网络"""
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return "unknown"
+    net = ipaddress.ip_network(f"{a}/{24 if a.version == 4 else 56}", strict=False)
+    salt = _setting(db, "share_salt")
+    if not salt:
+        salt = secrets.token_hex(16)
+        _put_setting(db, "share_salt", salt)
+    return hashlib.sha256(f"{salt}|{net}".encode()).hexdigest()[:16]
+
+
+def client_ip(peer: str, forwarded: str | None, real_ip: str | None) -> str:
+    """主站看到的来源地址。直接暴露在公网时用 TCP 对端；对端是内网（前面有反向代理）时，取代理追加在
+    X-Forwarded-For 最右边的公网地址——直连的人伪造这个头没用，因为那时对端是公网地址、头会被忽略"""
+    try:
+        p = ipaddress.ip_address(peer)
+        behind_proxy = p.is_private or p.is_loopback
+    except ValueError:
+        behind_proxy = False
+    if not behind_proxy:
+        return peer
+    for cand in reversed([x.strip() for x in (forwarded or "").split(",") if x.strip()]):
+        if _shareable_ip(cand):
+            return cand
+    if real_ip and _shareable_ip(real_ip.strip()):
+        return real_ip.strip()
+    return peer
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def register(db, net: str, version: str) -> tuple[str, str]:
+    """主站：登记一个新实例并发放令牌（调用方提交事务）。同一来源网络每天限 REGISTER_PER_NET 个"""
+    now = int(time.time())
+    recent = db.scalar(select(func.count()).select_from(ShareDeployment)
+                       .where(ShareDeployment.net == net, ShareDeployment.first_seen >= now - 86400)) or 0
+    if net != HUB_NET and recent >= REGISTER_PER_NET:
+        raise ShareError(429, "注册太频繁，请明天再试")
+    iid, token = str(uuid.uuid4()), secrets.token_urlsafe(32)
+    db.add(ShareDeployment(instance=iid, version=version[:16], first_seen=now, last_seen=now,
+                           token_hash=_hash_token(token), net=net))
+    return iid, token
+
+
+def authenticate(db, auth_header: str | None) -> ShareDeployment:
+    """主站：校验 Authorization: Bearer <实例ID>:<令牌>"""
+    raw = (auth_header or "").removeprefix("Bearer ").strip()
+    iid, _, token = raw.partition(":")
+    row = db.get(ShareDeployment, iid[:36]) if iid and token else None
+    if row is None or not row.token_hash or not hmac.compare_digest(row.token_hash, _hash_token(token)):
+        raise ShareError(401, "实例未注册或令牌无效")
+    return row
+
+
+def _clamp_bytes(v) -> int:
+    try:
+        return min(max(int(v or 0), 0), MAX_BYTES)
+    except (TypeError, ValueError):
+        return 0
+
+
+def report(db, row: ShareDeployment, net: str, body: dict, classifier) -> dict:
+    """主站：记录一次上报（调用方提交事务）。心跳每次都记；带了投票时整份替换该实例的旧投票。
+    应用白名单：只收主站也认识的内置应用，自定义应用和编造的 ID 拒收"""
+    now = int(time.time())
+    row.last_seen, row.net = now, net
+    row.version = str(body.get("version") or "")[:16]
+    entries, domains = body.get("entries"), body.get("domains")
+    if not isinstance(entries, list) and not isinstance(domains, list):
+        return {"ok": True, "accepted": 0}
+    if row.last_votes and now - row.last_votes < VOTES_MIN_GAP:
+        return {"ok": True, "accepted": 0, "skipped": "投票每小时最多收一次"}
+    ips: dict = {}
+    for e in (entries or [])[:MAX_UPLOAD]:
+        if not isinstance(e, dict):
+            continue
+        ip, app = str(e.get("ip", "")), str(e.get("app", ""))
+        base = ip[:-3] if ip.endswith("/64") else ip
+        if not _shareable_ip(base) or not _is_shareable_app(classifier, app):
+            continue
+        ips[_v6key(base) or base] = (app, _clamp_bytes(e.get("bytes")))
+    doms: dict = {}
+    for e in (domains or [])[:MAX_UPLOAD]:
+        if not isinstance(e, dict):
+            continue
+        dom, app = str(e.get("domain", "")).lower().rstrip("."), str(e.get("app", ""))
+        if not _DOMAIN_RE.match(dom) or not _is_shareable_app(classifier, app):
+            continue
+        doms[dom] = (app, _clamp_bytes(e.get("bytes")))
+    db.execute(delete(ShareEntry).where(ShareEntry.reporter == row.instance))
+    db.execute(delete(ShareDomain).where(ShareDomain.reporter == row.instance))
+    db.add_all([ShareEntry(ip=k, app=a, reporter=row.instance, bytes=b, ts=now) for k, (a, b) in ips.items()])
+    db.add_all([ShareDomain(domain=k, app=a, reporter=row.instance, bytes=b, ts=now) for k, (a, b) in doms.items()])
+    row.last_votes = now
+    _lib["dirty"] = True
+    return {"ok": True, "accepted": len(ips) + len(doms)}
+
+
+def purge(db):
+    """主站：清掉 90 天没心跳的实例、30 天没更新的投票（调用方提交事务）"""
+    now = int(time.time())
+    db.execute(delete(ShareDeployment).where(ShareDeployment.last_seen < now - DEPLOY_KEEP))
+    n = db.execute(delete(ShareEntry).where(ShareEntry.ts < now - ENTRY_TTL)).rowcount or 0
+    n += db.execute(delete(ShareDomain).where(ShareDomain.ts < now - ENTRY_TTL)).rowcount or 0
+    if n:
+        _lib["dirty"] = True
+
+
+def _aggregate(rows, nets: dict) -> dict:
+    """按来源网络计票：每个键选投票网络最多的应用（平票看字节），网络数 ≥ PUBLISH_NETS 且多于第二名才发布"""
+    votes: dict = defaultdict(lambda: defaultdict(lambda: [set(), 0]))
+    for key, app, reporter, b in rows:
+        net = nets.get(reporter)
+        if net is None:          # 已被清理的实例、0.6.20 以前的旧中转留下的投票不算
+            continue
+        v = votes[key][app]
+        v[0].add(net)
+        v[1] += int(b or 0)
+    out = []
+    for key, per in votes.items():
+        ranked = sorted(per.items(), key=lambda kv: (len(kv[1][0]), kv[1][1]), reverse=True)
+        top_app, (top_nets, top_bytes) = ranked[0]
+        runner = len(ranked[1][1][0]) if len(ranked) > 1 else 0
+        if len(top_nets) >= PUBLISH_NETS and len(top_nets) > runner:
+            out.append((top_bytes, key, top_app))
+    out.sort(reverse=True)
+    return {key: app for _b, key, app in out[:MAX_COMMUNITY]}
+
+
+def build_library(db) -> dict:
+    nets = {i: n for i, n in db.execute(select(ShareDeployment.instance, ShareDeployment.net)).all() if n}
+    ips = _aggregate(db.execute(select(ShareEntry.ip, ShareEntry.app, ShareEntry.reporter, ShareEntry.bytes)).all(), nets)
+    doms = _aggregate(db.execute(select(ShareDomain.domain, ShareDomain.app, ShareDomain.reporter,
+                                        ShareDomain.bytes)).all(), nets)
+    return {"version": 1, "generated": int(time.time()),
+            "entries": [{"ip": k, "app": v} for k, v in sorted(ips.items())],
+            "domains": [{"domain": k, "app": v} for k, v in sorted(doms.items())]}
+
+
+_lib_lock = threading.Lock()
+_lib = {"dirty": True, "ts": 0, "etag": "", "json": b"", "gzip": b"", "data": None}
+
+
+def library(db) -> dict:
+    """主站：当前社区库（有新投票时最快每分钟重建一次），返回 {etag, json, gzip, data}"""
+    with _lib_lock:
+        if _lib["data"] is None or (_lib["dirty"] and time.time() - _lib["ts"] >= LIB_REBUILD_GAP):
+            data = build_library(db)
+            raw = json.dumps({k: data[k] for k in ("version", "entries", "domains")}, ensure_ascii=False,
+                             separators=(",", ":")).encode()
+            body = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode()
+            _lib.update(dirty=False, ts=time.time(), etag='"' + hashlib.sha256(raw).hexdigest()[:32] + '"',
+                        json=body, gzip=gzip.compress(body, 6), data=data)
+        return dict(_lib)
+
+
+def reset_library_cache():
+    """测试用"""
+    with _lib_lock:
+        _lib.update(dirty=True, ts=0, etag="", json=b"", gzip=b"", data=None)
+    _client.update(votes_ts=0, etag="")
+
+
+def stats(db) -> dict:
+    """全球部署量（公开）：已部署 = 90 天内有心跳的实例，在线 = 2 小时内有心跳"""
+    now = int(time.time())
+    # 只数 0.6.21 起注册过的实例：旧中转（0.6.10~0.6.19）留下的无令牌心跳不计，否则升级后会重复计数
+    q = select(func.count()).select_from(ShareDeployment).where(ShareDeployment.token_hash.is_not(None))
+    total = db.scalar(q.where(ShareDeployment.last_seen >= now - DEPLOY_KEEP)) or 0
+    online = db.scalar(q.where(ShareDeployment.last_seen >= now - DEPLOY_ONLINE)) or 0
+    return {"total": total, "online": online, "offline": total - online}
+
+
+def inflate(body: bytes, encoding: str | None) -> dict:
+    """主站：解析上报请求体（可 gzip 压缩），限制解压后大小"""
+    if len(body) > MAX_BODY:
+        raise ShareError(413, "上报内容太大")
+    if (encoding or "").lower() == "gzip":
+        import zlib
+        d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+        try:
+            out = d.decompress(body, MAX_INFLATED)
+        except zlib.error:
+            raise ShareError(400, "上报内容解压失败") from None
+        if d.unconsumed_tail:
+            raise ShareError(413, "上报内容太大")
+        body = out
+    try:
+        data = json.loads(body or b"{}")
+    except ValueError:
+        raise ShareError(400, "上报内容不是 JSON") from None
+    if not isinstance(data, dict):
+        raise ShareError(400, "上报内容格式不对")
+    return data
+
+
+def hub_cycle(engine, db) -> dict:
+    """主站自己的一轮：投票在进程内直接计入（不经网络）→ 清理过期 → 重建社区库并用到本机"""
+    from app import __version__
+    iid = _setting(db, "share_hub_instance")
+    row = db.get(ShareDeployment, iid) if iid else None
+    if row is None:
+        iid, _token = register(db, HUB_NET, __version__)
+        _put_setting(db, "share_hub_instance", iid)
+        db.flush()
+        row = db.get(ShareDeployment, iid)
+    body: dict = {"version": __version__}
+    on = sharing_on(db)
+    if on and (not row.last_votes or time.time() - row.last_votes >= VOTES_EVERY):
+        body["entries"], body["domains"] = export_entries(engine, db)
+    elif not on:
+        # 主站关掉“参与共享”：照常服务其它实例，只是不再贡献自己的投票、本机也不用社区库
+        db.execute(delete(ShareEntry).where(ShareEntry.reporter == iid))
+        db.execute(delete(ShareDomain).where(ShareDomain.reporter == iid))
+        row.last_votes = None
+        _lib["dirty"] = True
+    report(db, row, HUB_NET, body, engine.classifier)
+    purge(db)
+    db.flush()
+    lib = library(db)
+    if on:
+        n_ip, n_dom = apply_library(lib["data"])
+    else:
+        from app.classify.local import local
+        local.load_community({}, {})
+        n_ip = n_dom = 0
+    st = stats(db)
+    _set_sync(ts=int(time.time()), ok=True, error="", community_ips=n_ip, community_domains=n_dom, **st)
+    return {**st, "community_ips": n_ip, "community_domains": n_dom}
+
+
+# ---------- 普通实例 ----------
+
+def _http() -> httpx.Client:
+    from app import __version__
+    return httpx.Client(verify=get_settings().share_verify_tls, timeout=30.0, follow_redirects=False,
+                        headers={"User-Agent": f"ros-dpi/{__version__}"})
+
+
+def _err(e: Exception) -> str:
+    if isinstance(e, httpx.HTTPStatusError):
+        try:
+            detail = e.response.json().get("detail") or ""
+        except ValueError:
+            detail = ""
+        return f"主站返回 {e.response.status_code}" + (f"：{detail}" if detail else "")
+    if isinstance(e, httpx.ConnectError) and "CERTIFICATE" in str(e).upper():
+        return "主站证书校验失败（私有社区用自签证书时设 SHARE_VERIFY_TLS=false）"
+    if isinstance(e, ShareError):
+        return e.detail
+    msg = str(e).lower()
+    if isinstance(e, httpx.ConnectError) and ("errno 101" in msg or "unreachable" in msg
+                                              or "cannot assign requested address" in msg):
+        # 实例不需要公网 IP（都是主动连主站），但主站目前只有 IPv6 地址：本机 / 容器要有 IPv6 出口
+        return "连不上社区主站：本机没有 IPv6 出口（主站只有 IPv6 地址）。Docker 部署请按 docker-compose.yml 末尾的说明开启 IPv6，或改用 Linux 一键安装"
+    return f"{type(e).__name__}: {str(e)[:120]}"
+
+
+def _register(c: httpx.Client, base: str, db) -> tuple[str, str]:
+    from app import __version__
+    r = c.post(base + API + "/register", json={"version": __version__})
+    r.raise_for_status()
+    d = r.json()
+    iid, token = str(d["instance"]), str(d["token"])
+    _put_setting(db, "share_client_instance", iid)
+    _put_setting(db, "share_client_token", token)
+    _put_setting(db, "share_client_hub", base)
+    db.commit()
+    return iid, token
+
+
+def client_cycle(engine, db) -> dict:
+    """普通实例一轮同步：注册（首次）→ 心跳（每 6 小时带投票）→ 拉社区库 → 拉部署量"""
+    from app import __version__
+    base = hub_url()
+    if not base:
+        raise ShareError(400, "没有配置社区主站地址（SHARE_HUB_URL）")
+    with _http() as c:
+        iid, token = _setting(db, "share_client_instance"), _setting(db, "share_client_token")
+        if not iid or not token or _setting(db, "share_client_hub") != base:   # 换了主站要重新注册
+            iid, token = _register(c, base, db)
+            _client["votes_ts"] = 0
+        body: dict = {"version": __version__}
+        with_votes = time.time() - _client["votes_ts"] >= VOTES_EVERY
+        if with_votes:
+            body["entries"], body["domains"] = export_entries(engine, db)
+        payload = gzip.compress(json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode(), 6)
+
+        def send(i, t):
+            return c.post(base + API + "/report", content=payload,
+                          headers={"Authorization": f"Bearer {i}:{t}", "Content-Type": "application/json",
+                                   "Content-Encoding": "gzip"})
+        r = send(iid, token)
+        if r.status_code == 401:    # 主站清理过（90 天没心跳）或换过库：重新注册一次
+            iid, token = _register(c, base, db)
+            r = send(iid, token)
+        r.raise_for_status()
+        if with_votes:
+            _client["votes_ts"] = time.time()
+
+        headers = {"If-None-Match": _client["etag"]} if _client["etag"] else {}
+        r = c.get(base + API + "/library", headers=headers)
+        if r.status_code == 304:
+            st = sync_state()
+            n_ip, n_dom = st["community_ips"], st["community_domains"]
+        else:
+            r.raise_for_status()
+            data = r.json()
+            n_ip, n_dom = apply_library(data)
+            _client["etag"] = r.headers.get("etag", "")
+            _save_cache(data, _client["etag"])
+        r = c.get(base + API + "/stats")
+        r.raise_for_status()
+        st = {k: int(r.json().get(k) or 0) for k in ("total", "online", "offline")}
+    _set_sync(ts=int(time.time()), ok=True, error="", community_ips=n_ip, community_domains=n_dom, **st)
+    return {**st, "community_ips": n_ip, "community_domains": n_dom}
+
+
+def cycle(engine, db) -> dict | None:
+    """定时任务入口（每 30 分钟）：主站走进程内流程；普通实例开关关闭时什么都不发"""
+    if is_hub():
+        return hub_cycle(engine, db)
+    if not sharing_on(db):
+        from app.classify.local import local
+        local.load_community({}, {})
+        _set_sync(ts=0, ok=None, error="", community_ips=0, community_domains=0,
+                  total=None, online=None, offline=None)
+        return None
+    try:
+        return client_cycle(engine, db)
+    except Exception as e:  # noqa: BLE001  记录原因给设置页显示；社区库继续用上次缓存
+        _set_sync(ts=int(time.time()), ok=False, error=_err(e))
+        raise
+
+
+def kick(fn):
+    """后台立刻跑一轮（启动后、打开开关后），不等 30 分钟的定时任务；测试环境不跑"""
+    if not os.environ.get("ROSDPI_NO_JOBS"):
+        threading.Thread(target=fn, daemon=True).start()
+
+
+def run_once():
+    from app import database
+    from app.engine import engine
+    try:
+        with database.session() as db:
+            cycle(engine, db)
+            db.commit()
+    except Exception as e:  # noqa: BLE001
+        print(f"[share] 同步失败：{_err(e)}", flush=True)
+
+
+def status(db) -> dict:
+    """设置页的共享状态：角色、主站地址、开关、上次同步结果与全球部署量"""
+    st = sync_state()
+    if is_hub():   # 主站的部署量直接查库，不用等下一轮
+        st.update(stats(db))
+        # 不同来源网络数：实例很多却只有 1 个网络，说明反向代理没有传 X-Forwarded-For，社区库永远凑不够票
+        st["nets"] = db.scalar(select(func.count(func.distinct(ShareDeployment.net)))
+                               .where(ShareDeployment.token_hash.is_not(None),
+                                      ShareDeployment.net != HUB_NET)) or 0
+    return {"role": "hub" if is_hub() else "client", "hub_url": hub_url(), "enabled": sharing_on(db),
+            "verify_tls": bool(get_settings().share_verify_tls), "sync": st}

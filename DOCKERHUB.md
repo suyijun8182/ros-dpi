@@ -36,6 +36,7 @@ services:
 
 ## What's new
 
+- **0.6.21**: 社区共享库重做——项目自带社区主站，不再需要 WebDAV / 第三方存储：令牌注册、按来源网络计票（≥2 个不同网络一致才发布，防伪造实例刷票）、ETag 增量拉取、本地缓存；修复 0.6.20 部署量接口 500、共享任务从未运行、开关保存不上。接入自检新增 IPv6 嗅探规则检查，FastTrack 已限定 connection-bytes 时不再误报，并直接给出修改命令。Community library rebuilt around a built-in hub (no WebDAV/third-party storage): per-instance tokens, votes counted per source network, ETag pulls, local cache; fixes the 0.6.20 deployments 500 and the never-running share job. Self-check now flags missing IPv6 sniff rules.
 - **0.6.12 / 0.6.11 / 0.6.10 / 0.6.9 / 0.6.8**: 自学习与共享系列。**本地自学习库**：本网络实测的「IP → 应用」（IPv6 按 /64 前缀聚合）与「域名 → 应用」长期记忆，每小时重建，DNS 缓存过期、DoH、裸 IP 流量都能按记忆归类；**社区共享库**：各部署实例把实测结论匿名共享（中转聚合、至少 2 个实例见过才发布），本地实测优先、社区只补空白；**全球部署量**：实例心跳上报，中转公开已部署 / 在线 / 离线数量；共享总开关默认打开；**一键自更新**：Linux 二进制部署在网页上检测并一键升级（自动下载、替换、重启服务）；**Linux 单文件二进制部署**：`install.sh` 一键安装 systemd 服务（SQLite 零配置起步）；修复落库卡死（代理长域名撑爆 access_log.remote 列导致每分钟落库失败、在线终端归零）；组播 / 广播流量不再计入统计；17 个 DPI 大类配色互异。
 - **0.6.7**: fixes for the 0.6.5 / 0.6.6 history reclassification and rule auto-registration. Reclassification now only touches days before today and only upgrades vague rows (HTTPS / Chinese websites / unknown / CDN) to a specific app — it no longer downgrades apps identified live by IP range, port or ASN. New upstream blackmatrix7 directories are downloaded first and then assigned by a vote of the existing libraries. The manual dark theme now uses the 17 distinct group colors, and the AdGuard Home password is masked in the operation log.
 - **0.6.6**: AdGuard Home's newer query-log format (`{"data": [...]}`) is now read (0.6.5 always got 0 answers); new upstream rule directories / lists are registered automatically; history reclassification looks up the DNS cache for IP-only rows and runs automatically after library updates.
@@ -119,7 +120,9 @@ Open `http://<host>:8080`. The setup wizard has two steps. 打开网页后按两
 | `ADMIN_PASSWORD` | empty | initial password for `admin` |
 | `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | empty | RouterOS REST + read-only user |
 | `SINGBOX_URL` / `MOSDNS_URL` / `ADGUARD_URL` | empty | external sources (Clash API, MosDNS audit, AdGuard Home query log) |
-| `SHARE_URL` / `SHARE_TOKEN` | empty | community library relay (anonymous IP→app / domain→app votes) |
+| `SHARE_HUB_URL` | `https://rosdpi.suyijun.top:8443` | community hub (built in); point it at your own hub for a private community |
+| `SHARE_HUB` | `false` | run this instance as the community hub (only the hub sets `true`) |
+| `SHARE_VERIFY_TLS` | `true` | verify the hub certificate; set `false` only for a private hub with a self-signed cert |
 | `TZ` | `Asia/Shanghai` | statistics time zone (weeks start Monday) |
 
 Full list: https://github.com/suyijun8182/ros-dpi#环境变量
