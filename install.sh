@@ -8,8 +8,10 @@ set -euo pipefail
 REPO="suyijun8182/ros-dpi"
 PORT="${ROS_DPI_PORT:-8080}"
 DIR="${ROS_DPI_DIR:-/opt/ros-dpi}"
-BIN="/usr/local/bin/ros-dpi"
+BIN="$DIR/bin/ros-dpi"          # 放在安装目录下，服务账号可写：一键自更新要原地替换它
+LINK="/usr/local/bin/ros-dpi"
 ENV_FILE="/etc/ros-dpi.env"
+SVC_USER="ros-dpi"
 
 [ "$(id -u)" = 0 ] || { echo "请用 root 运行（sudo curl ... | sudo bash）"; exit 1; }
 
@@ -42,11 +44,25 @@ tar -xzf "$TMP/${ASSET}" -C "$TMP"
 echo "==> 安装"
 REINSTALL=0
 [ -f /etc/systemd/system/ros-dpi.service ] && REINSTALL=1
+# 专用系统账号运行服务（0.6.22 及以前是 root）：不能登录、没有家目录
+if ! id "$SVC_USER" >/dev/null 2>&1; then
+  NOLOGIN=$(command -v nologin || echo /bin/false)
+  if command -v useradd >/dev/null 2>&1; then
+    useradd --system --user-group --no-create-home --home-dir "$DIR" --shell "$NOLOGIN" "$SVC_USER"
+  else   # BusyBox / Alpine
+    addgroup -S "$SVC_USER" 2>/dev/null || true
+    adduser -S -D -H -h "$DIR" -s "$NOLOGIN" -G "$SVC_USER" "$SVC_USER"
+  fi
+fi
+mkdir -p "$DIR/bin" "$DIR/data"
 install -m 755 "$TMP/ros-dpi" "$BIN"
-mkdir -p "$DIR/data"
-# 数据目录里的 SQLite 库存着 JWT 签名密钥和各类密码：只允许 root 读写
+# 旧版把二进制装在 /usr/local/bin（只有 root 可写）：换成指向安装目录的软链接，命令行照常可用
+rm -f "$LINK.bak"
+ln -sfn "$BIN" "$LINK"
+# 数据目录里的 SQLite 库存着 JWT 签名密钥和各类密码：只给服务账号读写（旧版装出来的是 root 的 644 文件）
+chown -R "$SVC_USER:$SVC_USER" "$DIR/bin" "$DIR/data"
 chmod 700 "$DIR/data"
-chmod -R go-rwx "$DIR/data"   # 旧版本装出来的库文件是 644，一并收紧
+chmod -R go-rwx "$DIR/data"
 
 # 用户配置单独放在 EnvironmentFile：只在不存在时创建（全是注释示例），重装 / 升级都不覆盖
 NEW_ENV=0
@@ -76,8 +92,8 @@ ENVF
 fi
 chmod 600 "$ENV_FILE"
 
-# 以 root 运行：一键自更新（前端按钮）需要写 /usr/local/bin 与 systemctl restart 权限，
-# 所以只加不影响自更新的加固项（不能用 ProtectSystem=strict / ReadOnlyPaths 等）
+# 以专用账号运行。一键自更新只需要写 $DIR/bin，重启靠进程退出后 Restart=always 拉起，不需要 systemctl 权限；
+# 环境文件由 systemd 以 root 读取，服务账号本身读不到（chmod 600 root）
 cat > /etc/systemd/system/ros-dpi.service <<UNIT
 [Unit]
 Description=ROS-DPI 终端流量与应用统计
@@ -85,6 +101,8 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+User=$SVC_USER
+Group=$SVC_USER
 WorkingDirectory=$DIR
 Environment=HTTP_PORT=$PORT
 Environment=DATA_DIR=$DIR/data
@@ -93,9 +111,20 @@ ExecStart=$BIN
 Restart=always
 RestartSec=3
 UMask=0077
+# Web 端口改成 1024 以下（如 80）时需要绑定特权端口的能力；除此之外不给任何能力
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 NoNewPrivileges=yes
 PrivateTmp=yes
+PrivateDevices=yes
 ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=$DIR/bin $DIR/data
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target

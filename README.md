@@ -58,12 +58,12 @@ RouterOS ◀─REST 只读（可选）── 主机名、IP↔MAC、WAN 口速�
 curl -fsSL https://raw.githubusercontent.com/suyijun8182/ros-dpi/main/install.sh | sudo bash
 ```
 
-脚本自动完成：下载最新版单文件二进制（含前端）→ 安装到 `/usr/local/bin/ros-dpi` → 创建 `/opt/ros-dpi` 数据目录（默认 SQLite，无需 MySQL）→ 注册并启动 systemd 服务。完成后浏览器打开 `http://<本机IP>:8080`。
+脚本自动完成：下载最新版单文件二进制（含前端）并校验 SHA256 → 创建专用账号 `ros-dpi` → 安装到 `/opt/ros-dpi/bin/ros-dpi`（`/usr/local/bin/ros-dpi` 是指向它的软链接）→ 创建 `/opt/ros-dpi/data` 数据目录（默认 SQLite，无需 MySQL）→ 注册并启动 systemd 服务。完成后浏览器打开 `http://<本机IP>:8080`。
 
 - **升级不用登录服务器**：有新版本时 系统设置 → 版本更新 会出现提示，点「一键更新」自动下载、替换二进制并重启服务。
-- 支持 x86_64 与 aarch64。想用 MySQL：设 `DATABASE_URL` 环境变量后 `systemctl restart ros-dpi`。
-- 服务以 root 运行（一键自更新需要写 `/usr/local/bin` 与 systemctl 权限）。
-- 常用变量（`/etc/systemd/system/ros-dpi.service`）：`HTTP_PORT`、`DATA_DIR`、`DATABASE_URL`。
+- 支持 x86_64 与 aarch64。想用 MySQL：在 `/etc/ros-dpi.env` 里设 `DATABASE_URL` 后 `sudo systemctl restart ros-dpi`。
+- 服务以专用账号 `ros-dpi` 运行（不是 root），只能写安装目录下的 `bin/` 和 `data/`；一键更新换掉 `bin/` 里的二进制后由 systemd 自动拉起新版本。0.6.23 及以前装的是 root 服务，重新执行一次上面的安装命令即可迁移（数据和 `/etc/ros-dpi.env` 原样保留）。
+- 自定义配置写在 `/etc/ros-dpi.env`（`DATABASE_URL`、`ADMIN_PASSWORD`、`LAN_CIDRS` 等），重装 / 升级不会覆盖；端口用安装时的 `ROS_DPI_PORT` 设置。
 
 ### 方式二：Docker Compose
 

@@ -2,7 +2,9 @@
 
 - 只对 PyInstaller 打包的二进制部署生效（sys.frozen）；Docker 部署请用 docker compose pull。
 - 替换用 os.replace（rename 是原子元数据操作，正在运行的二进制可以被 rename 覆盖，不会 ETXTBSY），
-  然后 spawn 一个脱离会话的 shell 延迟 systemctl restart——服务重启即换新版本，全程不需要登录 Linux。
+  然后重启服务换上新版本，全程不需要登录 Linux：
+  0.6.24 起 install.sh 以专用用户 ros-dpi 运行服务，二进制放在 <安装目录>/bin（该用户可写），
+  重启靠进程自己退出、由 systemd 的 Restart=always 拉起；旧版装出来的 root 服务仍用 systemctl restart。
 - 完整性：先下载 Release 里的 SHA256SUMS，tar 包哈希对不上（或 Release 没有 SHA256SUMS）一律拒绝更新。
 - 替换前把旧二进制留成 <binary>.bak，新版本起不来时可以手工 mv 回去。
 """
@@ -10,6 +12,7 @@ import hashlib
 import os
 import platform
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
@@ -106,7 +109,12 @@ def _parse_sums(text: str) -> dict[str, str]:
 
 
 def _restart():
-    subprocess.Popen(["sh", "-c", "sleep 2; systemctl restart ros-dpi"], start_new_session=True)
+    if os.geteuid() == 0:
+        subprocess.Popen(["sh", "-c", "sleep 2; systemctl restart ros-dpi"], start_new_session=True)
+        return
+    # 非 root 没有 systemctl 权限：2 秒后（先让这次请求的响应发出去）给自己发 SIGTERM，
+    # 正常走关闭流程（落库），退出后 systemd 按 Restart=always 用新二进制拉起
+    threading.Timer(2.0, os.kill, (os.getpid(), signal.SIGTERM)).start()
 
 
 def perform(current: str) -> dict:
@@ -151,6 +159,8 @@ def _perform(current: str) -> dict:
 
     exe = _exe()
     d = os.path.dirname(exe)
+    if not os.access(d, os.W_OK):
+        raise RuntimeError(f"服务账号没有 {d} 的写权限，无法替换二进制：请重新执行一键安装命令（会把二进制迁到安装目录下）后再更新")
     # 临时文件放在二进制同目录：保证 os.replace 是同一文件系统内的原子 rename；名字唯一，互不覆盖
     tmps = []
 
@@ -191,9 +201,9 @@ def _perform(current: str) -> dict:
                     os.remove(p)
             except OSError:
                 pass
-    rollback = f"旧版本已备份为 {bak}，新版本起不来时可手工 mv 回去再 systemctl restart ros-dpi"
+    rollback = f"旧版本已备份为 {bak}，新版本起不来时可手工 mv 回去再 sudo systemctl restart ros-dpi"
     try:
         _restart()
     except OSError as e:   # 二进制已经换好，只是没能自动重启：提示手工重启，不当作失败
-        return {"ok": True, "message": f"已更新到 {latest}，但自动重启失败（{e}），请手工 systemctl restart ros-dpi。{rollback}"}
+        return {"ok": True, "message": f"已更新到 {latest}，但自动重启失败（{e}），请手工 sudo systemctl restart ros-dpi。{rollback}"}
     return {"ok": True, "message": f"已更新到 {latest}，服务正在自动重启（约 5 秒）。{rollback}"}
