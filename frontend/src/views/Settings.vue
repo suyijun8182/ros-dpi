@@ -161,6 +161,21 @@
               <span class="err" v-if="sys.adguard.error">{{ sys.adguard.error }}</span>
             </div>
           </div>
+          <div class="src-box">
+            <div class="sec">{{ t('sources.shareTitle') }}<span class="sp" />
+              <span v-if="s.share_hub" class="pill ok">{{ t('sources.shareHubOn') }}</span>
+              <span v-else class="pill grey">{{ t('sources.off') }}</span></div>
+            <p class="faint small">{{ t('sources.shareWhy') }}</p>
+            <label class="chk" style="display:flex;gap:6px;align-items:center;cursor:pointer">
+              <input type="checkbox" :checked="s.share_enabled" @change="src.share_enabled = $event.target.checked" /> {{ t('sources.shareEnabled') }}
+            </label>
+            <label for="share-url">{{ t('sources.shareUrl') }}</label>
+            <input id="share-url" class="input addr" v-model.trim="src.share_url" placeholder="https://share.example.com" autocomplete="off" />
+            <label class="chk" style="display:flex;gap:6px;align-items:center;cursor:pointer;margin-top:8px">
+              <input id="share-hub" type="checkbox" :checked="s.share_hub" @change="src.share_hub = $event.target.checked" /> {{ t('sources.shareHub') }}
+            </label>
+            <div class="faint small">{{ t('sources.shareHint') }}</div>
+          </div>
           <div class="acts">
             <span class="err" v-if="srcErr">{{ srcErr }}</span><span class="sp" />
             <button type="button" class="btn" @click="testSources" :disabled="testing">{{ testing ? t('setup.testing') : t('settings.test') }}</button>
@@ -282,21 +297,23 @@ onMounted(async () => {
 })
 
 // ---------- 外部数据源 ----------
-const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '' })
+const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '', share_url: '', share_enabled: true, share_hub: false })
 const srcErr = ref('')
 const srcSaved = ref(false)
 const testing = ref(false)
 function fillSources() {
   const i = s.value.integrations
   Object.assign(src, { singbox_url: i.singbox_url, singbox_secret: '', proxy_ips: i.proxy_ips, mosdns_url: i.mosdns_url,
-                       adguard_url: i.adguard_url, adguard_username: i.adguard_username, adguard_password: '' })
+                       adguard_url: i.adguard_url, adguard_username: i.adguard_username, adguard_password: '',
+                       share_url: i.share_url, share_enabled: !!s.value.share_enabled, share_hub: !!s.value.share_hub })
 }
 async function saveSources() {
   srcErr.value = ''
   try {
     // 密钥留空表示不修改；要清除用“清除密钥/密码”按钮
     const body = { singbox_url: src.singbox_url, proxy_ips: src.proxy_ips, mosdns_url: src.mosdns_url,
-                   adguard_url: src.adguard_url, adguard_username: src.adguard_username }
+                   adguard_url: src.adguard_url, adguard_username: src.adguard_username,
+                   share_url: src.share_url, share_enabled: !!src.share_enabled, share_hub: !!src.share_hub }
     if (src.singbox_secret) body.singbox_secret = src.singbox_secret
     if (src.adguard_password) body.adguard_password = src.adguard_password
     s.value = await http.put('/settings', body)

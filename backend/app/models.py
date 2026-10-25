@@ -213,3 +213,23 @@ class PersonDevice(Base):
     __tablename__ = "person_devices"
     host = Column(String(64), primary_key=True)
     person_id = Column(Integer, nullable=False, index=True)
+
+
+class ShareEntry(Base):
+    """社区共享库（debug16）：各部署实例上报的「远端 IP → 应用」匿名投票。
+    中转实例聚合：至少 2 个不同实例都见过的映射才对外发布。不含本机终端、域名记录与自定义应用。"""
+    __tablename__ = "share_entries"
+    ip = Column(String(45), primary_key=True)
+    app = Column(String(48), primary_key=True)
+    reporter = Column(String(36), primary_key=True)   # 上报实例的匿名 ID（随机 UUID）
+    bytes = Column(BigInteger, nullable=False, default=0)
+    ts = Column(BigInteger, nullable=False)           # 最近一次上报时间（过期清理用）
+
+
+class ShareDeployment(Base):
+    """社区部署心跳（debug16）：实例每小时上报一次存在，中转聚合出 全球已部署 / 在线 / 离线。只含版本号，无任何网络数据"""
+    __tablename__ = "share_deployments"
+    instance = Column(String(36), primary_key=True)
+    version = Column(String(16))
+    first_seen = Column(BigInteger, nullable=False)
+    last_seen = Column(BigInteger, nullable=False)

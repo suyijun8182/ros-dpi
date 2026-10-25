@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     adguard_url: str = ""        # 自有 DNS 服务器 AdGuard Home 的地址，如 http://192.168.9.2:3000（双层 NAT 时爱快下游的 DNS）
     adguard_username: str = ""   # AdGuard Home 登录用户名；和密码都留空表示免认证（只在内网监听时）
     adguard_password: str = ""
+    share_enabled: bool = True   # 共享识别库总开关（debug16 第 3 条，默认打开）：关掉后不心跳、不上报、不拉取
+    share_url: str = ""          # 社区共享库的中转地址（debug16）：上报本网络实测、拉取社区库；留空不参与
+    share_hub: bool = False      # 本实例作为共享中转（需要公网可达）：接收其它部署的上报并发布聚合库
+    share_token: str = ""        # 中转的上报令牌（可选，环境变量 SHARE_TOKEN）：设置了就要求上报带 X-Share-Token
     oui_db: bool = True          # 自动下载 IEEE 的 MAC 厂商库（OUI，识别终端类型用，每 30 天更新）
     asn_db: bool = True          # 自动下载 iptoasn 的 IP→ASN 库（公有领域，每天更新）
     china_db: bool = True        # 自动下载国内域名列表（dnsmasq-china-list）与国内 IP 段（每天更新）
