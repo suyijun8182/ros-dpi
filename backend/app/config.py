@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     ros_user: str = ""
     ros_password: str = ""
     ros_verify_tls: bool = False
+    # 采集端口（IPFIX / TZSP）只收这些地址发来的包，逗号分隔的 IP / 网段，一般填路由器地址；留空不限制
+    collector_allowed: str = ""
     ros_poll_seconds: int = 30
     ros_rate_seconds: int = 5  # WAN 口速率采样间隔（实时流量图），只读一次接口计数
 

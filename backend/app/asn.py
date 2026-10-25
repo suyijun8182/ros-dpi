@@ -66,6 +66,7 @@ class AsnDb:
             self._v4, self._v6, self.names, self.rows = v4, v6, names, n
             self.updated = int(os.path.getmtime(path))
             self._cache = {}
+            self.version = getattr(self, "version", 0) + 1   # 分类结果缓存按它失效（加载前缓存的都是没有 ASN 的结论）
         return True
 
     def lookup(self, ip: str) -> tuple[int, str, str] | None:

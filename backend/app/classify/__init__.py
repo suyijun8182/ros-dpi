@@ -182,7 +182,8 @@ class Classifier:
         from app.classify.lists import lists as extra_lists
         from app.classify.local import local
         from app.classify.sources import sources as extra
-        ver = (extra_lists.version, extra.version, local.version)
+        from app.asn import asndb
+        ver = (extra_lists.version, extra.version, local.version, getattr(asndb, "version", 0))
         if ver != self._ver:   # 第三方库 / 本地自学习库重新加载过：之前的结果作废
             self._cache.clear()
             self._ver = ver
@@ -248,7 +249,7 @@ class Classifier:
         """按名字找应用：sing-box 的规则集名（Telegram0、geosite-netflix）或策略组名（✈️ Telegram）。
         去掉表情符号、前缀和末尾序号后，与应用的 id / 中英文名精确比较"""
         idx = getattr(self, "_label_idx", None)
-        if idx is None or idx[0] is not self.apps:
+        if idx is None or idx[0] is not self.apps or idx[2] != len(self.apps):   # 自动登记的新应用是原地加进来的
             m = {}
             for a in self.apps.values():
                 if a.id in GENERIC_APPS or a.category == "unknown":
@@ -257,7 +258,7 @@ class Classifier:
                     k = _norm_label(v)
                     if len(k) >= 2:
                         m.setdefault(k, a.id)
-            idx = self._label_idx = (self.apps, m)
+            idx = self._label_idx = (self.apps, m, len(self.apps))
         return idx[1].get(_norm_label(label))
 
     def app_info(self, app_id: str) -> App:

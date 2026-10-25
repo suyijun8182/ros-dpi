@@ -3,6 +3,7 @@
 DNS TTL 往往只有几十秒，但连接会持续很久，所以保留时间取 max(TTL, MIN_KEEP)。
 同一个 CDN IP 可能对应多个域名，这里保留最近一次的结果。
 """
+import threading
 import time
 from collections import OrderedDict
 
@@ -11,25 +12,51 @@ MAX_KEEP = 48 * 3600
 MAX_ENTRIES = 300_000
 
 
+
+# 只认这个链里能说明应用身份的 CNAME：x.unknown.com → api.vendor.com → e1.akamaiedge.net 时，
+# 最后一跳是 CDN，中间的 api.vendor.com 才认得出是谁。由引擎设置（分类器的 match_domain）
+cname_matcher = None
+
+
+def pick_cname(cnames: list[str]) -> str | None:
+    """CNAME 链里第一个能被识别规则认出的名字；都认不出时用最后一跳（CDN 名字也能归到 CDN 类）"""
+    if not cnames:
+        return None
+    m = cname_matcher
+    if m is not None:
+        for c in cnames:
+            try:
+                if m(c):
+                    return c
+            except Exception:  # noqa: BLE001
+                break
+    return cnames[-1]
+
 class DnsMap:
     def __init__(self, max_entries: int = MAX_ENTRIES):
         self._d: OrderedDict[str, tuple[str, str | None, int]] = OrderedDict()
+        # 写入方有事件循环线程（嗅探）和调度线程（MosDNS / AdGuard），遍历方有 API 线程池和清理任务：
+        # 不加锁时遍历中途被插入会抛 “OrderedDict mutated during iteration”
+        self._lock = threading.Lock()
         self.max_entries = max_entries
         self.answers = 0
         self.dirty: dict[str, tuple[str, str | None, int]] = {}
 
     def add(self, qname: str, ips: list[tuple[str, int]], cnames: list[str], now: float | None = None):
         now = int(now or time.time())
-        cname = cnames[-1] if cnames else None
-        self.answers += 1
-        for ip, ttl in ips:
-            exp = now + min(max(ttl, MIN_KEEP), MAX_KEEP)
-            val = (qname, cname, exp)
-            self._d[ip] = val
-            self._d.move_to_end(ip)
-            self.dirty[ip] = val
-        while len(self._d) > self.max_entries:
-            self._d.popitem(last=False)
+        if not qname or len(qname) > 253:
+            return
+        cname = pick_cname(cnames)
+        with self._lock:
+            self.answers += 1
+            for ip, ttl in ips:
+                exp = now + min(max(ttl, MIN_KEEP), MAX_KEEP)
+                val = (qname, cname, exp)
+                self._d[ip] = val
+                self._d.move_to_end(ip)
+                self.dirty[ip] = val
+            while len(self._d) > self.max_entries:
+                self._d.popitem(last=False)
 
     def lookup(self, ip: str) -> tuple[str, str | None] | None:
         # 过期条目也照常返回（比没有强），由 purge 定期清理
@@ -38,21 +65,26 @@ class DnsMap:
 
     def name_index(self) -> dict[str, str]:
         """域名 -> 最近解析到的一个 IP（访问目标排行给域名查国家用）"""
-        return {v[0]: ip for ip, v in self._d.items()}
+        with self._lock:
+            items = list(self._d.items())
+        return {v[0]: ip for ip, v in items}
 
     def load(self, rows):
-        for ip, name, cname, exp in rows:
-            self._d[ip] = (name, cname, exp)
+        with self._lock:
+            for ip, name, cname, exp in rows:
+                self._d[ip] = (name, cname, exp)
 
     def purge(self, now: float | None = None) -> int:
         now = now or time.time()
-        dead = [ip for ip, v in self._d.items() if v[2] < now]
-        for ip in dead:
-            del self._d[ip]
+        with self._lock:
+            dead = [ip for ip, v in self._d.items() if v[2] < now]
+            for ip in dead:
+                del self._d[ip]
         return len(dead)
 
     def take_dirty(self) -> dict:
-        d, self.dirty = self.dirty, {}
+        with self._lock:
+            d, self.dirty = self.dirty, {}
         return d
 
     def __len__(self):
@@ -88,6 +120,10 @@ class ConnNames:
         now = int(now or time.time())
         self._put(self.conn, (client, cport, server), (name, None, now), self.max_conn)
         self._put(self.pair, (client, server), (name, None, now), self.max_pair)
+
+    def add_conn_only(self, client: str, cport: int, server: str, name: str, now: float | None = None):
+        now = int(now or time.time())
+        self._put(self.conn, (client, cport, server), (name, None, now), self.max_conn)
 
     def add_pair(self, client: str, server: str, name: str, cname: str | None, now: float | None = None):
         now = int(now or time.time())
