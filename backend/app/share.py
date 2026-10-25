@@ -17,7 +17,8 @@ from collections import defaultdict
 
 from sqlalchemy import delete, func, select
 
-from app.models import HostDomainDay, ShareDeployment, ShareEntry
+from app.classify.local import _is_ip, _v6key
+from app.models import HostDomainDay, ShareDeployment, ShareDomain, ShareEntry
 
 MAX_UPLOAD = 50_000          # 单次上报的条数上限
 MAX_REPORTER = 100_000       # 中转上每个实例最多保留的条数
@@ -59,7 +60,6 @@ def export_entries(engine, db) -> list[dict]:
     """把本地自学习库整理成可上报的条目：host_domain_day 里以 IP 记录的行，按字节数取最多的应用。
     IPv4 按精确地址共享；IPv6 按 /64 前缀共享（精确地址在不同实例间几乎不重复，凑不满投票）"""
     classifier = engine.classifier
-    from app.classify.local import _v6key
     votes: dict = defaultdict(dict)
     rows = db.execute(select(HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)).all()
     for dom, app, b in rows:
@@ -71,10 +71,27 @@ def export_entries(engine, db) -> list[dict]:
     out = [{"ip": ip, "app": max(per, key=per.get), "bytes": sum(per.values())}
            for ip, per in votes.items()]
     out.sort(key=lambda x: -x["bytes"])
+    doms = export_domains(engine, db)
+    return out[:MAX_UPLOAD], doms
+
+
+def export_domains(engine, db) -> list[dict]:
+    """域名学习（debug17）：host_domain_day 里非 IP 的域名行，按字节数取最多的应用，精确域名共享"""
+    classifier = engine.classifier
+    votes: dict = defaultdict(dict)
+    rows = db.execute(select(HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)).all()
+    for dom, app, b in rows:
+        if _is_ip(dom) or not _is_shareable_app(classifier, app):
+            continue
+        per = votes[dom]
+        per[app] = per.get(app, 0) + int(b or 0)
+    out = [{"domain": d, "app": max(p, key=p.get), "bytes": sum(p.values())}
+           for d, p in votes.items()]
+    out.sort(key=lambda x: -x["bytes"])
     return out[:MAX_UPLOAD]
 
 
-def collect(db, reporter: str, entries: list[dict]) -> int:
+def collect(db, reporter: str, entries: list[dict], domains: list[dict] | None = None) -> int:
     """中转：记录一次上报（调用方提交事务）。返回接受的条数"""
     now = int(time.time())
     accepted = 0
@@ -93,8 +110,20 @@ def collect(db, reporter: str, entries: list[dict]) -> int:
             row.bytes = max(row.bytes, b)
             row.ts = now
         accepted += 1
+    for e in (domains or [])[:MAX_UPLOAD]:
+        dom, app = str(e.get("domain", "")).lower().rstrip("."), str(e.get("app", ""))
+        if not dom or "/" in dom or len(dom) > 255 or len(app) > 48 or app == "other":
+            continue
+        row = db.get(ShareDomain, {"domain": dom, "app": app, "reporter": reporter})
+        if row is None:
+            db.add(ShareDomain(domain=dom, app=app, reporter=reporter, bytes=max(int(e.get("bytes", 0) or 0), 0), ts=now))
+        else:
+            row.bytes = max(row.bytes, int(e.get("bytes", 0) or 0))
+            row.ts = now
+        accepted += 1
     # 清理：30 天没再出现、或单个实例超出上限的旧条目
     db.execute(delete(ShareEntry).where(ShareEntry.reporter == reporter, ShareEntry.ts < now - ENTRY_TTL))
+    db.execute(delete(ShareDomain).where(ShareDomain.reporter == reporter, ShareDomain.ts < now - ENTRY_TTL))
     n = db.scalar(select(func.count()).select_from(ShareEntry).where(ShareEntry.reporter == reporter))
     if n and n > MAX_REPORTER:
         old = db.execute(select(ShareEntry.ip, ShareEntry.app).where(ShareEntry.reporter == reporter)
@@ -115,7 +144,14 @@ def published_library(db) -> dict:
             per_ip[ip].append((int(_b or 0), app))
     entries = [{"ip": ip, "app": max(v)[1]} for ip, v in per_ip.items()]
     entries.sort(key=lambda x: x["ip"])
-    return {"version": 1, "generated": int(time.time()), "entries": entries}
+    drows = db.execute(select(ShareDomain.domain, ShareDomain.app,
+                              func.count(func.distinct(ShareDomain.reporter))).group_by(ShareDomain.domain, ShareDomain.app)).all()
+    per_dom: dict = defaultdict(list)
+    for dom, app, reporters in drows:
+        if reporters >= PUBLISH_REPORTERS:
+            per_dom[dom].append(app)
+    doms = [{"domain": d, "app": apps[0]} for d, apps in sorted(per_dom.items())]
+    return {"version": 1, "generated": int(time.time()), "entries": entries, "domains": doms}
 
 
 def heartbeat(db, instance: str, version: str) -> None:
@@ -156,10 +192,10 @@ def client_cycle(engine, db, url: str, token: str = "") -> dict:
                    headers=headers, timeout=15.0)
     except Exception:  # noqa: BLE001  心跳失败不影响库同步
         pass
-    entries = export_entries(engine, db)
+    entries, domains = export_entries(engine, db)
     uploaded = 0
     try:
-        r = httpx.post(base + "/api/share/collect", json={"instance": iid, "entries": entries},
+        r = httpx.post(base + "/api/share/collect", json={"instance": iid, "entries": entries, "domains": domains},
                        headers=headers, timeout=30.0)
         r.raise_for_status()
         uploaded = int(r.json().get("accepted", 0))
@@ -186,5 +222,12 @@ def merge_community(db, data: dict) -> int:
         if ip in known or not _shareable_ip(ip[:-3] if ip.endswith("/64") else ip) or len(app) > 48:
             continue
         community[ip] = app
-    local.load_community(community)
-    return len(community)
+    known_d = set(local.domains)
+    community_domains = {}
+    for e in (data or {}).get("domains") or []:
+        dom, app = str(e.get("domain", "")).lower().rstrip("."), str(e.get("app", ""))
+        if dom in known_d or not dom or "/" in dom or len(dom) > 255 or len(app) > 48:
+            continue
+        community_domains[dom] = app
+    local.load_community(community, community_domains)
+    return len(community) + len(community_domains)
