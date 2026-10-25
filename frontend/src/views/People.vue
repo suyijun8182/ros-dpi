@@ -70,7 +70,7 @@
                 <td class="m-hide addr faint small">{{ h.ip }}<br />{{ h.mac || '' }}</td>
                 <td class="m-hide small">{{ t('dev.' + (h.dtype || 'unknown')) }}<span class="faint" v-if="h.vendor"> · {{ h.vendor }}</span></td>
                 <td class="r num">{{ bytes(h.today.total) }}</td>
-                <td><select class="input sel" :aria-label="L('assignTo')" @change="bind(h.key, $event.target.value)">
+                <td><select class="input sel" :aria-label="L('assignTo')" @change="bind(h.key, $event.target)">
                   <option value="">—</option>
                   <option v-for="p in d.people" :key="p.id" :value="p.id">{{ p.name }}</option>
                 </select></td>
@@ -258,10 +258,13 @@ const shown = computed(() => {
   return (d.value ? d.value.people : []).filter(p => (!dept.value || (dept.value === -1 ? !known(p.dept_id) : p.dept_id === dept.value))
     && (!s || p.name.toLowerCase().includes(s) || p.devices.some(h => (h.name + ' ' + (h.ip || '')).toLowerCase().includes(s))))
 })
-async function bind(host, pid) {
-  if (!pid) return
-  await http.put('/devices/bind', { host, person_id: +pid })
-  await load()
+async function bind(host, el) {
+  if (!el.value) return
+  try {
+    await http.put('/devices/bind', { host, person_id: +el.value })
+    err.value = ''
+    await load()
+  } catch (e) { el.value = ''; err.value = e.message }   // 失败时下拉框退回“—”
 }
 
 // ---------- 编辑人员 ----------
@@ -272,7 +275,10 @@ const allHosts = ref([])
 async function edit(p) {
   formErr.value = ''
   hq.value = ''
-  if (!allHosts.value.length) allHosts.value = await http.get('/hosts')
+  // 设备列表取不到时不打开弹窗（弹窗里的报错位置还没出现），错误显示在页面顶部
+  if (!allHosts.value.length) {
+    try { allHosts.value = await http.get('/hosts') } catch (e) { err.value = e.message; return }
+  }
   form.value = p ? { id: p.id, name: p.name, dept_id: p.dept_id, note: p.note || '', hosts: p.devices.map(h => h.key) }
     : { id: null, name: '', dept_id: dept.value > 0 ? dept.value : (d.value.departments.length === 1 ? d.value.departments[0].id : null), note: '', hosts: [] }
   quickDept.value = ''

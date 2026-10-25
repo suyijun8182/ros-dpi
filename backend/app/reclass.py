@@ -57,12 +57,12 @@ def _retryable(e: Exception) -> bool:
     return "(1213" in s or "(1205" in s or "(1062" in s
 
 
-def reclassify(engine, db, before: int | None = None, attempts: int = 3) -> dict:
-    """重算 before（默认今天零点）以前的历史分类"""
+def reclassify(engine, db, before: int | None = None, attempts: int = 3, since: int | None = None) -> dict:
+    """重算 before（默认今天零点）以前的历史分类；给了 since 时只算 [since, before)（过了零点只需补算新的一天）"""
     with _reclass_lock:
         for i in range(attempts):
             try:
-                return _reclassify_once(engine, db, before)
+                return _reclassify_once(engine, db, before, since)
             except (OperationalError, IntegrityError) as e:
                 db.rollback()
                 if i == attempts - 1 or not _retryable(e):
@@ -93,17 +93,17 @@ def _new_app(classifier, dom: str, old_app: str, cache: dict) -> str | None:
     return new_app if qname and classifier.match_domain(qname) == new_app else None
 
 
-def _reclassify_once(engine, db, before: int | None) -> dict:
+def _reclassify_once(engine, db, before: int | None, since: int | None = None) -> dict:
     t0 = time.time()
     classifier = engine.classifier
     before = timeutil.day_bucket(time.time()) if before is None else before
     cache = _dns_domain_map(db)
     moves: dict = defaultdict(lambda: defaultdict(int))  # (ts, host, 旧应用) -> {新应用: 字节}
     marks: list[dict] = []
-    rows = db.execute(
-        select(HostDomainDay.ts, HostDomainDay.host, HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)
-        .where(HostDomainDay.ts < before)
-    ).all()
+    q = select(HostDomainDay.ts, HostDomainDay.host, HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)         .where(HostDomainDay.ts < before)
+    if since is not None:
+        q = q.where(HostDomainDay.ts >= since)
+    rows = db.execute(q).all()
     for ts, host, dom, old_app, b in rows:
         if not b:
             continue
@@ -127,14 +127,17 @@ def _reclassify_once(engine, db, before: int | None) -> dict:
         ratio_up = src.up / total_old
         flows_per_byte = (src.flows or 0) / total_old
         remain = total_old
+        # 按剩余量分配：各目标分别四舍五入后加起来可能超过源行，扣成负数（全站审计）
+        up_left, down_left, flows_left = src.up, src.down, src.flows or 0
         for new_app, b in tgts.items():
             mv = min(b, remain)
             if mv <= 0:
                 break
             remain -= mv
-            up = round(mv * ratio_up)
-            down = mv - up
-            flows = min(round(mv * flows_per_byte), src.flows)
+            up = min(round(mv * ratio_up), up_left)
+            down = min(mv - up, down_left)
+            flows = min(round(mv * flows_per_byte), flows_left)
+            up_left, down_left, flows_left = up_left - up, down_left - down, flows_left - flows
             d = dsts[(ts, host, new_app)]
             d[0] += up
             d[1] += down
@@ -150,9 +153,6 @@ def _reclassify_once(engine, db, before: int | None) -> dict:
         upsert_add(db, TrafficDay.__table__,
                    [{"ts": key[0], "host": key[1], "app": key[2], "up": -up, "down": -down, "flows": -flows}],
                    ["ts", "host", "app"], ["up", "down", "flows"])
-        src = db.get(TrafficDay, {"ts": key[0], "host": key[1], "app": key[2]})
-        if src is not None and (src.up < 0 or src.down < 0 or src.flows < 0):
-            src.up, src.down, src.flows = max(src.up, 0), max(src.down, 0), max(src.flows, 0)
     for key, (up, down, flows) in dsts.items():
         # upsert：落库任务 / 并发的重算可能刚写入了同一行（0.6.7 及以前用 db.get + add，撞主键整笔回滚）
         upsert_add(db, TrafficDay.__table__,
@@ -162,15 +162,20 @@ def _reclassify_once(engine, db, before: int | None) -> dict:
             "flows_moved": sum(v[2] for v in dsts.values()), "seconds": round(time.time() - t0, 1)}
 
 
-def fingerprint(engine, db) -> str:
-    """识别规则的有效指纹：任何一层库变了（v2fly 提交、第三方库规模、ASN 行数）或过了零点（昨天成了可重算的历史，
-    期间积累的 DNS 映射也一并用上）都不一样。不再用 DNS 缓存行数：它几乎时刻在变，等于每次都全量重算"""
+def lib_fingerprint(engine) -> str:
+    """识别库本身的指纹（不含日期）：变了要全量重算；只是过了零点则只补算新的一天"""
     from app.asn import asndb
     from app.classify.lists import lists as extra_lists
     from app.classify.updater import updater
     libs = "|".join(f"{r['id']}:{r.get('domains', r.get('rules', 0))}" for r in extra_lists.rows())
-    return "|".join([f"day{timeutil.day_bucket(time.time())}", f"asn{asndb.rows}",
-                     f"v2{updater.state.get('latest') or ''}", f"apps{len(engine.classifier.apps)}", libs])
+    return "|".join([f"asn{asndb.rows}", f"v2{updater.state.get('latest') or ''}",
+                     f"apps{len(engine.classifier.apps)}", libs])
+
+
+def fingerprint(engine, db) -> str:
+    """识别规则的有效指纹：任何一层库变了（v2fly 提交、第三方库规模、ASN 行数）或过了零点（昨天成了可重算的历史，
+    期间积累的 DNS 映射也一并用上）都不一样。不再用 DNS 缓存行数：它几乎时刻在变，等于每次都全量重算"""
+    return f"day{timeutil.day_bucket(time.time())}|" + lib_fingerprint(engine)
 
 
 def auto_reclassify(engine, db) -> dict | None:
@@ -179,7 +184,15 @@ def auto_reclassify(engine, db) -> dict | None:
     row = db.get(Setting, FP_KEY)
     if row is not None and row.value == fp:
         return None
-    res = reclassify(engine, db)
+    # 识别库没变、只是过了零点：只补算上次之后新变成“历史”的那几天（以前每天都把 31 天全部重扫一遍，
+    # 几百万行逐行分类会抢住 GIL，UDP 收包跟着丢）
+    since = None
+    old = (row.value if row is not None else "") or ""
+    if old.startswith("day") and "|" in old:
+        old_day, _, old_libs = old.partition("|")
+        if old_libs == lib_fingerprint(engine) and old_day[3:].isdigit():
+            since = int(old_day[3:])
+    res = reclassify(engine, db, since=since)
     row = db.get(Setting, FP_KEY)
     if row is None:
         db.add(Setting(key=FP_KEY, value=fp))

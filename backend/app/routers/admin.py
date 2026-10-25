@@ -335,12 +335,15 @@ def system_update_status():
 
 @router.post("/system/update")
 def system_update_run(request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
-    """一键自更新（仅 Linux 二进制部署）：下载新版本 → 原子替换 → 自动重启服务"""
+    """一键自更新（仅 Linux 二进制部署）：下载新版本 → 校验 SHA256 → 备份旧版 → 原子替换 → 自动重启服务"""
     from app import selfupdate
     try:
         res = selfupdate.perform(__version__)
-    except RuntimeError as e:
-        raise HTTPException(400, str(e))
+    except selfupdate.Busy as e:
+        raise HTTPException(409, str(e))
+    except Exception as e:  # noqa: BLE001  perform 已把失败转成可读的 RuntimeError；兜底防 500
+        oplog.log(db, request, user, "self_update", {"error": str(e)[:200]}, ok=False)
+        raise HTTPException(400, str(e) if isinstance(e, RuntimeError) else f"{type(e).__name__}: {e}")
     oplog.log(db, request, user, "self_update", res)
     return res
 

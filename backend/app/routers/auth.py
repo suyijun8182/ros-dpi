@@ -79,7 +79,8 @@ def change_password(req: PwChange, request: Request, user: str = Depends(current
     u.token_version = (u.token_version or 0) + 1  # 其它设备上的旧 token 立即失效
     forget_roles()  # 角色缓存里存了旧的 token 版本，必须清掉才立即生效
     oplog.log(db, request, user, "change_password")
-    return {"ok": True}
+    # 返回新版本的 token：当前会话无缝续用，其它设备上的旧 token 照样失效
+    return {"ok": True, "token": make_token(user, u.token_version), "username": user, "role": u.role or "admin"}
 
 
 # ---------------- 用户管理（仅管理员） ----------------

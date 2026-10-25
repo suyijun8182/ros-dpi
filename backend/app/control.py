@@ -15,8 +15,16 @@ DAYS = {"1": "mon", "2": "tue", "3": "wed", "4": "thu", "5": "fri", "6": "sat", 
 MAX_DOMAINS = 40
 
 
+_CTRL = re.compile(r"[\x00-\x1f\x7f]")
+_DOMAIN = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$")
+_MAC = re.compile(r"^[0-9A-F]{2}(:[0-9A-F]{2}){5}$")
+
+
 def _q(s: str) -> str:
-    return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
+    """RouterOS 双引号字符串：设备名（DHCP 主机名，任何设备都能随便设）会进到这里，管理员粘贴执行时
+    "$[...]" 会被 RouterOS 当命令执行、换行会另起一条命令——所以去掉控制字符，并转义反斜杠、双引号和 $"""
+    s = _CTRL.sub("", str(s))
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$") + '"'
 
 
 def _time_parts(days: str, t_from: str, t_to: str) -> list[str]:
@@ -53,6 +61,8 @@ def app_domains(db, apps: list[str], groups: list[str]) -> list[str]:
         if not stats.is_ip(dom):
             seen[stats.base_domain(dom)] += int(b)
     lib = [d for d, a in list(cl.domains.items()) + list(cl.full.items()) if a in want]
+    # 域名来自 DNS 嗅探（内网设备可以伪造应答），不加引号拼进 tls-host=，只收规范的主机名
+    seen = {d: b for d, b in seen.items() if len(d) <= 253 and _DOMAIN.match(d)}
     out = sorted(seen, key=lambda d: -seen[d])
     for d in sorted(lib, key=len):
         if len(out) >= MAX_DOMAINS:
@@ -69,10 +79,11 @@ def build(db, targets: list[dict], action: str, apps: list[str], groups: list[st
     lines, undo, notes = [], [], []
     match = []
     for h in targets:
-        if h.get("mac"):
-            match.append((f"src-mac-address={h['mac']}", h))
-        elif h.get("ip"):
-            match.append((f"src-address={h['ip']}", h))
+        mac, ip = (h.get("mac") or "").upper(), h.get("ip") or ""
+        if mac and _MAC.match(mac):
+            match.append((f"src-mac-address={mac}", h))
+        elif ip and _is_ip(ip):
+            match.append((f"src-address={ip}", h))
     if not match:
         raise ValueError("所选设备都没有 MAC 或 IP，无法生成规则")
     times = _time_parts(days, t_from, t_to)
@@ -118,6 +129,15 @@ def build(db, targets: list[dict], action: str, apps: list[str], groups: list[st
         raise ValueError("未知的动作")
     return {"tag": tag, "script": "\n".join(lines), "undo": "\n".join(undo), "notes": notes,
             "targets": [h.get("name") for _m, h in match]}
+
+
+def _is_ip(s: str) -> bool:
+    import ipaddress
+    try:
+        ipaddress.ip_address(s)
+        return True
+    except ValueError:
+        return False
 
 
 def _rate(mbps: float) -> str:

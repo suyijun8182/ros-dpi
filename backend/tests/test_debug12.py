@@ -18,8 +18,10 @@ from packets import ipfix, tzsp_dns
 def login_fails_cleared():
     """限速状态是进程级内存，进出测试都要清干净，避免影响其它测试的登录。"""
     security._login_fails.clear()
+    security._user_fails.clear()
     yield
     security._login_fails.clear()
+    security._user_fails.clear()
 
 
 def _engine():
@@ -40,7 +42,7 @@ def test_flush_failure_keeps_data_for_retry(monkeypatch):
         raise RuntimeError("db down")
     monkeypatch.setattr(database, "session", boom)
     e.flush(now)
-    assert e._pending is not None and ("AA:00:00:00:00:10", "bilibili") in e._pending["buf"]
+    assert e._pending and ("AA:00:00:00:00:10", "bilibili") in e._pending[0]["buf"]
     monkeypatch.undo()
 
     e.flush(now + 60)
@@ -143,6 +145,7 @@ def test_login_rate_limit(login_fails_cleared):
         # 其它用户名不受影响
         assert c.post("/api/auth/login", json={"username": "admin", "password": "secret1"}).status_code == 200
         security._login_fails.clear()
+        security._user_fails.clear()
         assert c.post("/api/auth/login", json={"username": "lockme", "password": "lockpass1"}).status_code == 200
 
 
@@ -202,3 +205,56 @@ def test_backfill_base_and_startup_settings():
                     db.delete(row)
             db.commit()
         integrations.apply({})
+
+
+def test_flush_long_hostname_and_bad_rows(monkeypatch):
+    """全站审计 P0：DHCP 主机名超过 128 字符（MySQL 严格模式会拒绝整批）要截断；
+    数据本身有问题时逐段写入，其它段照常入库，不再整批重试 2 小时后丢掉"""
+    from sqlalchemy.exc import DataError
+
+    from app.models import Host, TrafficDay
+    e = _engine()
+    e.mac2name["AA:00:00:00:00:77"] = "x" * 300
+    e.on_ipfix(ipfix([dict(src="192.168.88.77", dst="5.5.5.6", sport=1, dport=443, proto=6, nbytes=500,
+                           mac="AA:00:00:00:00:77")]), "10.0.0.1")
+    orig = e._w_geo
+
+    def bad_geo(db, p):
+        raise DataError("INSERT", {}, Exception("1406 Data too long"))
+    monkeypatch.setattr(e, "_w_geo", bad_geo)
+    e.flush(time.time())
+    assert not e._pending                       # 坏的那段被丢弃，不再留着重试
+    with database.session() as db:
+        h = db.get(Host, "AA:00:00:00:00:77")
+        assert h is not None and len(h.hostname) == 128
+        assert db.query(TrafficDay).filter(TrafficDay.host == "AA:00:00:00:00:77").count() == 1
+    monkeypatch.setattr(e, "_w_geo", orig)
+
+
+def test_fit_truncates_by_column_length():
+    from app.models import AccessLog
+    rows = database.fit(AccessLog.__table__, [{"dest": "d" * 400, "host": "h"}])
+    assert len(rows[0]["dest"]) == 255 and rows[0]["host"] == "h"
+
+
+def test_login_lock_not_bypassed_by_forwarded_header():
+    """全站审计：换 X-Forwarded-For 不能绕过登录锁定；按用户名的总失败数也会锁"""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    security._login_fails.clear()
+    security._user_fails.clear()
+    with TestClient(app) as c:
+        codes = [c.post("/api/auth/login", json={"username": "nobody-x", "password": "bad"},
+                        headers={"X-Forwarded-For": f"1.2.3.{i}"}).status_code for i in range(8)]
+    assert codes[:5] == [401] * 5 and 429 in codes[5:]
+    security._login_fails.clear()
+    security._user_fails.clear()
+
+
+def test_control_script_escapes_hostname():
+    """全站审计：设备名进 RouterOS 脚本时去掉换行、转义 $，防止管理员粘贴执行时被注入命令"""
+    from app import control
+    q = control._q("pc$[/user add name=x group=full]\n/system reset")
+    assert "\n" not in q and "\$[" in q
+    assert not control._DOMAIN.match("c;/user add name=x")

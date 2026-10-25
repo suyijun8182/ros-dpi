@@ -7,10 +7,11 @@ on:
   pull_request:
   workflow_dispatch:
 
-# 连续 push / 连续 PR 更新时取消过期的构建（多架构镜像构建很慢）
+# 连续 PR 更新时取消过期的构建（多架构镜像构建很慢）；main / tag 不取消，
+# 否则发版 job 可能在上传资产途中被下一次 push 打断（同一 ref 仍然排队，只保留最新一次待运行）
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -57,7 +58,7 @@ jobs:
       - name: Frontend build (含 i18n 检查)
         working-directory: frontend
         run: |
-          npm ci || npm install
+          npm ci
           npm run build
 
   # PR 也构建一次镜像（单架构、不推送）：Dockerfile 破损在 PR 阶段就能发现，不用等到 push main
@@ -131,10 +132,13 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      # 版本号读自代码（backend/app/__init__.py）：主线提交也自动带版本标签，不用手工打 git 标签
+      # 版本号读自代码（backend/app/__init__.py）：主线提交也自动带版本标签（含 major.minor 浮动标签），不用手工打 git 标签
       - name: App version
         id: appver
-        run: echo "version=$(grep __version__ backend/app/__init__.py | grep -oE '[0-9]+[.][0-9]+[.][0-9]+' | head -1)" >> "$GITHUB_OUTPUT"
+        run: |
+          VER=$(grep __version__ backend/app/__init__.py | grep -oE '[0-9]+[.][0-9]+[.][0-9]+' | head -1)
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "minor=${VER%.*}" >> "$GITHUB_OUTPUT"
 
       - name: Image tags
         id: meta
@@ -144,6 +148,7 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=${{ steps.appver.outputs.version }}
+            type=raw,value=${{ steps.appver.outputs.minor }},enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
@@ -158,15 +163,21 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # Linux 单文件二进制（debug18）：与 Docker 并行的第二种部署形态，产物附加到 GitHub Release
+  # Linux 单文件二进制（debug18）：与 Docker 并行的第二种部署形态；amd64 / arm64 各用原生 runner 构建
+  # （PyInstaller 不能交叉编译）。这里只产出构建产物，发版由下面的 release job 统一处理
   linux-binary:
     needs: test
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      contents: read
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
@@ -178,7 +189,7 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: |
-          npm ci || npm install
+          npm ci
           npm run build
       - name: Build Linux binary
         run: |
@@ -186,16 +197,20 @@ jobs:
           pyinstaller ros-dpi.spec
           mkdir -p pkg
           install -m 755 dist/ros-dpi pkg/ros-dpi
-          tar -czf "ros-dpi-linux-amd64.tar.gz" -C pkg ros-dpi
+          tar -czf "ros-dpi-linux-${{ matrix.arch }}.tar.gz" -C pkg ros-dpi
       - uses: actions/upload-artifact@v4
         with:
-          name: ros-dpi-linux-amd64
-          path: ros-dpi-linux-amd64.tar.gz
-      - name: Attach to release
-        run: |
-          VER=$(grep __version__ backend/app/__init__.py | grep -oE '[0-9]+[.][0-9]+[.][0-9]+' | head -1)
-          gh release view "v${VER}" >/dev/null 2>&1 || gh release create "v${VER}" --title "v${VER}" --notes "ROS-DPI v${VER}"
-          gh release upload "v${VER}" "ros-dpi-linux-amd64.tar.gz" --clobber
+          name: ros-dpi-linux-${{ matrix.arch }}
+          path: ros-dpi-linux-${{ matrix.arch }}.tar.gz
+
+  # GitHub Release：测试通过、两个架构的二进制都就绪后才建（先草稿 → 上传 tar 包 + SHA256SUMS → 发布）
+  release:
+    needs: [test, linux-binary]
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
 
   # 把 DOCKERHUB.md 同步到 Docker Hub 的 Overview。独立 job：失败不影响镜像发布。
   # 用社区维护的 action（跟进 Docker Hub 认证接口变化），出错时原因会写进任务注释。

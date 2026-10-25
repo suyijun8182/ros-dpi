@@ -162,7 +162,9 @@ def windows(start: int, end: int, cfg: dict) -> tuple[list, list, list]:
 
 def load_rows(db, hosts: list[str] | None, start: int, end: int) -> list[tuple]:
     t = AccessLog
-    q = select(t.host, t.app, t.ts_start, t.ts_end, t.dest).where(t.ts_start < end, t.ts_end >= start)
+    from app.engine import VISIT_MAX_SPAN
+    q = select(t.host, t.app, t.ts_start, t.ts_end, t.dest).where(t.ts_start < end, t.ts_start >= start - VISIT_MAX_SPAN,
+                                                                  t.ts_end >= start)
     if hosts is not None:
         if not hosts:
             return []

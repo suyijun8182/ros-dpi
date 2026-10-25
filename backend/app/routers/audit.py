@@ -29,7 +29,8 @@ RANGES = "^(today|yesterday|week|month|last7|last30)$"
 
 def _log_query(start, end, host, q, app, group, person=None, dept=None):
     t = AccessLog
-    stmt = select(t).where(t.ts_start < end, t.ts_end >= start)
+    from app.engine import VISIT_MAX_SPAN
+    stmt = select(t).where(t.ts_start < end, t.ts_start >= start - VISIT_MAX_SPAN, t.ts_end >= start)
     hosts = people.scope_hosts(person, dept, host)
     if hosts is not None:
         stmt = stmt.where(t.host.in_(hosts))
@@ -105,7 +106,9 @@ def timeline(host: str | None = None, person: int | None = None, day: str | None
     d = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=tz) if day else datetime.now(tz)
     d0 = int(d.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
     d1 = timeutil.day_bucket(d0 + 86400 + 3600)
-    rows = db.scalars(select(AccessLog).where(AccessLog.host.in_(hosts), AccessLog.ts_start < d1, AccessLog.ts_end >= d0)
+    from app.engine import VISIT_MAX_SPAN
+    rows = db.scalars(select(AccessLog).where(AccessLog.host.in_(hosts), AccessLog.ts_start < d1,
+                                              AccessLog.ts_start >= d0 - VISIT_MAX_SPAN, AccessLog.ts_end >= d0)
                       .order_by(AccessLog.ts_start)).all()
     per: dict[str, dict] = {}
     spans = []
