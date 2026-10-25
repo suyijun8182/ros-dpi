@@ -157,7 +157,8 @@ def add_missing_columns():
                         print(f"[db] 已为 {table.name} 添加列 {col.name}", flush=True)
                     continue
                 length = getattr(col.type, "length", None)
-                db_len = have[col.name].get("length")
+                # 注意：inspector 的列字典没有 "length" 键，长度在反射出来的类型对象上
+                db_len = getattr(have[col.name].get("type"), "length", None)
                 if insp.dialect.name == "mysql" and length and db_len and length > int(db_len):
                     ctype = col.type.compile(dialect=engine.dialect)
                     conn.exec_driver_sql(f"ALTER TABLE `{table.name}` MODIFY `{col.name}` {ctype}")
