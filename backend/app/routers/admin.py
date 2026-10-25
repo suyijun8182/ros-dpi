@@ -330,6 +330,32 @@ def library(db: Session = Depends(get_db)):
     return _library(db)
 
 
+@router.get("/system/deployments")
+def system_deployments():
+    """全球部署量（debug16）：从中转拉取；本实例是中转时直接读本地"""
+    from app import share, selfupdate as _su  # noqa: F401
+    from app.classify.local import local  # noqa: F401
+    s = get_settings()
+    url = getattr(s, "share_url", "")
+    if database.is_configured():
+        try:
+            with database.session() as db:
+                from app.models import Setting
+                u_row = db.get(Setting, "share_url")
+                url = (u_row.value if u_row and u_row.value else url)
+                if share.sharing_on(db):
+                    hub = _get(db, "share_hub", "1" if s.share_hub else "0") == "1"
+                    if hub:
+                        return share.deployments(db)
+                if url:
+                    got = share.deployments_remote(url, s.share_token)
+                    if got:
+                        return got
+        except Exception:  # noqa: BLE001
+            pass
+    return {"total": 0, "online": 0, "offline": 0}
+
+
 @router.get("/system/update")
 def system_update_status():
     """Linux 二进制部署的版本检测（debug18）：当前版本 vs GitHub 最新 Release"""

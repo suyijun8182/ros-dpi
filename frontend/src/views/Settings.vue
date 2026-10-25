@@ -175,6 +175,12 @@
               <input id="share-hub" type="checkbox" :checked="s.share_hub" @change="src.share_hub = $event.target.checked" /> {{ t('sources.shareHub') }}
             </label>
             <div class="faint small">{{ t('sources.shareHint') }}</div>
+            <div class="small" style="margin-top:8px" v-if="deploys">
+              <b>{{ t('sources.deploys') }}</b>：{{ t('sources.deployed', { n: deploys.total }) }} ·
+              <span style="color:var(--up)">{{ t('sources.online', { n: deploys.online }) }}</span> ·
+              {{ t('sources.offline', { n: deploys.offline }) }}
+              <span class="faint small">（{{ t('sources.deployHint') }}）</span>
+            </div>
           </div>
           <div class="acts">
             <span class="err" v-if="srcErr">{{ srcErr }}</span><span class="sp" />
@@ -311,6 +317,7 @@ onMounted(async () => {
 
 // ---------- 外部数据源 ----------
 const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '', share_url: '', share_enabled: true, share_hub: false })
+const deploys = ref(null)
 const srcErr = ref('')
 const srcSaved = ref(false)
 const testing = ref(false)
@@ -350,7 +357,7 @@ async function testSources() {
   } catch (e) { srcErr.value = e.message } finally { testing.value = false }
 }
 
-watch(() => route.query.tab, v => { if (v === 'system' && isAdmin) loadUpdate() }, { immediate: true })
+watch(() => route.query.tab, v => { if (v === 'system' && isAdmin) { loadUpdate(); loadDeploys() } }, { immediate: true })
 
 async function save() {
   saveErr.value = ''
@@ -368,6 +375,9 @@ const updMsg = ref('')
 const updating = ref(false)
 async function loadUpdate() {
   try { upd.value = await http.get('/system/update') } catch (e) { upd.value = { supported: false, available: false } }
+}
+async function loadDeploys() {
+  try { deploys.value = await http.get('/system/deployments') } catch (e) { deploys.value = null }
 }
 async function doUpdate() {
   if (!confirm(t('upd.confirm'))) return
