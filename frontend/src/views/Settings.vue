@@ -186,7 +186,7 @@
               <b>{{ t('sources.communitySize') }}</b>：{{ t('sources.communityDetail', { ip: (deploys.sync.community_ips || 0).toLocaleString(), dom: (deploys.sync.community_domains || 0).toLocaleString() }) }}
               <span class="faint small">（{{ t('settings.last') }} {{ ago(deploys.sync.ts) }}）</span>
             </div>
-            <div class="small" style="margin-top:8px" v-if="deploys && (s.share_hub || deploys.total)">
+            <div class="small" style="margin-top:8px" v-if="deploys">
               <b>{{ t('sources.deploys') }}</b>：{{ t('sources.deployed', { n: deploys.total }) }} ·
               <span style="color:var(--up)">{{ t('sources.online', { n: deploys.online }) }}</span> ·
               {{ t('sources.offline', { n: deploys.offline }) }}
