@@ -173,6 +173,19 @@ def deployments(db, online_after: int = 7200) -> dict:
     return {"total": total, "online": online, "offline": total - online}
 
 
+def deployments_remote(url: str, token: str = "") -> dict | None:
+    """客户端：从中转拉取全球部署概况（中转的 /api/share/deployments 是公开端点）"""
+    import httpx
+    headers = {"X-Share-Token": token} if token else {}
+    try:
+        r = httpx.get(url.rstrip("/") + "/api/share/deployments", headers=headers, timeout=15.0)
+        r.raise_for_status()
+        d = r.json()
+        return {"total": d.get("total", 0), "online": d.get("online", 0), "offline": d.get("offline", 0)}
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def sharing_on(db) -> bool:
     """共享识别库的总开关（debug16 第 3 条）：默认打开；设置里可关闭（关闭后不心跳、不上报、不拉取）"""
     from app.models import Setting
