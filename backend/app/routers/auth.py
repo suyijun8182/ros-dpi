@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session
 
 from app import oplog
 from app.database import get_db
-from app.models import Setting, User
-from app.security import (check_login_lock, check_setup_code, current_user, forget_roles, make_token, note_login_fail, note_login_ok,
-                          pwd, require_admin, role_of)
+from app.models import ApiToken, Setting, User
+from app.security import (check_login_lock, check_setup_code, current_user, forget_api_tokens, forget_roles, make_token, new_api_token,
+                          note_login_fail, note_login_ok, pwd, require_admin, role_of)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -68,8 +68,8 @@ def login(req: Creds, request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/me")
-def me(user: str = Depends(current_user)):
-    return {"username": user, "role": role_of(user)}
+def me(request: Request, user: str = Depends(current_user)):
+    return {"username": user, "role": getattr(request.state, "role", None) or role_of(user)}
 
 
 @router.post("/password")
@@ -156,4 +156,42 @@ def delete_user(uid: int, request: Request, user: str = Depends(require_admin), 
     db.delete(u)
     oplog.log(db, request, user, "user_delete", {"username": name})
     forget_roles()
+    return {"ok": True}
+
+
+# ---------- 只读 API 令牌（0.6.25）：给 Home Assistant 等外部程序用，不过期，原文只在创建时显示一次 ----------
+class TokenIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+def _token_dict(t: ApiToken) -> dict:
+    return {"id": t.id, "name": t.name, "prefix": t.prefix, "created": t.created, "created_by": t.created_by, "last_used": t.last_used}
+
+
+@router.get("/tokens")
+def tokens(_: str = Depends(require_admin), db: Session = Depends(get_db)):
+    return [_token_dict(t) for t in db.query(ApiToken).order_by(ApiToken.id)]
+
+
+@router.post("/tokens")
+def add_token(req: TokenIn, request: Request, user: str = Depends(require_admin), db: Session = Depends(get_db)):
+    if db.query(ApiToken).count() >= 50:
+        raise HTTPException(400, "令牌最多 50 个，请先删掉不用的")
+    raw, h = new_api_token()
+    t = ApiToken(name=req.name.strip(), token_hash=h, prefix=raw[:10], created=int(time.time()), created_by=user)
+    db.add(t)
+    db.flush()
+    oplog.log(db, request, user, "api_token_add", {"name": t.name})
+    return {**_token_dict(t), "token": raw}
+
+
+@router.delete("/tokens/{tid}")
+def delete_token(tid: int, request: Request, user: str = Depends(require_admin), db: Session = Depends(get_db)):
+    t = db.get(ApiToken, tid)
+    if t is None:
+        raise HTTPException(404, "令牌不存在")
+    name = t.name
+    db.delete(t)
+    oplog.log(db, request, user, "api_token_delete", {"name": name})
+    forget_api_tokens()
     return {"ok": True}

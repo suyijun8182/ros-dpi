@@ -211,6 +211,7 @@
     </div>
 
     <UsersPanel v-if="tab === 'users'" />
+    <ApiTokensPanel v-if="tab === 'users'" class="tok-panel" />
     <CompliancePanel v-if="tab === 'compliance'" />
 
     <ScenePicker v-if="isAdmin && tab === 'system'" class="scene-pick" />
@@ -280,6 +281,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import http, { auth, isAdmin, setAuth } from '../api.js'
 import UsersPanel from '../components/UsersPanel.vue'
+import ApiTokensPanel from '../components/ApiTokensPanel.vue'
 import ScenePicker from '../components/ScenePicker.vue'
 import CompliancePanel from '../components/CompliancePanel.vue'
 import { ago, bytes, datetime, pct } from '../format.js'
@@ -529,6 +531,7 @@ async function copy() {
 
 <style scoped>
 .scene-pick { margin-bottom: 16px; }
+.tok-panel { margin-top: 16px; }
 .mt { margin-top: 14px; }
 .small { font-size: 12.5px; }
 .stc { display: flex; flex-direction: column; gap: 6px; font-size: 13px; min-width: 0; }

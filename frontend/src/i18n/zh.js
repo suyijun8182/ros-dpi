@@ -239,6 +239,12 @@ export default {
     resetPw: '重置密码', resetPwHint: '留空表示不修改', nameRule: "字母、数字和 _ . {'@'} -",
     delTitle: '删除用户', delText: '确定删除用户 {name}？删除后该账号立即无法登录。',
   },
+  tokens: {
+    title: 'API 令牌', info: '给 Home Assistant 等外部程序长期读取数据用：只读、不过期，删除后立即失效。令牌原文只在创建时显示一次。',
+    list: '令牌列表', add: '新建令牌', name: '名称', namePh: '例如 Home Assistant', prefix: '令牌开头', lastUsed: '最近使用', empty: '还没有 API 令牌。',
+    create: '创建', once: '请现在复制保存，关掉后就看不到了：', usage: '在请求头里带上令牌即可，例如读取首页汇总：', copy: '复制令牌', copied: '已复制', done: '我已保存',
+    delTitle: '删除令牌', delText: '确定删除令牌 {name}？用它的程序会立即读不到数据。',
+  },
   people: {
     all: '全部', deviceSearch: '搜索设备：名称、IP、MAC', confirmDel: '删除“{name}”？他的设备会变成未分配，统计数据不受影响。', devices: '设备', nDevices: '{n} 台设备', noDevice: '还没有设备', online: '在线时长', tags: '行为标签',
     unassigned: '未分配的设备', unassignedHint: '共 {n} 台，选一个人就归给他', dtype: '终端类型', dtypeAuto: '自动识别（{t}）', note: '备注',

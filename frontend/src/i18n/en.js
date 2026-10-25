@@ -239,6 +239,12 @@ export default {
     resetPw: 'Reset password', resetPwHint: 'Leave blank to keep it', nameRule: "Letters, digits and _ . {'@'} -",
     delTitle: 'Delete user', delText: 'Delete user {name}? The account can no longer sign in.',
   },
+  tokens: {
+    title: 'API tokens', info: 'Read-only tokens for Home Assistant and other programs. They never expire and stop working as soon as you delete them. The token is shown only once, when you create it.',
+    list: 'Tokens', add: 'New token', name: 'Name', namePh: 'e.g. Home Assistant', prefix: 'Starts with', lastUsed: 'Last used', empty: 'No API tokens yet.',
+    create: 'Create', once: 'Copy and store it now. It will not be shown again:', usage: 'Send it in the request header, for example to read the summary:', copy: 'Copy token', copied: 'Copied', done: 'I saved it',
+    delTitle: 'Delete token', delText: 'Delete token {name}? Programs using it lose access immediately.',
+  },
   people: {
     all: 'All', deviceSearch: 'Search devices by name, IP or MAC', confirmDel: 'Delete "{name}"? Their devices become unassigned; statistics are kept.', devices: 'Devices', nDevices: '{n} devices', noDevice: 'No devices yet', online: 'Online time', tags: 'Behaviour tags',
     unassigned: 'Unassigned devices', unassignedHint: '{n} devices; pick a person to assign', dtype: 'Device type', dtypeAuto: 'Auto ({t})', note: 'Note',

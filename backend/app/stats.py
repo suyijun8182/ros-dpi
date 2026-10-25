@@ -229,6 +229,15 @@ def top_app_per_host(db, start, end) -> dict[str, dict]:
     return {h: app_meta(a) for h, (a, _b) in best.items()}
 
 
+def app_bytes_per_host(db, start, end, hosts) -> list[tuple]:
+    """[(终端, 应用 ID, 应用名, 字节)]，只含具体应用（不含笼统分类）；hosts 为空时返回空"""
+    if not hosts:
+        return []
+    t = TrafficDay
+    q = select(t.host, t.app, func.sum(t.up) + func.sum(t.down)).where(t.ts >= start, t.ts < end, t.host.in_(list(hosts)))         .group_by(t.host, t.app)
+    return [(h, a, app_meta(a)["name"], int(b)) for h, a, b in db.execute(q) if a not in GENERIC_APPS]
+
+
 def host_domains(db, host, start, end, limit=100) -> list[dict]:
     t = HostDomainDay
     q = select(t.domain, t.app, func.sum(t.bytes), func.max(t.ts)).where(t.host == host, t.ts >= start, t.ts < end) \
