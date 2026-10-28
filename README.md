@@ -183,7 +183,9 @@ RouterOS ◀── REST 只读（可选）── 主机名、IP↔MAC、WAN 速�
 1. **公开识别库**（自动更新）：内置手工库、[v2fly](https://github.com/v2fly/domain-list-community)、[blackmatrix7](https://github.com/blackmatrix7/ios_rule_script)、Hagezi / UT1 分类列表、ASN、国内域名列表、云厂商官方 IP 段。上游有新目录时，先下载再用现有识别库投票决定它属于哪个应用，不用人工整理。
 2. **本地自学习库**：你的网络里实测到的「IP → 应用」「域名 → 应用」会长期记住，DNS 缓存过期、用 DoH 的终端、直接连 IP 的流量都能按记忆归类，每小时重建一次。
 3. **社区共享库**：各个部署实例匿名汇总的识别结论，本地查不到时兜底（见下节）。
-4. 都查不到，才归到「HTTPS」「国内网络」这类笼统分类。
+4. 都查不到时：域名像视频站（`m3u8 / vod / play`……）的归「其他视频网站」；**完全没有域名**的国内流量按远端 ASN 推断，家宽 / 骨干网归「P2P/PCDN 加速」，IDC / 云厂商归「国内云/IDC」（推断，不对应具体 App）；再不行才是「HTTPS」「国内网络」这类笼统分类。
+
+「其他」占比偏高时，看 **识别规则 → 未匹配流量诊断**：没有域名的流量按远端类型、端口、终端拆开显示。一台终端占了大部分流量多半是下挂了路由器（双重 NAT），它后面的设备 ROS 看不到，接入自检会提示。自己的 NAS、VPS 域名可以在识别规则里归到「常用协议 → 自建服务」。
 
 识别库更新后，或者每天过了零点，会自动把以前的历史流量按新规则重算一遍（只会从笼统改成具体，不会反过来）；**识别规则** 页也可以手动重算。
 
@@ -366,7 +368,7 @@ Then open `http://<host>:8080`, set the admin password, and copy the RouterOS co
 
 ### How apps are identified
 
-The domain of each connection comes from its TLS/QUIC SNI, then sniffed DNS answers, then the host's recent lookups, then a network-wide IP→domain table. Domains and IPs map to apps through four layers: (1) public libraries, updated automatically — built-in rules, v2fly, blackmatrix7, Hagezi / UT1 categories, ASN, China domain lists and official cloud IP ranges; (2) a **local self-learning library** of mappings observed on your own network; (3) the **community library**; (4) generic fallbacks such as "HTTPS". When the libraries change, past traffic is reclassified automatically.
+The domain of each connection comes from its TLS/QUIC SNI, then sniffed DNS answers, then the host's recent lookups, then a network-wide IP→domain table. Domains and IPs map to apps through four layers: (1) public libraries, updated automatically — built-in rules, v2fly, blackmatrix7, Hagezi / UT1 categories, ASN, China domain lists and official cloud IP ranges; (2) a **local self-learning library** of mappings observed on your own network; (3) the **community library**; (4) fallbacks — video-like hostnames go to "Other video sites", traffic with no domain at all is inferred from the remote ASN (Chinese broadband → "P2P/PCDN", IDC/cloud → "China cloud/IDC"), and the rest is generic ("HTTPS", "China networks"). When the libraries change, past traffic is reclassified automatically. **Rules → Unmatched traffic** breaks down traffic with no domain by remote type, port and device, and the self-check warns when one device carries most of the traffic (a router behind RouterOS, i.e. double NAT).
 
 With DNS sniffing alone, DoH/DoT clients show up as generic HTTPS/QUIC — enable the SNI rules to cover them. Sites using ECH only expose their outer public name.
 

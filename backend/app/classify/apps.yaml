@@ -59,6 +59,10 @@ categories:
   dev:          {group: common,   name: 开发工具, name_en: Developer}
   ai:           {group: common,   name: AI 应用,  name_en: AI}
   game_tool:    {group: common,   name: 游戏加速器, name_en: Game boosters}
+  selfhost:     {group: common,   name: 自建服务, name_en: Self-hosted}
+  # CDN、广告统计已经认出了是哪家厂商 / 哪类服务，0.6.26 起从「其他」移到常用协议（debug25）
+  cdn:          {group: common,   name: CDN 云服务, name_en: CDN & cloud}
+  ads:          {group: common,   name: 广告统计, name_en: Ads & analytics}
   # 即时通讯（维盟把企业微信、钉钉、飞书、腾讯会议也放在这里）
   im:           {group: im,       name: 即时通讯, name_en: Messaging}
   meeting:      {group: im,       name: 视频会议, name_en: Meetings}
@@ -92,8 +96,6 @@ categories:
   # PCDN
   pcdn:         {group: pcdn,     name: PCDN,     name_en: PCDN}
   # 其他
-  cdn:          {group: other,    name: CDN 云服务, name_en: CDN & cloud}
-  ads:          {group: other,    name: 广告统计, name_en: Ads & analytics}
   cn_net:       {group: other,    name: 国内网络, name_en: China networks}
   # 未识别
   unknown:      {group: unknown,  name: 未识别,   name_en: Unknown}
@@ -529,6 +531,9 @@ apps:
   # 兜底应用（classify/sources.py 下载的数据源认出，没有自己的域名规则）
   - {id: cn_web, name: 国内网站, name_en: Chinese websites, category: cn_web}
   - {id: cn_net, name: 国内网络, name_en: China networks, category: cn_net}
+  # 没有任何域名、按远端 IP 所属 ASN 的类型推断（debug25，见下面的 asn_kinds）
+  - {id: pcdn_p2p, name: P2P/PCDN 加速, name_en: P2P/PCDN, category: pcdn}
+  - {id: idc_cloud, name: 国内云/IDC, name_en: China cloud/IDC, category: cdn}
   # 分类兜底应用（classify/sources.py 的 Hagezi / UT1 分类列表认出：只知道是哪类网站，不知道具体是哪个应用）
   - {id: gen_video, name: 其他视频网站, name_en: Other video sites, category: video}
   - {id: gen_music, name: 其他音乐电台, name_en: Other music & radio, category: music}
@@ -554,3 +559,13 @@ apps:
   - {id: https, name: HTTPS 网页, name_en: HTTPS, category: tls, ports: [tcp/443, tcp/8443]}
   - {id: quic, name: QUIC 网页, name_en: QUIC, category: tls, ports: [udp/443]}
   - {id: http, name: HTTP 网页, name_en: HTTP, category: web, ports: [tcp/80, tcp/8080]}
+
+# 没有域名的国内流量按远端 ASN 名称推断类型（debug25）：先认 IDC / 云，再认家宽；都不像的仍归「国内网络」。
+# 按 ASN 名称里的整词匹配（不区分大小写，按非字母数字切分）。家宽 / 骨干网上的大流量几乎都是
+# 抖音、腾讯视频、B 站等的 P2P/PCDN 回源，归 pcdn_p2p；IDC / 云厂商归 idc_cloud。
+asn_kinds:
+  idc: [IDC, CLOUD, CLOUDS, DATACENTER, DC, HOSTING, SERVER, ALIBABA, ALIYUN, TENCENT, HUAWEI, AMAZON, BAIDU,
+        BYTEDANCE, KSYUN, KINGSOFT, UCLOUD, QINIU, JDCOM, VOLCANO, NETEASE, QIHOO, CDNETWORKS, WANGSU, CHINACACHE,
+        GOOGLE, MICROSOFT, CLOUDFLARE, AKAMAI, FASTLY]
+  broadband: [MAN, BACKBONE, CMNET, CHINA169, CHINANET, CNCGROUP, CHINAMOBILE, CHINAUNICOM, CHINATELECOM, UNICOM,
+              TELECOM, MOBILE, BROADBAND, CTTNET, CERNET, CMI, GWBN, DRPENG]

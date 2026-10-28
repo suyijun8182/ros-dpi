@@ -79,7 +79,8 @@ export const CAT_GROUP = {
   video: 'tv', live: 'tv',
   download: 'p2p',
   tls: 'common', network: 'common', mail: 'common', remote: 'common', update: 'common', security: 'common', cloud: 'common',
-  bank: 'common', work: 'common', dev: 'common', ai: 'common', game_tool: 'common',
+  bank: 'common', work: 'common', dev: 'common', ai: 'common', game_tool: 'common', selfhost: 'common',
+  cdn: 'common', ads: 'common',
   im: 'im', meeting: 'im',
   music: 'music',
   stock: 'stock',
@@ -91,7 +92,7 @@ export const CAT_GROUP = {
   iot: 'special', camera: 'special',
   mining: 'mining',
   pcdn: 'pcdn',
-  cdn: 'other', ads: 'other', cn_net: 'other',
+  cn_net: 'other',
   unknown: 'unknown',
 }
 // 大类照维盟 WayOS 的 17 类，顺序固定

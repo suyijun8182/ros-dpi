@@ -19,7 +19,7 @@ from app.database import upsert_add
 from app import dnsmap
 from app.dnsmap import ConnNames, DnsMap, pick_cname
 from app.models import (AccessLog, AuditEvent, CustomRule, DnsCache, DomainGeo, Host, HostDomainDay, OpLog, Setting, TrafficDay,
-                        TrafficHour,
+                        TrafficHour, UnmatchedDay,
                         TrafficMinute)
 
 _ZERO = {"0.0.0.0", "::"}
@@ -33,6 +33,9 @@ VISIT_SPLIT = 3600     # 持续超过 1 小时的访问分段写入
 # 一条访问记录最长跨度（分段 + 合并间隔留足余量）：查询访问日志时给 ts_start 加下界，走索引不扫全部保留期
 VISIT_MAX_SPAN = VISIT_SPLIT + 3600
 MAX_VISITS = 100_000
+UNMATCHED_DAYS = 30    # 未匹配诊断（unmatched_day）只留 30 天
+HIGH_PORT = 65536      # 未匹配诊断里 1024 以上的非常用端口合成一档
+_DIAG_PORTS = {1080, 1194, 1701, 1723, 1935, 3389, 3478, 4500, 5060, 8000, 8080, 8388, 8443, 8888, 9000}
 IP_DEST_PER_HOST = 30  # 没有域名的访问目标（只有 IP），每台终端每分钟只记流量最大的 30 个，防止 P2P 撑爆表
 PENDING_MAX_AGE = 7200  # 落库失败的数据在内存里最多保留 2 小时，超过就放弃（避免数据库长期故障时内存无限涨）
 CLEANUP_BATCH = 5000    # 按保留期清理时分批删除，避免大表一次删造成长事务
@@ -75,6 +78,8 @@ class Engine:
         self._dom: dict[tuple[str, str, str], int] = defaultdict(int)
         self._seen: dict[str, tuple[str, str | None, int]] = {}  # host_key -> (ip, mac, ts)
         self._ipdest: dict[tuple[str, str, str], int] = defaultdict(int)  # (host_key, 远端 IP, app) -> bytes
+        # 未匹配诊断：(host_key, 协议, 端口档, ASN 类型, app) -> [up, down, flows]
+        self._unm: dict[tuple, list] = defaultdict(lambda: [0, 0, 0])
         self._dom_ip: dict[str, str] = {}  # 域名 -> 这一分钟里它连到的 IP（DomainGeo）
         # 实时连接：(host_key, 远端 IP, 远端端口, 协议, 终端端口) ->
         #   [终端 IP, app, 域名, 域名来源, 累计上行, 累计下行, 开始, 最近, 本窗口上行, 本窗口下行, 上行速率, 下行速率]
@@ -416,12 +421,30 @@ class Engine:
                 self._dom_ip[qname] = remote  # 域名实际连到的 IP，落库时查国家
         else:
             self._ipdest[(key, remote, app)] += nbytes
+        if src_kind == "none" and app != "proxy_tunnel":
+            u = self._unm[(key, proto, self._port_bucket(proto, rport), self._asn_label(remote), app)]
+            u[0 if direction == "up" else 1] += nbytes
+            u[2] += 1
         self._track_session(key, host_ip, hport, remote, rport, proto, app, qname, src_kind, direction, nbytes, now)
         self._seen[key] = (host_ip, mac, int(now))
         self.stats["flows"] += 1
         self.stats["bytes_seen"] += nbytes
         self.stats["last_flow"] = int(now)
         return key, app, direction
+
+    @staticmethod
+    def _port_bucket(proto: int, port: int) -> int:
+        if proto not in (6, 17):
+            return 0
+        return port if port < 1024 or port in _DIAG_PORTS else HIGH_PORT
+
+    def _asn_label(self, ip: str) -> str:
+        kind, cc = self.classifier.asn_kind(ip)
+        if cc is None:
+            return "nodb"
+        if cc != "CN":
+            return "foreign"
+        return kind or "other"
 
     def _track_session(self, key, host_ip, hport, remote, rport, proto, app, qname, src_kind, direction, nbytes, now):
         sk = (key, remote, rport, proto, hport)
@@ -529,6 +552,7 @@ class Engine:
             dom_ip, self._dom_ip = self._dom_ip, {}
             seen, self._seen = self._seen, {}
             ipdest, self._ipdest = self._ipdest, defaultdict(int)
+            unm, self._unm = self._unm, defaultdict(lambda: [0, 0, 0])
             # 实时连接：本窗口的字节数换算成速率，然后清零；去掉 5 分钟没动静的
             win = max(now - self.last_flush, 1.0)
             for sk in [k for k, v in self.sessions.items() if now - v[7] > SESSION_IDLE]:
@@ -555,7 +579,7 @@ class Engine:
         ref = now - 1
         payload = {"ts": (timeutil.minute_bucket(ref), timeutil.hour_bucket(ref), timeutil.day_bucket(ref)),
                    "buf": dict(buf), "dom": dict(dom), "dom_ip": dict(dom_ip), "seen": dict(seen),
-                   "ipdest": dict(ipdest), "visits": visits, "visit_upd": visit_upd,
+                   "ipdest": dict(ipdest), "unm": dict(unm), "visits": visits, "visit_upd": visit_upd,
                    "dns": self.dns.take_dirty(), "finished": getattr(self, "finished_visits", [])}
         # 上次落库失败遗留的数据按各自的时间桶排队、依次写入（只合并同一时间桶的，跨天不会记错日期）；
         # 数据库故障超过 PENDING_MAX_AGE 秒的部分放弃
@@ -623,7 +647,7 @@ class Engine:
 
     def _sections(self):
         return (("traffic", self._w_traffic), ("domains", self._w_domains), ("hosts", self._w_hosts),
-                ("visits", self._w_visits), ("dns", self._w_dns), ("geo", self._w_geo))
+                ("visits", self._w_visits), ("dns", self._w_dns), ("geo", self._w_geo), ("unmatched", self._w_unmatched))
 
     def _write_flush(self, db, p: dict) -> list:
         """把一次（或同一时间桶合并后的多次）分钟窗口的数据写进数据库。返回新出现的终端。"""
@@ -657,6 +681,16 @@ class Engine:
                 drows.append({"ts": d, "host": host, "domain": ip, "app": app, "bytes": n, "base": base_domain(ip)})
         for chunk in _chunks(drows, 500):
             upsert_add(db, HostDomainDay.__table__, chunk, ["ts", "host", "domain"], ["bytes"], ["app", "base"])
+
+    @staticmethod
+    def _w_unmatched(db, p):
+        d = p["ts"][2]
+        rows = [{"ts": d, "host": host, "proto": proto, "port": port, "kind": kind, "app": app,
+                 "up": up, "down": down, "flows": f}
+                for (host, proto, port, kind, app), (up, down, f) in p.get("unm", {}).items()]
+        for chunk in _chunks(rows, 500):
+            upsert_add(db, UnmatchedDay.__table__, chunk, ["ts", "host", "proto", "port", "kind", "app"],
+                       ["up", "down", "flows"])
 
     def _w_hosts(self, db, p):
         return self._save_hosts(db, p["seen"])
@@ -762,7 +796,7 @@ class Engine:
                 # 还没有数据库：访问记录、域名 / IP 统计攒着也写不出去，超量就丢，别把内存撑爆
                 if len(self._closed_visits) > 100_000:
                     self._closed_visits = self._closed_visits[-100_000:]
-                for name in ("_dom", "_ipdest", "_seen"):
+                for name in ("_dom", "_ipdest", "_seen", "_unm"):
                     if len(getattr(self, name)) > 200_000:
                         getattr(self, name).clear()
         if not database.is_configured():
@@ -776,6 +810,7 @@ class Engine:
                                      (TrafficHour, TrafficHour.ts, r["hour"]),
                                      (TrafficDay, TrafficDay.ts, r["day"]),
                                      (HostDomainDay, HostDomainDay.ts, r["domain"]),
+                                     (UnmatchedDay, UnmatchedDay.ts, UNMATCHED_DAYS),
                                      (DomainGeo, DomainGeo.updated, r["domain"]),
                                      (AccessLog, AccessLog.ts_start, r["log"]),
                                      (AuditEvent, AuditEvent.ts, r["event"]),
@@ -810,6 +845,13 @@ def _merge_payload(a: dict, b: dict) -> dict:
     for k, v in a["ipdest"].items():
         ipdest[k] = ipdest.get(k, 0) + v
     out["ipdest"] = ipdest
+    unm = {k: list(v) for k, v in b.get("unm", {}).items()}
+    for k, v in a.get("unm", {}).items():
+        cur = unm.setdefault(k, [0, 0, 0])
+        cur[0] += v[0]
+        cur[1] += v[1]
+        cur[2] += v[2]
+    out["unm"] = unm
     out["dom_ip"] = {**a["dom_ip"], **b["dom_ip"]}
     seen = dict(a["seen"])
     for k, v in b["seen"].items():

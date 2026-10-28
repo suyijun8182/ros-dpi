@@ -130,6 +130,23 @@
         <div v-if="!unknown.length" class="empty">{{ t('common.empty') }}</div>
       </div>
     </div>
+
+    <!-- 未匹配流量诊断（debug25）：没有任何域名的流量是哪类远端、哪个端口、哪台终端 -->
+    <div class="panel mt" v-if="unm">
+      <div class="panel-h">{{ t('rules.unm.title') }}<span class="sp" /><RangeTabs :list="['today', 'week', 'month']" /></div>
+      <div class="panel-b">
+        <p class="muted hint">{{ t('rules.unm.share', { b: bytes(unm.total), p: pct(Math.min(unm.total / Math.max(unm.range_total, 1), 1)) }) }}。{{ t('rules.unm.hint') }}</p>
+        <p v-if="unm.nat" class="hint"><span class="pill warn">{{ t('check.natTitle') }}</span>
+          <span class="muted"> {{ t('rules.nat', { name: unm.nat.name, ip: unm.nat.ip, p: pct(unm.nat.share) }) }}</span></p>
+        <div class="unm">
+          <div><div class="sec">{{ t('rules.unm.byKind') }}</div><BarList :items="unmKinds" :total="unm.total" />
+            <p v-for="k in ['broadband', 'idc']" :key="k" class="faint small kh">{{ t('rules.unm.kind.' + k) }}：{{ t('rules.unm.kindHint.' + k) }}</p></div>
+          <div><div class="sec">{{ t('rules.unm.byApp') }}</div><BarList :items="unmApps" :total="unm.total" /></div>
+          <div><div class="sec">{{ t('rules.unm.byPort') }}</div><BarList :items="unmPorts" :total="unm.total" /></div>
+          <div><div class="sec">{{ t('rules.unm.byHost') }}</div><BarList :items="unmHosts" :total="unm.total" /></div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -137,9 +154,10 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http, { isAdmin } from '../api.js'
+import BarList from '../components/BarList.vue'
 import Icon from '../components/Icon.vue'
 import RangeTabs from '../components/RangeTabs.vue'
-import { ago, appName, bytes, catName, datetime, groupName } from '../format.js'
+import { CAT_GROUP, ago, appName, bytes, catColor, catName, datetime, groupName, pct } from '../format.js'
 import { ui } from '../state.js'
 
 const { t } = useI18n()
@@ -206,8 +224,25 @@ async function loadUnknown() {
   try { unknown.value = await http.get('/rules/unknown-domains', { params: { range: unknownRange() } }) }
   catch (e) { /* 未识别域名列表加载失败不阻塞页面 */ }
 }
-onMounted(() => { load(); loadUnknown(); loadLib() })
-watch(() => ui.range, loadUnknown)
+// ---------- 未匹配流量诊断 ----------
+const unm = ref(null)
+async function loadUnm() {
+  try { unm.value = await http.get('/rules/unmatched', { params: { range: unknownRange() } }) }
+  catch (e) { /* 诊断加载失败不阻塞页面 */ }
+}
+const io = r => ({ value: r.total, up: r.up, down: r.down })
+const PROTO = { 6: 'TCP', 17: 'UDP', 1: 'ICMP', 58: 'ICMPv6', 47: 'GRE', 50: 'ESP' }
+const unmKinds = computed(() => (unm.value ? unm.value.kinds : []).map(r => ({ key: r.kind, label: t('rules.unm.kind.' + r.kind), ...io(r) })))
+const unmApps = computed(() => (unm.value ? unm.value.apps : []).map(r => ({
+  key: r.app.id, label: appName(r.app), sub: groupName({ name: r.app.group_name, name_en: r.app.group_name_en }),
+  color: CAT_GROUP[r.app.category] ? catColor(r.app.category) : null, to: `/apps/${r.app.id}`, ...io(r) })))
+const unmPorts = computed(() => (unm.value ? unm.value.ports : []).map(r => ({
+  key: `${r.proto}/${r.port}`, label: `${PROTO[r.proto] || r.proto} ${r.port === 65536 ? t('rules.unm.highPort') : (r.port || '')}`.trim(), ...io(r) })))
+const unmHosts = computed(() => (unm.value ? unm.value.hosts : []).map(r => ({
+  key: r.host.key, label: r.host.name, sub: r.host.ip, online: r.host.online, to: `/hosts/${encodeURIComponent(r.host.key)}`, ...io(r) })))
+
+onMounted(() => { load(); loadUnknown(); loadLib(); loadUnm() })
+watch(() => ui.range, () => { loadUnknown(); loadUnm() })
 
 // 下拉框里分类带上所属大类，例如"影音娱乐 · 短视频"
 const catLabel = c => `${groupName(meta.value.groups.find(g => g.id === c.group))} · ${catName(c)}`
@@ -283,6 +318,9 @@ async function reclassify() {
 .lib .parts { margin-top: 3px; color: var(--faint); }
 .lib td { vertical-align: top; }
 .mt { margin-top: 14px; }
+.unm { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 28px; margin-top: 12px; }
+.unm .kh { margin: 6px 0 0; line-height: 1.5; }
+@media (max-width: 760px) { .unm { grid-template-columns: minmax(0, 1fr); } }
 .form { display: flex; flex-direction: column; gap: 10px; }
 .test { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--line); }
 .test .input { flex: 1; min-width: 160px; }
