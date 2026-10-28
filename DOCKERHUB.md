@@ -36,6 +36,7 @@ services:
 
 ## What's new
 
+- **0.6.27**: 重做「未识别域名 Top」的归类——点「归类」弹窗选应用（可搜索、有推荐），可选主域名 / 只这个域名（共用 CDN 默认后者），保存后立即改算近 31 天历史；规则可编辑，修改 / 删除同样改算历史；新增「忽略」与批量处理；手动归类默认不上报社区，可勾选贡献。Reworked "Classify" for unidentified domains: an in-place dialog with search and suggestions, scope choice, immediate history re-attribution, rule editing, ignore and bulk actions; manual rules are not shared with the community unless opted in.
 - **0.6.26**: 降低「其他」占比——完全没有域名的国内流量按远端 ASN 推断（家宽 → P2P/PCDN 加速，IDC → 国内云/IDC）；视频站域名兜底；CDN 云服务、广告统计移到「常用协议」；新增「自建服务」小类；识别规则页新增未匹配流量诊断（远端类型 / 端口 / 终端，保留 30 天）；一台终端占大部分流量时提示双重 NAT。Lower "Other" share: no-domain traffic inferred from the remote ASN (broadband → P2P/PCDN, IDC → cloud/IDC), video-site hostname fallback, CDN and ads moved to Common protocols, unmatched-traffic diagnostics and a double-NAT hint.
 - **0.6.25**: 只读 API 令牌（系统设置 → 用户管理），给 Home Assistant 等外部程序长期读取；新增汇总接口 `/api/ha/summary`（流量、在线、识别率、健康指数、应用构成、终端及其主要应用）。Read-only API tokens and a `/api/ha/summary` endpoint for Home Assistant.
 - **0.6.24**: Linux 一键安装改为专用账号 `ros-dpi` 运行（不再是 root），systemd 加固；审计规则的按天累计和“已提醒”在重启后接着算，不再重复提醒；系统设置 → 外部数据源 打开时就加载社区共享库状态；CI 的 action 全部钉到 commit SHA。Linux service now runs as a dedicated non-root user; audit rule progress survives restarts; CI actions pinned to commit SHAs.

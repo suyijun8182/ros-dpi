@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import __version__, integrations, oplog, stats, timeutil
+from app import __version__, integrations, oplog, ruleassist, stats, timeutil
 from app.asn import asndb
 from app.classify import GENERIC_APPS
 from app.config import get_settings
@@ -36,17 +36,70 @@ def meta():
 
 
 # ---------- 自定义识别规则 ----------
-class RuleIn(BaseModel):
-    kind: str = Field(pattern="^(domain|cidr|port)$")
-    pattern: str = Field(min_length=1, max_length=255)
+class RuleApp(BaseModel):
+    """规则归到哪个应用：已有应用只填 app_id；新应用另填名称和分类"""
     app_id: str = Field(min_length=1, max_length=48)
     app_name: str | None = Field(None, max_length=64)
     category: str | None = Field(None, max_length=32)
+    share: bool = False   # 命中的域名贡献给社区共享库（debug26，默认不贡献）
+
+
+class RuleIn(RuleApp):
+    kind: str = Field(pattern="^(domain|cidr|port)$")
+    pattern: str = Field(min_length=1, max_length=255)
+
+
+class ClassifyIn(RuleApp):
+    """未识别域名 Top 的「归类」（debug26）：一次可以把多个域名归到同一个应用"""
+    patterns: list[str] = Field(min_length=1, max_length=50)
 
 
 def _rule_dict(r: CustomRule):
     return {"id": r.id, "kind": r.kind, "pattern": r.pattern, "app_id": r.app_id, "app_name": r.app_name,
-            "category": r.category, "created": r.created}
+            "category": r.category, "created": r.created, "share": bool(r.share)}
+
+
+def _norm_pattern(kind: str, pattern: str) -> str:
+    p = pattern.strip().lower()
+    if kind == "domain":
+        p = p.strip(".")
+        if not _DOMAIN_RE.match(p):
+            raise HTTPException(400, f"域名格式不正确：{pattern[:64]}")
+    elif kind == "cidr":
+        try:
+            p = str(ipaddress.ip_network(p, strict=False))
+        except ValueError:
+            raise HTTPException(400, "IP 段格式不正确，例如 1.2.3.0/24")
+    elif not _PORT_RE.match(p):
+        raise HTTPException(400, "端口格式不正确，例如 tcp/8080 或 udp/3000-3010")
+    return p
+
+
+def _check_app(req: RuleApp) -> int:
+    """校验目标应用，返回 share 列的值：只有内置应用、且不是「自建服务」才允许贡献给社区（自定义应用主站不认得，
+    自建服务是自家 NAS / VPS 的域名）"""
+    info = engine.classifier.apps.get(req.app_id)
+    if info is None or info.custom:
+        if not _APPID_RE.match(req.app_id):
+            raise HTTPException(400, "新应用 ID 只能包含小写字母、数字和下划线")
+        if info is None and not req.app_name:
+            raise HTTPException(400, "新应用需要填写名称")
+        if info is None and req.category not in engine.classifier.categories:
+            raise HTTPException(400, "请选择分类")
+        if info is not None:   # 已有的自定义应用：名称和分类沿用，第一条规则删掉后它也还认得
+            req.app_name, req.category = info.name, info.category
+        return 0
+    return 1 if req.share and info.category != "selfhost" else 0
+
+
+def _reclass_rule(db, kind: str, pattern: str, from_app: str | None = None) -> int:
+    """规则改动后只重算它涉及的历史（debug26），返回搬动的字节数；端口规则历史里没有端口，不重算"""
+    from app.reclass import reclassify_rule
+    res = reclassify_rule(engine, db, kind, pattern, from_app)
+    if res is None:
+        return 0
+    db.commit()
+    return res["bytes_moved"]
 
 
 @router.get("/rules")
@@ -56,32 +109,55 @@ def list_rules(db: Session = Depends(get_db)):
 
 @router.post("/rules")
 def add_rule(req: RuleIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
-    p = req.pattern.strip().lower()
-    if req.kind == "domain":
-        p = p.strip(".")
-        if not _DOMAIN_RE.match(p):
-            raise HTTPException(400, "域名格式不正确")
-    elif req.kind == "cidr":
-        try:
-            p = str(ipaddress.ip_network(p, strict=False))
-        except ValueError:
-            raise HTTPException(400, "IP 段格式不正确，例如 1.2.3.0/24")
-    elif not _PORT_RE.match(p):
-        raise HTTPException(400, "端口格式不正确，例如 tcp/8080 或 udp/3000-3010")
-    known = req.app_id in engine.classifier.apps
-    if not known:
-        if not _APPID_RE.match(req.app_id):
-            raise HTTPException(400, "新应用 ID 只能包含小写字母、数字和下划线")
-        if not req.app_name:
-            raise HTTPException(400, "新应用需要填写名称")
-        if req.category not in engine.classifier.categories:
-            raise HTTPException(400, "请选择分类")
+    p = _norm_pattern(req.kind, req.pattern)
+    share = _check_app(req)
     r = CustomRule(kind=req.kind, pattern=p, app_id=req.app_id, app_name=req.app_name,
-                   category=req.category, created=int(time.time()))
+                   category=req.category, created=int(time.time()), share=share)
     db.add(r)
     oplog.log(db, request, user, "rule_add", req.model_dump())
     engine.reload_rules()
-    return _rule_dict(r)
+    moved = _reclass_rule(db, r.kind, r.pattern)
+    return {**_rule_dict(r), "bytes_moved": moved}
+
+
+@router.post("/rules/classify")
+def classify_domains(req: ClassifyIn, request: Request, user: str = Depends(current_user),
+                     db: Session = Depends(get_db)):
+    """把一批未识别域名归到同一个应用（debug26）：同一域名已有规则的改成新应用，保存后只重算这些规则涉及的历史"""
+    pats = list(dict.fromkeys(_norm_pattern("domain", p) for p in req.patterns))
+    share = _check_app(req)
+    now = int(time.time())
+    changed: list[tuple[str, str | None]] = []   # (pattern, 改之前的应用；新规则为 None)
+    for p in pats:
+        r = db.query(CustomRule).filter(CustomRule.kind == "domain", CustomRule.pattern == p).first()
+        if r is None:
+            db.add(CustomRule(kind="domain", pattern=p, app_id=req.app_id, app_name=req.app_name,
+                              category=req.category, created=now, share=share))
+            changed.append((p, None))
+        else:
+            if r.app_id != req.app_id:
+                changed.append((p, r.app_id))
+            r.app_id, r.app_name, r.category, r.share = req.app_id, req.app_name, req.category, share
+    oplog.log(db, request, user, "rule_classify", {**req.model_dump(exclude={"patterns"}), "patterns": pats})
+    engine.reload_rules()
+    moved = sum(_reclass_rule(db, "domain", p, old) for p, old in changed)
+    return {"patterns": pats, "app": stats.app_meta(req.app_id), "bytes_moved": moved}
+
+
+@router.put("/rules/{rule_id}")
+def edit_rule(rule_id: int, req: RuleApp, request: Request, user: str = Depends(current_user),
+              db: Session = Depends(get_db)):
+    """修改规则归到的应用（debug26）：匹配内容不变；改完把原来按这条规则归过去的历史改算到新应用"""
+    r = db.get(CustomRule, rule_id)
+    if r is None:
+        raise HTTPException(404, "规则不存在")
+    share = _check_app(req)
+    old = r.app_id
+    r.app_id, r.app_name, r.category, r.share = req.app_id, req.app_name, req.category, share
+    oplog.log(db, request, user, "rule_edit", {"id": rule_id, "pattern": r.pattern, "from": old, **req.model_dump()})
+    engine.reload_rules()
+    moved = _reclass_rule(db, r.kind, r.pattern, old) if old != req.app_id else 0
+    return {**_rule_dict(r), "bytes_moved": moved}
 
 
 @router.delete("/rules/{rule_id}")
@@ -89,18 +165,63 @@ def delete_rule(rule_id: int, request: Request, user: str = Depends(current_user
     r = db.get(CustomRule, rule_id)
     if r is None:
         raise HTTPException(404, "规则不存在")
-    detail = {"id": rule_id, "kind": r.kind, "pattern": r.pattern, "app_id": r.app_id}
+    kind, pattern, old = r.kind, r.pattern, r.app_id
+    detail = {"id": rule_id, "kind": kind, "pattern": pattern, "app_id": old}
     db.delete(r)
     oplog.log(db, request, user, "rule_delete", detail)
     engine.reload_rules()
-    return {"ok": True}
+    # 原来按这条规则归过去的历史退回识别库现在的结果（debug26）
+    return {"ok": True, "bytes_moved": _reclass_rule(db, kind, pattern, old)}
 
 
 @router.get("/rules/unknown-domains")
 def unknown_domains(range: str = Query("week", pattern="^(today|week|month|last7|last30)$"),
                     db: Session = Depends(get_db)):
-    """按流量排序的未识别域名，方便一键归类。"""
-    return stats.unknown_domains(db, *timeutil.range_bounds(range))
+    """按流量排序的未识别域名，方便一键归类。已忽略的、现在已经认得出的（今天早些时候的行还记着旧分类）不列"""
+    from app.reclass import _vague
+    pats = [x["pattern"] for x in ruleassist.ignored(db)]
+    cl = engine.classifier
+
+    def skip(d):
+        return any(ruleassist.matches(p, d) for p in pats) or not _vague(cl, cl.match_domain(d))
+    return stats.unknown_domains(db, *timeutil.range_bounds(range), skip=skip)
+
+
+@router.get("/rules/suggest")
+def suggest_rule(domain: str = Query(min_length=1, max_length=255), db: Session = Depends(get_db)):
+    """归类弹窗：匹配范围（主域名 / 完整域名，共用 CDN 默认完整域名）和推荐的应用（debug26）"""
+    d = domain.strip().lower().strip(".")
+    return {**ruleassist.scope(d),
+            "candidates": [{"app": stats.app_meta(x["app"]), "source": x["source"]}
+                           for x in ruleassist.suggest(engine.classifier, db, d)]}
+
+
+class IgnoreIn(BaseModel):
+    patterns: list[str] = Field(min_length=1, max_length=50)
+
+
+@router.get("/rules/ignored")
+def list_ignored(db: Session = Depends(get_db)):
+    return ruleassist.ignored(db)
+
+
+@router.post("/rules/ignore")
+def add_ignore(req: IgnoreIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
+    """忽略未识别域名（debug26）：不再列在 Top 里，流量照旧算未识别"""
+    pats = list(dict.fromkeys(_norm_pattern("domain", p) for p in req.patterns))
+    ruleassist.ignore(db, pats)
+    oplog.log(db, request, user, "rule_ignore", {"patterns": pats})
+    return {"ok": True}
+
+
+@router.post("/rules/unignore")
+def del_ignore(req: IgnoreIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
+    """撤销忽略（DELETE /rules/{id} 占了 /rules/ 下的 DELETE，这里用 POST）"""
+    pattern = req.patterns[0]
+    if not ruleassist.unignore(db, pattern.strip().lower()):
+        raise HTTPException(404, "没有忽略这个域名")
+    oplog.log(db, request, user, "rule_unignore", {"pattern": pattern})
+    return {"ok": True}
 
 
 @router.get("/rules/unmatched")

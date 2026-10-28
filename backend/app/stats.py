@@ -245,13 +245,15 @@ def host_domains(db, host, start, end, limit=100) -> list[dict]:
     return [{"domain": d, "app": app_meta(a), "bytes": int(b), "last_day": int(ts)} for d, a, b, ts in db.execute(q)]
 
 
-def unknown_domains(db, start, end, limit=100) -> list[dict]:
+def unknown_domains(db, start, end, limit=100, skip=None) -> list[dict]:
+    """skip(domain) 为真的不列（debug26：已忽略的、刚归类过但今天的行还没改过来的）"""
     t = HostDomainDay
     q = select(t.domain, func.sum(t.bytes), func.count(distinct(t.host))) \
         .where(t.ts >= start, t.ts < end, t.app.in_(list(GENERIC_APPS))) \
-        .group_by(t.domain).order_by(func.sum(t.bytes).desc()).limit(limit * 3)
+        .group_by(t.domain).order_by(func.sum(t.bytes).desc()).limit(limit * 5)
     # 只有 IP 的访问目标没法按域名建规则，不列在这里
-    return [{"domain": d, "bytes": int(b), "hosts": int(h)} for d, b, h in db.execute(q) if not is_ip(d)][:limit]
+    return [{"domain": d, "bytes": int(b), "hosts": int(h)} for d, b, h in db.execute(q)
+            if not is_ip(d) and not (skip and skip(d))][:limit]
 
 
 NAT_SHARE = 0.6   # 一台终端占全网流量六成以上：多半是下挂的路由器（双重 NAT），后面的设备 ROS 看不到
