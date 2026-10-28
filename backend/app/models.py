@@ -48,6 +48,22 @@ class HostDomainDay(Base):
     __table_args__ = (Index("ix_hdd_host_ts", "host", "ts"), Index("ix_hdd_app_ts", "app", "ts"))
 
 
+class UnmatchedDay(Base):
+    """没有任何域名信号的流量（未匹配诊断，debug25）：每天按 终端 / 协议 / 端口 / 远端 ASN 类型 / 最终归类 汇总，留 30 天。
+    port 为 65536 表示 1024 以上的非常用端口（P2P 端口五花八门，逐个记没有意义）"""
+    __tablename__ = "unmatched_day"
+    ts = Column(BigInteger, primary_key=True, autoincrement=False)
+    host = Column(String(64), primary_key=True)
+    proto = Column(Integer, primary_key=True, autoincrement=False)
+    port = Column(Integer, primary_key=True, autoincrement=False)
+    kind = Column(String(16), primary_key=True)   # broadband / idc / other（国内其它）/ foreign / nodb（没有 ASN 库）
+    app = Column(String(48), primary_key=True)
+    up = Column(BigInteger, nullable=False, default=0)
+    down = Column(BigInteger, nullable=False, default=0)
+    flows = Column(Integer, nullable=False, default=0)
+    __table_args__ = (Index("ix_unm_ts", "ts"),)
+
+
 class Host(Base):
     """终端。key 优先用 MAC（大写冒号格式），拿不到 MAC 时用 "IP:x.x.x.x"。"""
     __tablename__ = "hosts"

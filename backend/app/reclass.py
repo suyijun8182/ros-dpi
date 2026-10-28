@@ -26,14 +26,14 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app import timeutil
-from app.classify import GENERIC_APPS, UNIDENTIFIED_CATEGORIES, WEAK_PREFIXES
+from app.classify import CN_NET, GENERIC_APPS, IDC_APP, UNIDENTIFIED_CATEGORIES, WEAK_PREFIXES
 from app.database import upsert_add
 from app.models import DnsCache, HostDomainDay, Setting, TrafficDay
 
 FP_KEY = "reclass_fp"
 _reclass_lock = threading.Lock()   # 自动任务和手动按钮可能同时触发：串行化，避免两轮重算搬同一批字节
 # 只说明协议、地区或“是个网站”的笼统分类：可以被升级成具体应用，但重算不会把行改成它们
-VAGUE_APPS = GENERIC_APPS | {"cn_net", "cn_web", "unknown"}
+VAGUE_APPS = GENERIC_APPS | {CN_NET, "cn_web", "unknown"}
 
 
 def _vague(classifier, app: str | None) -> bool:
@@ -85,7 +85,11 @@ def _new_app(classifier, dom: str, old_app: str, cache: dict) -> str | None:
     else:
         qname = dom
         new_app = classifier.classify("0.0.0.0", 6, 443, dom, None)
-    if not new_app or new_app == old_app or _vague(classifier, new_app):
+    if not new_app or new_app == old_app:
+        return None
+    if new_app == IDC_APP and old_app == CN_NET:
+        return new_app   # 国内云/IDC 虽然也算笼统分类，但比「国内网络」具体（debug25）
+    if _vague(classifier, new_app):
         return None
     if _vague(classifier, old_app):
         return new_app

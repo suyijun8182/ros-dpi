@@ -106,6 +106,14 @@ export default {
   rules: {
     libCount: '{n} apps in the library', addTitle: 'Add a rule',
     title: 'Rules', intro: 'The built-in library covers common apps. Custom rules take priority and let you add or correct matches.',
+    unm: {
+      title: 'Unmatched traffic', share: 'Traffic with no domain at all: {b}, {p} of the total',
+      hint: 'No SNI and no DNS answer, so it can only be guessed from the remote IP. The breakdown shows which remotes, ports and devices it comes from.',
+      byKind: 'Remote type', byPort: 'Protocol / port', byHost: 'Device', byApp: 'Classified as', highPort: '1024+',
+      kind: { broadband: 'CN broadband / backbone', idc: 'CN IDC / cloud', other: 'CN other', foreign: 'Outside CN', nodb: 'No ASN database' },
+      kindHint: { broadband: 'Mostly P2P/PCDN for Douyin, Tencent Video, Bilibili etc.; shown as "P2P/PCDN" (inferred)', idc: 'Shown as "China cloud/IDC" (inferred)' },
+    },
+    nat: '"{name}" ({ip}) carries {p} of the traffic today, so it is most likely a router behind RouterOS (double NAT). Devices behind it are invisible to RouterOS and are counted as one. Switch it to AP / bridge mode, or let RouterOS hand out the addresses.',
     custom: 'Custom rules', unknown: 'Top unidentified domains', unknownHint: 'Traffic to these domains is only identified as generic HTTPS/QUIC. Click "Classify" to create a rule.',
     kind: 'Type', pattern: 'Match', target: 'Application', kinds: { domain: 'Domain suffix', cidr: 'IP range', port: 'Port' },
     patternHint: { domain: 'e.g. example.com (includes subdomains)', cidr: 'e.g. 1.2.3.0/24', port: 'e.g. tcp/8080 or udp/3000-3010' },
@@ -176,6 +184,7 @@ export default {
     kind: { dns: 'DNS answers', sni: 'SNI handshakes', other: 'Other' },
     problem: { port: 'Wrong port', target: 'Wrong address', disabled: 'Disabled' },
     fixTitle: 'Suggested fix (run on the RouterOS terminal)',
+    natTitle: 'Possible double NAT',
     issue: {
       no_dns: 'No working DNS sniffing rule.', no_sni: 'No working SNI rule: HTTPS / QUIC handshakes never reach ROS-DPI.',
       no_quic: 'Only a TCP SNI rule; UDP 443 (QUIC / HTTP3) is missing, so QUIC-heavy apps such as Douyin and YouTube are not identified.',

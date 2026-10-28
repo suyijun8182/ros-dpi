@@ -106,6 +106,14 @@ export default {
   rules: {
     libCount: '规则库共 {n} 个应用', addTitle: '添加规则',
     title: '识别规则', intro: '内置规则库覆盖常见国内外应用。自定义规则优先级最高，用于补充或纠正识别结果。',
+    unm: {
+      title: '未匹配流量诊断', share: '没有任何域名的流量 {b}，占全部 {p}',
+      hint: '这些流量既没有 SNI 也查不到 DNS，只能按远端 IP 推断。看看是哪类远端、哪个端口、哪台终端，就知道占比为什么高。',
+      byKind: '远端类型', byPort: '协议 / 端口', byHost: '终端', byApp: '最终归类', highPort: '1024 以上',
+      kind: { broadband: '国内家宽 / 骨干网', idc: '国内 IDC / 云', other: '国内其他', foreign: '境外', nodb: '没有 ASN 库' },
+      kindHint: { broadband: '多为抖音、腾讯视频、B 站等的 P2P/PCDN 回源，归「P2P/PCDN 加速」（推断）', idc: '归「国内云/IDC」（推断）' },
+    },
+    nat: '「{name}」（{ip}）占了今天 {p} 的流量，多半是下挂的路由器（双重 NAT）：它后面的设备 ROS 看不到，只能合成一台统计，也没法按设备认应用。可以把它改成 AP / 旁路模式，或让 ROS 直接给设备分配地址。',
     custom: '自定义规则', unknown: '未识别域名 Top', unknownHint: '这些域名的流量目前只能识别为 HTTPS/QUIC 等通用协议，点「归类」快速建规则。',
     kind: '类型', pattern: '匹配内容', target: '归类到', kinds: { domain: '域名后缀', cidr: 'IP 段', port: '端口' },
     patternHint: { domain: '如 example.com（含子域名）', cidr: '如 1.2.3.0/24', port: '如 tcp/8080 或 udp/3000-3010' },
@@ -176,6 +184,7 @@ export default {
     kind: { dns: 'DNS 应答', sni: 'SNI 握手', other: '其他' },
     problem: { port: '端口不对', target: '地址不对', disabled: '已停用' },
     fixTitle: '修改建议（在 RouterOS 终端执行）',
+    natTitle: '疑似双重 NAT',
     issue: {
       no_dns: '没有生效的 DNS 嗅探规则。', no_sni: '没有生效的 SNI 规则：HTTPS / QUIC 握手到不了 ROS-DPI。',
       no_quic: '只有 TCP 的 SNI 规则，缺少 UDP 443（QUIC / HTTP3），抖音、YouTube 等大量走 QUIC 的流量认不出来。',

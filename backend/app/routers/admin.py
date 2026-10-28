@@ -103,6 +103,13 @@ def unknown_domains(range: str = Query("week", pattern="^(today|week|month|last7
     return stats.unknown_domains(db, *timeutil.range_bounds(range))
 
 
+@router.get("/rules/unmatched")
+def unmatched(range: str = Query("week", pattern="^(today|yesterday|week|month|last7|last30)$"),
+              db: Session = Depends(get_db)):
+    """没有域名的流量拆解（未匹配诊断，debug25）：占比偏高时看是哪类远端、哪个端口、哪台终端"""
+    return stats.unmatched(db, *timeutil.range_bounds(range))
+
+
 @router.post("/rules/reclassify")
 def rules_reclassify(request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
     """按当前规则重算历史分类：规则或识别库升级后，把历史流量搬到新归属（host_domain_day 覆盖的天数）。"""
@@ -249,7 +256,7 @@ def put_settings(req: SettingsIn, request: Request, user: str = Depends(current_
 
 # ---------- 系统状态 ----------
 @router.get("/system")
-def system():
+def system(db: Session = Depends(get_db)):
     st = engine.stats
     now = int(time.time())
     return {
@@ -278,6 +285,8 @@ def system():
         "asn": asndb.status(),
         "proxied_skipped": st["proxied_skipped"], "dns_mosdns": st["dns_mosdns"],
         "generic_apps": sorted(GENERIC_APPS),
+        # 疑似下挂路由器（双重 NAT）：按今天的流量判断（debug25）
+        "nat": stats.nat_suspect(db, *timeutil.range_bounds("today")),
     }
 
 

@@ -8,7 +8,7 @@ from sqlalchemy import distinct, func, or_, select
 from app import hostnames, timeutil
 from app.classify import GENERIC_APPS, UNIDENTIFIED_CATEGORIES
 from app.engine import ONLINE_SECONDS, engine
-from app.models import Host, HostDomainDay, TrafficDay, TrafficHour, TrafficMinute
+from app.models import Host, HostDomainDay, TrafficDay, TrafficHour, TrafficMinute, UnmatchedDay
 
 
 
@@ -252,6 +252,46 @@ def unknown_domains(db, start, end, limit=100) -> list[dict]:
         .group_by(t.domain).order_by(func.sum(t.bytes).desc()).limit(limit * 3)
     # 只有 IP 的访问目标没法按域名建规则，不列在这里
     return [{"domain": d, "bytes": int(b), "hosts": int(h)} for d, b, h in db.execute(q) if not is_ip(d)][:limit]
+
+
+NAT_SHARE = 0.6   # 一台终端占全网流量六成以上：多半是下挂的路由器（双重 NAT），后面的设备 ROS 看不到
+
+
+def nat_suspect(db, start, end) -> dict | None:
+    """疑似下挂路由器的终端（debug25：爱快接在 ROS 下面，全家流量合成了一台）"""
+    tot = total(db, start, end)["total"]
+    if tot <= 0:
+        return None
+    top = top_hosts(db, start, end, limit=1)
+    if not top or top[0]["total"] / tot < NAT_SHARE:
+        return None
+    h = top[0]
+    return {"key": h["key"], "name": h["name"], "ip": h["ip"], "share": h["total"] / tot}
+
+
+def unmatched(db, start, end) -> dict:
+    """没有任何域名信号的流量拆解（未匹配诊断）：按 协议/端口、远端 ASN 类型、终端、最终归类"""
+    t = UnmatchedDay
+    vol = func.sum(t.up) + func.sum(t.down)
+    rng = (t.ts >= start, t.ts < end)
+
+    def by(*cols, limit=None):
+        q = select(*cols, func.sum(t.up), func.sum(t.down), func.sum(t.flows)).where(*rng)             .group_by(*cols).order_by(vol.desc())
+        if limit:
+            q = q.limit(limit)
+        return [(*r[:-3], int(r[-3]), int(r[-2]), int(r[-1])) for r in db.execute(q).all()]
+
+    def row(up, down, flows, **kw):
+        return {**kw, "up": up, "down": down, "total": up + down, "flows": flows}
+
+    ports = [row(u, d, f, proto=p, port=pt) for p, pt, u, d, f in by(t.proto, t.port, limit=20)]
+    kinds = [row(u, d, f, kind=k) for k, u, d, f in by(t.kind)]
+    apps = [row(u, d, f, app=app_meta(a)) for a, u, d, f in by(t.app, limit=15)]
+    hrows = by(t.host, limit=10)
+    meta = host_meta(db, [r[0] for r in hrows])
+    hosts = [row(u, d, f, host=meta[h]) for h, u, d, f in hrows]
+    return {"total": sum(k["total"] for k in kinds), "range_total": total(db, start, end)["total"],
+            "ports": ports, "kinds": kinds, "apps": apps, "hosts": hosts, "nat": nat_suspect(db, start, end)}
 
 
 def online_count(db) -> int:

@@ -93,6 +93,11 @@
             <pre class="code" v-if="fixes.length">{{ fixes.join('\n') }}</pre>
           </div>
         </template>
+        <!-- 双重 NAT：一台终端占了大部分流量（debug25） -->
+        <div v-if="sys.nat" class="fixes">
+          <div class="sec"><span class="pill warn">{{ t('check.natTitle') }}</span></div>
+          <p class="muted small">{{ t('rules.nat', { name: sys.nat.name, ip: sys.nat.ip, p: pct(sys.nat.share) }) }}</p>
+        </div>
       </div>
     </div>
 

@@ -10,7 +10,8 @@
 3. 应用级 IP：自定义 / 内置 CIDR > blackmatrix7 的 IP 段 > 专用端口 > IP 所属 ASN
 4. 分类级域名列表（lists.py）：Hagezi > UT1。只知道是哪类网站（博彩、成人、游戏、购物……），
    所以排在所有应用级信号之后；命中 v2fly 的“geolocation”这类只说明是网站的兜底条目时，也由它们细化
-5. 国内域名列表 > 官方 IP 段（最长前缀优先）/ 国内 IP 段（sources.py）
+5. 国内域名列表 > 域名像视频站（m3u8 / vod / play……）> 官方 IP 段（最长前缀优先）/ 国内 IP 段（sources.py）
+   完全没有域名、落到国内网络的：按远端 ASN 名称推断家宽（P2P/PCDN）或 IDC（apps.yaml 的 asn_kinds）
 6. 通用端口（HTTPS 等）> IP 协议号 > other
 """
 import ipaddress
@@ -43,6 +44,9 @@ def _norm_label(s: str) -> str:
     s = re.sub(r"^(geosite|geoip|rule[-_]?set|category)[-_:]", "", str(s or "").strip().lower())
     s = re.sub(r"[\W_]+", "", s)          # 表情符号、空格、标点
     return re.sub(r"\d+$", "", s)          # sing-box 给规则集名加的序号：Telegram0
+CN_NET, PCDN_APP, IDC_APP, VIDEO_APP = "cn_net", "pcdn_p2p", "idc_cloud", "gen_video"
+# 主机名里带这些片段、又没有任何规则认得的域名，多半是视频站的播放 / 切片 CDN（debug25：盗版影视站的 m3u8 节点）
+_VIDEO_RE = re.compile(r"m3u8|^vod|vod\d|(?<!dis)play|video|movie")
 GENERIC_APPS = {"https", "quic", "http", UNKNOWN_APP}  # 这些应用下的域名算"未识别"
 # 只能说明协议或 CDN 厂商、说明不了具体应用的分类，不计入"应用识别率"
 UNIDENTIFIED_CATEGORIES = {"unknown", "web", "tls", "network", "cdn"}
@@ -73,6 +77,8 @@ class Classifier:
         self.groups: dict[str, dict] = data["groups"]
         self.categories: dict[str, dict] = data["categories"]
         self._base_apps = data["apps"]
+        kinds = data.get("asn_kinds") or {}
+        self.asn_kinds = {k: {str(w).upper() for w in kinds.get(k, [])} for k in ("idc", "broadband")}
         self._extra = {"extend": [], "apps": []}
         if extra_file and os.path.exists(extra_file):
             with open(extra_file, encoding="utf-8") as f:
@@ -178,6 +184,36 @@ class Classifier:
             return alt[0]
         return hit
 
+    @staticmethod
+    def video_guess(name: str | None) -> str | None:
+        if not name:
+            return None
+        labels = name.lower().strip(".").split(".")[:-1]   # 顶级域名不看
+        return VIDEO_APP if any(_VIDEO_RE.search(x) for x in labels) else None
+
+    def asn_kind(self, remote_ip: str) -> tuple[str | None, str | None]:
+        """远端 IP 所属 ASN 的类型：("idc" | "broadband" | None, 国家)；没有 ASN 库或查不到时 (None, None)"""
+        from app.asn import asndb
+        hit = asndb.lookup(remote_ip)
+        if not hit:
+            return None, None
+        cache = self.__dict__.setdefault("_kind_cache", {})   # 按 ASN 缓存：每条无域名的流都要查
+        kind = cache.get(hit[0], False)
+        if kind is False:
+            words = set(re.split(r"[^A-Z0-9]+", (hit[2] or "").upper()))
+            kind = next((k for k in ("idc", "broadband") if words & self.asn_kinds.get(k, set())), None)
+            if len(cache) > 100_000:
+                cache.clear()
+            cache[hit[0]] = kind
+        return kind, hit[1]
+
+    def asn_guess(self, remote_ip: str) -> str | None:
+        """没有域名的国内流量：家宽 / 骨干网 → P2P/PCDN，IDC / 云 → 国内云/IDC；不是国内或认不出类型时 None"""
+        kind, cc = self.asn_kind(remote_ip)
+        if cc != "CN" or not kind:
+            return None
+        return PCDN_APP if kind == "broadband" else IDC_APP
+
     def classify(self, remote_ip: str, proto: int, port: int, qname: str | None, cname: str | None) -> str:
         from app.classify.lists import lists as extra_lists
         from app.classify.local import local
@@ -235,8 +271,12 @@ class Classifier:
             # 先按域名兜底、再按 IP：有域名时域名更准（国内网站托管在 Cloudflare/AWS 上时，IP 只能说明是哪家 CDN）
             # 国内域名列表：域名规则没认出、但在列表里 → 国内网站
             app = extra.fallback_domain(qname) or extra.fallback_domain(cname)
+            app = app or self.video_guess(qname) or self.video_guess(cname)
             # 官方 IP 段：完全没有域名的流量（加密 DNS、ECH、直连 IP）按 Google/Cloudflare/AWS/Apple/国内段 认归属
             app = app or extra.ip_app(remote_ip)
+            if app in (None, CN_NET) and not qname and not cname:
+                # 国内段兜底只说明“在国内”：再按 ASN 类型分出家宽 P2P/PCDN 和 IDC（debug25）
+                app = self.asn_guess(remote_ip) or app
         if app is None:
             app = generic or self.protos.get(proto)
         app = app or UNKNOWN_APP
