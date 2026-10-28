@@ -37,7 +37,7 @@ from sqlalchemy import delete, func, select
 
 from app.classify.local import _is_ip, _v6key
 from app.config import get_settings
-from app.models import HostDomainDay, Setting, ShareDeployment, ShareDomain, ShareEntry
+from app.models import CustomRule, HostDomainDay, Setting, ShareDeployment, ShareDomain, ShareEntry
 
 API = "/api/share/v1"
 MAX_UPLOAD = 50_000          # 单次上报 IP / 域名各自的条数上限
@@ -139,12 +139,21 @@ def _shareable_ip(ip: str) -> bool:
     return not (a.is_private or a.is_reserved or a.is_multicast or a.is_loopback or a.is_link_local)
 
 
+def _under(dom: str, patterns: set[str]) -> bool:
+    """dom 是不是 patterns 里某个域名本身或它的子域名"""
+    parts = dom.split(".")
+    return any(".".join(parts[i:]) in patterns for i in range(len(parts)))
+
+
 def export_entries(engine, db) -> tuple[list[dict], list[dict]]:
     """本地自学习库整理成投票：host_domain_day 里的行按字节数取最多的应用。
     IP 条目 IPv4 按精确地址、IPv6 按 /64 前缀（精确地址在不同网络间几乎不重复，凑不满投票）；域名条目按精确域名"""
     classifier = engine.classifier
     ip_votes: dict = defaultdict(dict)
     dom_votes: dict = defaultdict(dict)
+    # 手动归类的域名默认不贡献（debug26）：没勾「贡献给社区」的域名规则命中的域名一律不报
+    private = {r.pattern for r in db.scalars(select(CustomRule).where(CustomRule.kind == "domain"))
+               if not r.share}
     rows = db.execute(select(HostDomainDay.domain, HostDomainDay.app, func.sum(HostDomainDay.bytes))
                       .group_by(HostDomainDay.domain, HostDomainDay.app)).all()
     for dom, app, b in rows:
@@ -155,7 +164,10 @@ def export_entries(engine, db) -> tuple[list[dict], list[dict]]:
                 continue
             per = ip_votes[_v6key(dom) or dom]
         else:
-            per = dom_votes[dom.lower().rstrip(".")]
+            dom = dom.lower().rstrip(".")
+            if private and _under(dom, private):
+                continue
+            per = dom_votes[dom]
         per[app] = per.get(app, 0) + int(b or 0)
 
     def pack(votes, field):

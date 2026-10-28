@@ -102,8 +102,10 @@
               <tr v-for="r in rules" :key="r.id">
                 <td><span class="tag">{{ t('rules.kinds.' + r.kind) }}</span></td>
                 <td class="addr">{{ r.pattern }}</td>
-                <td>{{ appLabel(r.app_id) }}</td>
-                <td class="r"><button class="btn sm danger" v-if="isAdmin" @click="del(r)">{{ t('common.delete') }}</button></td>
+                <td>{{ appLabel(r.app_id) }} <span v-if="r.share" class="pill grey" :title="t('rules.cm.share')">{{ t('rules.cm.shared1') }}</span></td>
+                <td class="r acts"><template v-if="isAdmin">
+                  <button class="btn sm" @click="openCm('edit', [], r)">{{ t('common.edit') }}</button>
+                  <button class="btn sm danger" @click="del(r)">{{ t('common.delete') }}</button></template></td>
               </tr>
             </tbody>
           </table>
@@ -112,24 +114,52 @@
       </div>
     </div>
 
-    <div class="panel mt">
+    <!-- 未识别域名 Top（debug26）：归类 / 忽略都在弹窗里完成，可多选批量处理 -->
+    <div class="panel mt" id="unknown">
       <div class="panel-h">{{ t('rules.unknown') }}<span class="sp" /><RangeTabs :list="['today', 'week', 'month']" /></div>
-      <p class="panel-b muted hint">{{ t('rules.unknownHint') }}</p>
+      <div class="panel-b steps">
+        <p class="muted hint">{{ t('rules.unknownHint') }}</p>
+        <ol v-if="isAdmin" class="small muted">
+          <li v-for="i in 3" :key="i">{{ t('rules.unknownStep' + i) }}</li>
+        </ol>
+        <p v-if="flash" class="flash small"><span class="pill ok">{{ t('common.saved') }}</span> {{ flash }}</p>
+        <div v-if="isAdmin && picked.length" class="bulk">
+          <span class="small">{{ t('rules.cm.selected', { n: picked.length }) }}</span>
+          <button class="btn sm primary" @click="openCm('classify', picked)">{{ t('rules.cm.bulkClassify') }}</button>
+          <button class="btn sm" @click="openCm('ignore', picked)">{{ t('rules.cm.bulkIgnore') }}</button>
+          <button class="btn sm ghost" @click="sel = {}">{{ t('common.cancel') }}</button>
+        </div>
+      </div>
       <div class="tbl-wrap">
         <table class="tbl">
-          <thead><tr><th>{{ t('hosts.domain') }}</th><th class="r">{{ t('rules.bytes') }}</th><th class="r">{{ t('common.hosts') }}</th><th /></tr></thead>
+          <thead><tr><th v-if="isAdmin" class="ck"><input type="checkbox" :checked="allPicked" @change="pickAll($event.target.checked)"
+                                                           :aria-label="t('rules.cm.pickAll')" /></th>
+            <th>{{ t('hosts.domain') }}</th><th class="r">{{ t('rules.bytes') }}</th><th class="r">{{ t('common.hosts') }}</th><th v-if="isAdmin" /></tr></thead>
           <tbody>
             <tr v-for="u in unknown" :key="u.domain">
-              <td>{{ u.domain }}</td>
+              <td v-if="isAdmin" class="ck"><input type="checkbox" v-model="sel[u.domain]" :aria-label="u.domain" /></td>
+              <td class="addr">{{ u.domain }}</td>
               <td class="r num">{{ bytes(u.bytes) }}</td>
               <td class="r num">{{ u.hosts }}</td>
-              <td class="r"><button class="btn sm" @click="classify(u.domain)">{{ t('rules.classify') }}</button></td>
+              <td v-if="isAdmin" class="r acts">
+                <button class="btn sm primary" @click="openCm('classify', [u])">{{ t('rules.classify') }}</button>
+                <button class="btn sm ghost" @click="openCm('ignore', [u])">{{ t('rules.cm.ignore') }}</button></td>
             </tr>
           </tbody>
         </table>
         <div v-if="!unknown.length" class="empty">{{ t('common.empty') }}</div>
       </div>
+      <details v-if="ignoredList.length" class="panel-b ign">
+        <summary class="small">{{ t('rules.cm.ignoredTitle', { n: ignoredList.length }) }}</summary>
+        <p class="faint small">{{ t('rules.cm.ignoredHint') }}</p>
+        <div v-for="x in ignoredList" :key="x.pattern" class="ig">
+          <span class="addr">{{ x.pattern }}</span><span class="faint small">{{ datetime(x.created) }}</span><span class="sp" />
+          <button v-if="isAdmin" class="btn sm" @click="unignore(x.pattern)">{{ t('rules.cm.unignore') }}</button>
+        </div>
+      </details>
     </div>
+    <ClassifyModal :open="!!cm" :mode="cm ? cm.mode : 'classify'" :rows="cm ? cm.rows : []" :rule="cm && cm.rule" :meta="meta"
+                   @close="cm = null" @saved="onSaved" />
 
     <!-- 未匹配流量诊断（debug25）：没有任何域名的流量是哪类远端、哪个端口、哪台终端 -->
     <div class="panel mt" v-if="unm">
@@ -155,6 +185,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http, { isAdmin } from '../api.js'
 import BarList from '../components/BarList.vue'
+import ClassifyModal from '../components/ClassifyModal.vue'
 import Icon from '../components/Icon.vue'
 import RangeTabs from '../components/RangeTabs.vue'
 import { CAT_GROUP, ago, appName, bytes, catColor, catName, datetime, groupName, pct } from '../format.js'
@@ -241,8 +272,8 @@ const unmPorts = computed(() => (unm.value ? unm.value.ports : []).map(r => ({
 const unmHosts = computed(() => (unm.value ? unm.value.hosts : []).map(r => ({
   key: r.host.key, label: r.host.name, sub: r.host.ip, online: r.host.online, to: `/hosts/${encodeURIComponent(r.host.key)}`, ...io(r) })))
 
-onMounted(() => { load(); loadUnknown(); loadLib(); loadUnm() })
-watch(() => ui.range, () => { loadUnknown(); loadUnm() })
+onMounted(() => { load(); loadUnknown(); loadLib(); loadUnm(); loadIgnored() })
+watch(() => ui.range, () => { sel.value = {}; loadUnknown(); loadUnm() })
 
 // 下拉框里分类带上所属大类，例如"影音娱乐 · 短视频"
 const catLabel = c => `${groupName(meta.value.groups.find(g => g.id === c.group))} · ${catName(c)}`
@@ -252,35 +283,51 @@ function appLabel(id) {
   return a ? appName(a) : id
 }
 
-// 取注册域名（简单处理：最后两段；.com.cn 这类取三段）
-function baseDomain(d) {
-  const p = d.split('.')
-  const n = /^(com|net|org|gov|edu)\.[a-z]{2}$/.test(p.slice(-2).join('.')) ? 3 : 2
-  return p.slice(-n).join('.')
+// ---------- 归类 / 忽略 / 修改弹窗（debug26） ----------
+const cm = ref(null)                 // { mode, rows, rule }
+const sel = ref({})                  // 勾选的未识别域名
+const flash = ref('')
+const ignoredList = ref([])
+const picked = computed(() => unknown.value.filter(u => sel.value[u.domain]))
+const allPicked = computed(() => unknown.value.length > 0 && picked.value.length === unknown.value.length)
+function pickAll(on) { sel.value = on ? Object.fromEntries(unknown.value.map(u => [u.domain, true])) : {} }
+function openCm(mode, rows, rule = null) { flash.value = ''; cm.value = { mode, rows, rule } }
+async function loadIgnored() {
+  try { ignoredList.value = await http.get('/rules/ignored') } catch (e) { /* 不阻塞页面 */ }
 }
-
-function classify(domain) {
-  f.kind = 'domain'
-  f.pattern = baseDomain(domain)
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+async function onSaved(msg) {
+  cm.value = null
+  sel.value = {}
+  flash.value = msg
+  await Promise.all([load(), loadUnknown(), loadIgnored()])
+}
+async function unignore(pattern) {
+  try {
+    await http.post('/rules/unignore', { patterns: [pattern] })
+    await Promise.all([loadUnknown(), loadIgnored()])
+  } catch (e) { formErr.value = e.message }
 }
 
 async function add() {
   formErr.value = ''
   try {
-    await http.post('/rules', { ...f, app_name: newApp.value ? f.app_name : null, category: newApp.value ? f.category : null })
+    const r = await http.post('/rules', { ...f, app_name: newApp.value ? f.app_name : null, category: newApp.value ? f.category : null },
+      { timeout: 120000 })
     f.pattern = ''
+    flash.value = t(r.bytes_moved ? 'rules.cm.done' : 'rules.cm.done0', { app: appLabel(r.app_id), b: bytes(r.bytes_moved) })
     await load()
     await loadUnknown()
   } catch (e) { formErr.value = e.message }
 }
 
 async function del(r) {
-  if (!confirm(t('common.confirmDelete'))) return
+  if (!confirm(t('rules.cm.delConfirm', { p: r.pattern }))) return
   formErr.value = ''
   try {
-    await http.delete(`/rules/${r.id}`)
+    const res = await http.delete(`/rules/${r.id}`, { timeout: 120000 })
+    flash.value = t(res.bytes_moved ? 'rules.cm.deleted' : 'rules.cm.deleted0', { p: r.pattern, b: bytes(res.bytes_moved) })
     await load()
+    await loadUnknown()
   } catch (e) { formErr.value = e.message }
 }
 
@@ -325,4 +372,16 @@ async function reclassify() {
 .test { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; border-top: 1px solid var(--line); }
 .test .input { flex: 1; min-width: 160px; }
 .hint { margin: 0; padding-bottom: 4px; font-size: 13px; }
+.steps ol { margin: 6px 0 0; padding-left: 20px; line-height: 1.7; }
+.flash { margin: 10px 0 0; line-height: 1.6; }
+.bulk { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; padding: 8px 12px; border-radius: 10px; background: var(--sunk); }
+.ck { width: 34px; }
+.acts { white-space: nowrap; }
+.acts .btn + .btn { margin-left: 6px; }
+.ign { border-top: 1px solid var(--line); }
+.ign summary { cursor: pointer; color: var(--muted); }
+.ign p { margin: 6px 0; }
+.ig { display: flex; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.ig:last-child { border-bottom: 0; }
+.ig .sp { flex: 1; }
 </style>

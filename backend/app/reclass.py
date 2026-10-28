@@ -22,7 +22,7 @@ import threading
 import time
 from collections import defaultdict
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app import timeutil
@@ -57,12 +57,14 @@ def _retryable(e: Exception) -> bool:
     return "(1213" in s or "(1205" in s or "(1062" in s or "database is locked" in s
 
 
-def reclassify(engine, db, before: int | None = None, attempts: int = 3, since: int | None = None) -> dict:
-    """重算 before（默认今天零点）以前的历史分类；给了 since 时只算 [since, before)（过了零点只需补算新的一天）"""
+def reclassify(engine, db, before: int | None = None, attempts: int = 3, since: int | None = None,
+               where=(), pred=None, force: bool = False) -> dict:
+    """重算 before（默认今天零点）以前的历史分类；给了 since 时只算 [since, before)（过了零点只需补算新的一天）。
+    where / pred 只重算一部分行（单条规则，debug26）；force 时不论升级降级都改成现在的识别结果（删除、修改规则后回退）"""
     with _reclass_lock:
         for i in range(attempts):
             try:
-                return _reclassify_once(engine, db, before, since)
+                return _reclassify_once(engine, db, before, since, where, pred, force)
             except (OperationalError, IntegrityError) as e:
                 db.rollback()
                 if i == attempts - 1 or not _retryable(e):
@@ -97,7 +99,47 @@ def _new_app(classifier, dom: str, old_app: str, cache: dict) -> str | None:
     return new_app if qname and classifier.match_domain(qname) == new_app else None
 
 
-def _reclassify_once(engine, db, before: int | None, since: int | None = None) -> dict:
+def _forced_app(classifier, dom: str, old_app: str, cache: dict) -> str | None:
+    """删除 / 修改规则后：这些行原来是按那条规则归的，直接改成现在的识别结果（可以是笼统分类）"""
+    if _is_ip(dom):
+        new_app = classifier.classify(dom, 6, 0, cache.get(dom), None)
+    else:
+        new_app = classifier.classify("0.0.0.0", 6, 443, dom, None)
+    return new_app if new_app and new_app != old_app else None
+
+
+def rule_scope(rule_kind: str, pattern: str, from_app: str | None = None) -> tuple | None:
+    """单条规则影响到的历史行（debug26）：返回给 reclassify 的 (where, pred)；端口规则历史里没有端口，返回 None。
+    from_app：删除 / 修改规则时只动原来归到这条规则应用下的行"""
+    t = HostDomainDay
+    where = [t.app == from_app] if from_app else []
+    if rule_kind == "domain":
+        p = pattern.lower().strip(".")
+        where.append(or_(t.domain == p, t.domain.like("%." + p)))
+        return where, None
+    if rule_kind == "cidr":
+        net = ipaddress.ip_network(pattern, strict=False)
+
+        def pred(dom):
+            try:
+                a = ipaddress.ip_address(dom)
+            except ValueError:
+                return False
+            return a.version == net.version and a in net
+        return where, pred
+    return None
+
+
+def reclassify_rule(engine, db, rule_kind: str, pattern: str, from_app: str | None = None) -> dict | None:
+    """新增 / 修改 / 删除一条规则后只重算它涉及的历史行，几秒内完成；端口规则返回 None"""
+    scope = rule_scope(rule_kind, pattern, from_app)
+    if scope is None:
+        return None
+    return reclassify(engine, db, where=scope[0], pred=scope[1], force=from_app is not None)
+
+
+def _reclassify_once(engine, db, before: int | None, since: int | None = None, where=(), pred=None,
+                     force: bool = False) -> dict:
     t0 = time.time()
     classifier = engine.classifier
     before = timeutil.day_bucket(time.time()) if before is None else before
@@ -107,11 +149,15 @@ def _reclassify_once(engine, db, before: int | None, since: int | None = None) -
     q = select(HostDomainDay.ts, HostDomainDay.host, HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)         .where(HostDomainDay.ts < before)
     if since is not None:
         q = q.where(HostDomainDay.ts >= since)
+    if where:
+        q = q.where(*where)
     rows = db.execute(q).all()
+    if pred is not None:
+        rows = [r for r in rows if pred(r[2])]
     for ts, host, dom, old_app, b in rows:
         if not b:
             continue
-        new_app = _new_app(classifier, dom, old_app, cache)
+        new_app = (_forced_app if force else _new_app)(classifier, dom, old_app, cache)
         if new_app:
             moves[(int(ts), host, old_app)][new_app] += int(b)
             marks.append({"ts": int(ts), "host": host, "domain": dom, "app": new_app})

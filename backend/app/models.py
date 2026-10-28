@@ -119,6 +119,7 @@ class CustomRule(Base):
     app_name = Column(String(64))
     category = Column(String(32))
     created = Column(BigInteger)
+    share = Column(Integer)   # 1 = 命中的域名贡献给社区共享库（debug26，默认不贡献）
 
 
 class Setting(Base):

@@ -185,6 +185,8 @@ RouterOS ◀── REST 只读（可选）── 主机名、IP↔MAC、WAN 速�
 3. **社区共享库**：各个部署实例匿名汇总的识别结论，本地查不到时兜底（见下节）。
 4. 都查不到时：域名像视频站（`m3u8 / vod / play`……）的归「其他视频网站」；**完全没有域名**的国内流量按远端 ASN 推断，家宽 / 骨干网归「P2P/PCDN 加速」，IDC / 云厂商归「国内云/IDC」（推断，不对应具体 App）；再不行才是「HTTPS」「国内网络」这类笼统分类。
 
+**识别规则 → 未识别域名 Top** 列出还没对应到具体应用的域名：点「归类」在弹窗里选它属于哪个应用（有推荐，可搜索），保存后近 31 天的历史立即改算、识别率随之提高；不想管的点「忽略」，可以多选批量处理。手动归类默认不上报社区共享库，需要时在弹窗里勾选贡献。
+
 「其他」占比偏高时，看 **识别规则 → 未匹配流量诊断**：没有域名的流量按远端类型、端口、终端拆开显示。一台终端占了大部分流量多半是下挂了路由器（双重 NAT），它后面的设备 ROS 看不到，接入自检会提示。自己的 NAS、VPS 域名可以在识别规则里归到「常用协议 → 自建服务」。
 
 识别库更新后，或者每天过了零点，会自动把以前的历史流量按新规则重算一遍（只会从笼统改成具体，不会反过来）；**识别规则** 页也可以手动重算。
@@ -368,7 +370,7 @@ Then open `http://<host>:8080`, set the admin password, and copy the RouterOS co
 
 ### How apps are identified
 
-The domain of each connection comes from its TLS/QUIC SNI, then sniffed DNS answers, then the host's recent lookups, then a network-wide IP→domain table. Domains and IPs map to apps through four layers: (1) public libraries, updated automatically — built-in rules, v2fly, blackmatrix7, Hagezi / UT1 categories, ASN, China domain lists and official cloud IP ranges; (2) a **local self-learning library** of mappings observed on your own network; (3) the **community library**; (4) fallbacks — video-like hostnames go to "Other video sites", traffic with no domain at all is inferred from the remote ASN (Chinese broadband → "P2P/PCDN", IDC/cloud → "China cloud/IDC"), and the rest is generic ("HTTPS", "China networks"). When the libraries change, past traffic is reclassified automatically. **Rules → Unmatched traffic** breaks down traffic with no domain by remote type, port and device, and the self-check warns when one device carries most of the traffic (a router behind RouterOS, i.e. double NAT).
+The domain of each connection comes from its TLS/QUIC SNI, then sniffed DNS answers, then the host's recent lookups, then a network-wide IP→domain table. Domains and IPs map to apps through four layers: (1) public libraries, updated automatically — built-in rules, v2fly, blackmatrix7, Hagezi / UT1 categories, ASN, China domain lists and official cloud IP ranges; (2) a **local self-learning library** of mappings observed on your own network; (3) the **community library**; (4) fallbacks — video-like hostnames go to "Other video sites", traffic with no domain at all is inferred from the remote ASN (Chinese broadband → "P2P/PCDN", IDC/cloud → "China cloud/IDC"), and the rest is generic ("HTTPS", "China networks"). When the libraries change, past traffic is reclassified automatically. **Rules → Top unidentified domains** lets you classify a domain in a dialog (with suggestions and search); saving re-attributes the last 31 days right away, and you can ignore or bulk-process domains. Manual rules are not shared with the community library unless you opt in. **Rules → Unmatched traffic** breaks down traffic with no domain by remote type, port and device, and the self-check warns when one device carries most of the traffic (a router behind RouterOS, i.e. double NAT).
 
 With DNS sniffing alone, DoH/DoT clients show up as generic HTTPS/QUIC — enable the SNI rules to cover them. Sites using ECH only expose their outer public name.
 
