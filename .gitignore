@@ -12,3 +12,5 @@ __pycache__/
 *.db-shm
 项目说明.txt
 /应用统计.png
+/审计报告-*.md
+/wayos审计/
