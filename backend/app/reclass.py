@@ -114,7 +114,12 @@ def rule_scope(rule_kind: str, pattern: str, from_app: str | None = None) -> tup
     t = HostDomainDay
     where = [t.app == from_app] if from_app else []
     if rule_kind == "domain":
+        from app.stats import base_domain
         p = pattern.lower().strip(".")
+        b = base_domain(p)
+        # A public suffix such as com.cn has no single registrable base.
+        if base_domain("probe." + p) == b:
+            where.append(t.base == b)
         where.append(or_(t.domain == p, t.domain.like("%." + p)))
         return where, None
     if rule_kind == "cidr":

@@ -45,7 +45,8 @@ class HostDomainDay(Base):
     app = Column(String(48), nullable=False)
     base = Column(String(255))   # 主域名（访问目标排行按主域名合并在 SQL 侧做）；升级前的旧行启动时回填
     bytes = Column(BigInteger, nullable=False, default=0)
-    __table_args__ = (Index("ix_hdd_host_ts", "host", "ts"), Index("ix_hdd_app_ts", "app", "ts"))
+    __table_args__ = (Index("ix_hdd_host_ts", "host", "ts"), Index("ix_hdd_app_ts", "app", "ts"),
+                      Index("ix_hdd_base_ts", "base", "ts"))
 
 
 class UnmatchedDay(Base):

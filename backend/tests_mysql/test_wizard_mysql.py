@@ -24,6 +24,8 @@ def test_full_wizard_flow_on_mysql():
 
         assert c.post("/api/setup/save", json=CFG).status_code == 200
         assert database.is_mysql()
+        from sqlalchemy import inspect
+        assert "ix_hdd_base_ts" in {i["name"] for i in inspect(database.engine).get_indexes("host_domain_day")}
         assert bootstrap.load_config()["database"] == "rosdpi_wizard"
         assert c.get("/api/setup/status").json() == {"configured": True, "source": "file", "config_present": True}
         # 配置完成后向导接口关闭
