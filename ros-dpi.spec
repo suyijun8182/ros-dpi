@@ -10,7 +10,7 @@ hidden = ["uvicorn.logging", "uvicorn.loops", "uvicorn.loops.auto", "uvicorn.pro
           "uvicorn.protocols.http", "uvicorn.protocols.http.auto", "uvicorn.protocols.websockets",
           "uvicorn.protocols.websockets.auto", "uvicorn.lifespan", "uvicorn.lifespan.on",
           "app.main", "app.routers", "app.collector"]
-for pkg in ("uvicorn", "pymysql", "cryptography", "passlib", "anyio"):
+for pkg in ("uvicorn", "pymysql", "cryptography", "jwt", "bcrypt", "anyio"):
     attrs = collect_all(pkg)
     datas += attrs[0]
     hidden += attrs[1]

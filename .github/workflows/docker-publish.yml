@@ -35,6 +35,10 @@ jobs:
         run: |
           pip install -r requirements.txt pytest
           python -m pytest -q tests
+      - name: Backend dependency audit
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt
       - name: Setup wizard on real MySQL
         working-directory: backend
         env:
@@ -60,6 +64,7 @@ jobs:
         run: |
           npm ci
           npm run build
+          npm audit --omit=dev --audit-level=high
 
   # PR 也构建一次镜像（单架构、不推送）：Dockerfile 破损在 PR 阶段就能发现，不用等到 push main
   docker-smoke:

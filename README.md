@@ -406,3 +406,5 @@ These data sources are **not** included in this repository or the Docker image; 
 - [dnsmasq-china-list](https://github.com/felixonmars/dnsmasq-china-list) — WTFPL; [chnroutes2](https://github.com/misakaio/chnroutes2) — CC BY-SA 4.0; [iptoasn](https://iptoasn.com) — PDDL; IEEE OUI; official Google / Cloudflare / AWS / GitHub IP range feeds.
 
 0.6.28：保存规则立即返回，历史流量在后台排队改算，界面最多轮询两分钟显示完成结果。
+
+认证依赖已替换为 PyJWT 和直接 bcrypt；升级后原有密码与未过期的登录状态继续有效，无需重置密码或重新登录。

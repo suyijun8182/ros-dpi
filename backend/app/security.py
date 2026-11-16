@@ -4,14 +4,27 @@ import time
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+import jwt
+import bcrypt
 
 from app import database
 from app.config import get_settings
 from app.models import ApiToken, Setting, User
 
-pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+class Passwords:
+    @staticmethod
+    def hash(pw: str) -> str:
+        return bcrypt.hashpw(pw.encode("utf-8")[:72], bcrypt.gensalt()).decode("ascii")
+
+    @staticmethod
+    def verify(pw: str, hashed: str) -> bool:
+        try:
+            return bcrypt.checkpw(pw.encode("utf-8")[:72], hashed.encode("ascii"))
+        except (ValueError, UnicodeError):
+            return False
+
+
+pwd = Passwords()
 _bearer = HTTPBearer(auto_error=False)
 _secret: str | None = None
 TOKEN_DAYS = 30
@@ -132,7 +145,7 @@ def current_user(request: Request, cred: HTTPAuthorizationCredentials | None = D
         return "api:" + name
     try:
         data = jwt.decode(cred.credentials, secret_key(), algorithms=["HS256"])
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(401, "登录已过期，请重新登录")
     user = data.get("sub")
     if not user:
