@@ -181,7 +181,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http, { isAdmin } from '../api.js'
 import BarList from '../components/BarList.vue'
@@ -295,11 +295,37 @@ function openCm(mode, rows, rule = null) { flash.value = ''; cm.value = { mode, 
 async function loadIgnored() {
   try { ignoredList.value = await http.get('/rules/ignored') } catch (e) { /* 不阻塞页面 */ }
 }
-async function onSaved(msg) {
+async function onSaved(msg, reclass) {
   cm.value = null
   sel.value = {}
   flash.value = msg
+  if (reclass === 'queued') pollReclass()
   await Promise.all([load(), loadUnknown(), loadIgnored()])
+}
+let pollTimer
+let pollGeneration = 0
+onUnmounted(() => { pollGeneration++; clearTimeout(pollTimer) })
+function pollReclass() {
+  clearTimeout(pollTimer)
+  const generation = ++pollGeneration
+  const end = Date.now() + 120000
+  async function check() {
+    try {
+      const res = await http.get('/rules/reclass-status')
+      if (generation !== pollGeneration) return
+      if (res.status === 'done') {
+        flash.value = t('rules.cm.reclassDone', { b: bytes(res.bytes_moved) })
+        await loadUnknown()
+        return
+      }
+      if (res.status === 'error') { flash.value = t('rules.cm.reclassError'); return }
+    } catch (e) {
+      if (generation !== pollGeneration) return
+      flash.value = e.message
+    }
+    if (generation === pollGeneration && Date.now() < end) pollTimer = setTimeout(check, 3000)
+  }
+  pollTimer = setTimeout(check, 3000)
 }
 async function unignore(pattern) {
   try {
@@ -311,10 +337,10 @@ async function unignore(pattern) {
 async function add() {
   formErr.value = ''
   try {
-    const r = await http.post('/rules', { ...f, app_name: newApp.value ? f.app_name : null, category: newApp.value ? f.category : null },
-      { timeout: 120000 })
+    const r = await http.post('/rules', { ...f, app_name: newApp.value ? f.app_name : null, category: newApp.value ? f.category : null })
     f.pattern = ''
-    flash.value = t(r.bytes_moved ? 'rules.cm.done' : 'rules.cm.done0', { app: appLabel(r.app_id), b: bytes(r.bytes_moved) })
+    flash.value = t(r.reclass === 'queued' ? 'rules.cm.queued' : 'rules.cm.saved')
+    if (r.reclass === 'queued') pollReclass()
     await load()
     await loadUnknown()
   } catch (e) { formErr.value = e.message }
@@ -324,8 +350,9 @@ async function del(r) {
   if (!confirm(t('rules.cm.delConfirm', { p: r.pattern }))) return
   formErr.value = ''
   try {
-    const res = await http.delete(`/rules/${r.id}`, { timeout: 120000 })
-    flash.value = t(res.bytes_moved ? 'rules.cm.deleted' : 'rules.cm.deleted0', { p: r.pattern, b: bytes(res.bytes_moved) })
+    const res = await http.delete(`/rules/${r.id}`)
+    flash.value = t(res.reclass === 'queued' ? 'rules.cm.queued' : 'rules.cm.saved')
+    if (res.reclass === 'queued') pollReclass()
     await load()
     await loadUnknown()
   } catch (e) { formErr.value = e.message }

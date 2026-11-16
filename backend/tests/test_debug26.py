@@ -1,9 +1,10 @@
 """debug26：未识别域名 Top 的归类——弹窗推荐与匹配范围、保存后只重算这条规则的历史、修改 / 删除回退、忽略、社区贡献。"""
 import time
+import pytest
 
 from fastapi.testclient import TestClient
 
-from app import database, ruleassist, share, timeutil
+from app import database, ruleassist, share, timeutil, rulejobs, reclass
 from app.engine import engine
 from app.main import app
 from app.models import CustomRule, HostDomainDay, Setting, TrafficDay
@@ -11,6 +12,18 @@ from app.models import CustomRule, HostDomainDay, Setting, TrafficDay
 DAY = timeutil.day_bucket(time.time()) - 2 * 86400
 H, H2 = "AA:00:00:00:26:01", "AA:00:00:00:26:02"
 DOM = "foo-unknown26.com"
+
+
+@pytest.fixture(autouse=True)
+def wait_jobs(monkeypatch, request):
+    if request.node.name == "test_classify_does_not_wait_for_lock":
+        return
+    original = rulejobs.queue
+    def queue(items, user):
+        future = original(items, user)
+        future.result(timeout=30)
+        return future
+    monkeypatch.setattr(rulejobs, "queue", queue)
 
 
 def _admin(c):
@@ -70,7 +83,8 @@ def test_classify_flow():
 
             # 归类：历史立即改算，列表里不再出现
             r = c.post("/api/rules/classify", json={"patterns": [DOM, DOM.upper()], "app_id": "bilibili"}, headers=h).json()
-            assert r["patterns"] == [DOM] and r["bytes_moved"] == 8000 and r["app"]["id"] == "bilibili"
+            assert r["patterns"] == [DOM] and r["reclass"] == "queued" and r["app"]["id"] == "bilibili"
+            assert rulejobs.status()["bytes_moved"] == 8000
             assert _day() == {"https": 2000, "bilibili": 8000}
             unk = {u["domain"] for u in c.get("/api/rules/unknown-domains?range=last30", headers=h).json()}
             assert not unk & {"cdn." + DOM, "img." + DOM}
@@ -78,16 +92,60 @@ def test_classify_flow():
             # 修改：按这条规则归过去的历史改到新应用
             rule = next(x for x in c.get("/api/rules", headers=h).json() if x["pattern"] == DOM)
             r = c.put(f"/api/rules/{rule['id']}", json={"app_id": "douyin"}, headers=h).json()
-            assert r["app_id"] == "douyin" and r["bytes_moved"] == 8000
+            assert r["app_id"] == "douyin" and rulejobs.status()["bytes_moved"] == 8000
             assert _day() == {"https": 2000, "bilibili": 0, "douyin": 8000}
 
             # 删除：退回识别库现在的结果（这里是 HTTPS）
             r = c.delete(f"/api/rules/{rule['id']}", headers=h).json()
-            assert r["bytes_moved"] == 8000 and _day()["https"] == 10000
+            assert rulejobs.status()["bytes_moved"] == 8000 and _day()["https"] == 10000
     finally:
         with database.session() as db:
             _clean(db)
         engine.reload_rules()
+
+
+def test_batch_single_scan(monkeypatch):
+    calls = []
+    def scan(*args, **kwargs):
+        calls.append(kwargs)
+        return dict(bytes_moved=0, rows_moved=0, scanned=0)
+    monkeypatch.setattr(reclass, "reclassify", scan)
+    with TestClient(app) as c:
+        h = _admin(c)
+        try:
+            r = c.post("/api/rules/classify", headers=h, json={
+                "patterns": ["a.unknown26.com", "b.unknown26.com", "c.unknown26.com"], "app_id": "bilibili"})
+            assert r.status_code == 200 and len(calls) == 1
+        finally:
+            with database.session() as db:
+                _clean(db)
+            engine.reload_rules()
+
+
+def test_classify_does_not_wait_for_lock(monkeypatch):
+    futures = []
+    original = rulejobs.queue
+    def queue(items, user):
+        future = original(items, user)
+        futures.append(future)
+        return future
+    monkeypatch.setattr(rulejobs, "queue", queue)
+    with TestClient(app) as c:
+        h = _admin(c)
+        try:
+            with reclass._reclass_lock:
+                start = time.monotonic()
+                r = c.post("/api/rules/classify", headers=h,
+                           json={"patterns": [DOM], "app_id": "bilibili"})
+                assert time.monotonic() - start < 1
+                assert r.json()["reclass"] == "queued"
+                assert c.get("/api/rules/reclass-status", headers=h).json()["status"] == "running"
+        finally:
+            for future in futures:
+                future.result(timeout=30)
+            with database.session() as db:
+                _clean(db)
+            engine.reload_rules()
 
 
 def test_ignore():

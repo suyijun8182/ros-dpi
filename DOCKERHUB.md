@@ -134,3 +134,5 @@ Open `http://<host>:8080`. The setup wizard has two steps. 打开网页后按两
 | `TZ` | `Asia/Shanghai` | statistics time zone (weeks start Monday) |
 
 Full list: https://github.com/suyijun8182/ros-dpi#环境变量
+
+0.6.28：保存规则立即返回，历史流量在后台排队改算，界面最多轮询两分钟显示完成结果。

@@ -404,3 +404,5 @@ These data sources are **not** included in this repository or the Docker image; 
 - [Hagezi DNS blocklists](https://github.com/hagezi/dns-blocklists) — GPL-3.0 (`HAGEZI_DB`).
 - [UT1 blacklists](https://dsi.ut-capitole.fr/blacklists/), Université Toulouse Capitole, via the [olbat/ut1-blacklists](https://github.com/olbat/ut1-blacklists) mirror — CC BY-SA 4.0 (`UT1_DB`).
 - [dnsmasq-china-list](https://github.com/felixonmars/dnsmasq-china-list) — WTFPL; [chnroutes2](https://github.com/misakaio/chnroutes2) — CC BY-SA 4.0; [iptoasn](https://iptoasn.com) — PDDL; IEEE OUI; official Google / Cloudflare / AWS / GitHub IP range feeds.
+
+0.6.28：保存规则立即返回，历史流量在后台排队改算，界面最多轮询两分钟显示完成结果。

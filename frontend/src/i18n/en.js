@@ -119,6 +119,10 @@ export default {
     unknownStep2: 'Saving creates a custom rule: history up to yesterday is re-attributed to that app right away, and new traffic from today on follows the rule.',
     unknownStep3: 'For domains you don\'t care about (speed tests, probes, random names) click "Ignore" to hide them; tick several to act in bulk.',
     cm: {
+      queued: 'Saved. Historical traffic is being reclassified in the background.',
+      saved: 'Saved',
+      reclassDone: 'Historical traffic reclassified: {b}',
+      reclassError: 'Historical reclassification failed. Check the operation log.',
       title: 'Classify {n} domain(s)', ignoreTitle: 'Ignore {n} domain(s)', editTitle: 'Edit rule',
       lead: 'Choose which app these domains belong to. Saving creates a custom rule that takes priority over every library.',
       ignoreLead: 'Ignored domains no longer appear in this list; their traffic still counts as unidentified. Undo from "Ignored" at the bottom of the list.',

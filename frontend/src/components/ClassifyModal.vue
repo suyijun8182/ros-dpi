@@ -180,11 +180,9 @@ async function save() {
       return
     }
     const body = { ...(newApp.value ? { ...nf } : { app_id: app.value.id }), share: canShare.value && share.value }
-    // 只重算这条规则涉及的历史，一般几秒；数据多时给足时间
-    const r = props.mode === 'edit' ? await http.put(`/rules/${props.rule.id}`, body, { timeout: 120000 })
-      : await http.post('/rules/classify', { ...body, patterns: merged.value }, { timeout: 120000 })
-    const a = newApp.value ? nf.app_name : appName(app.value)
-    emit('saved', t(r.bytes_moved ? 'rules.cm.done' : 'rules.cm.done0', { app: a, b: bytes(r.bytes_moved) }))
+    const r = props.mode === 'edit' ? await http.put(`/rules/${props.rule.id}`, body)
+      : await http.post('/rules/classify', { ...body, patterns: merged.value })
+    emit('saved', t(r.reclass === 'queued' ? 'rules.cm.queued' : 'rules.cm.saved'), r.reclass)
   } catch (e) { err.value = e.message } finally { busy.value = false }
 }
 </script>

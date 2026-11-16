@@ -130,12 +130,42 @@ def rule_scope(rule_kind: str, pattern: str, from_app: str | None = None) -> tup
     return None
 
 
+def rules_scope(items):
+    groups = defaultdict(list)
+    for kind, pattern, old in items:
+        if kind != "port":
+            groups[old].append((kind, pattern))
+    scopes = []
+    for old, rules in groups.items():
+        domains = [p.lower().strip(".") for k, p in rules if k == "domain"]
+        nets = [rule_scope(k, p)[1] for k, p in rules if k == "cidr"]
+        where = [HostDomainDay.app == old] if old is not None else []
+        pred = None
+        if nets:
+            # Mixed domain/CIDR batches must match either kind, rather than both.
+            def pred(dom, domains=domains, nets=nets):
+                return any(dom == p or dom.endswith("." + p) for p in domains) or any(n(dom) for n in nets)
+        else:
+            from sqlalchemy import and_
+            where.append(or_(*(and_(*rule_scope("domain", p)[0]) for p in domains)))
+        scopes.append((where, pred, old is not None))
+    return scopes
+
+
+def reclassify_rules(engine, db, items):
+    total = {"bytes_moved": 0, "rows_moved": 0, "scanned": 0}
+    for where, pred, force in rules_scope(items):
+        res = reclassify(engine, db, where=where, pred=pred, force=force)
+        for key in total:
+            total[key] += res[key]
+    return total
+
+
 def reclassify_rule(engine, db, rule_kind: str, pattern: str, from_app: str | None = None) -> dict | None:
     """新增 / 修改 / 删除一条规则后只重算它涉及的历史行，几秒内完成；端口规则返回 None"""
-    scope = rule_scope(rule_kind, pattern, from_app)
-    if scope is None:
+    if rule_kind == "port":
         return None
-    return reclassify(engine, db, where=scope[0], pred=scope[1], force=from_app is not None)
+    return reclassify_rules(engine, db, [(rule_kind, pattern, from_app)])
 
 
 def _reclassify_once(engine, db, before: int | None, since: int | None = None, where=(), pred=None,

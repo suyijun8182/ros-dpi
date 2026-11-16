@@ -10,7 +10,7 @@ from app import __version__, integrations, oplog, ruleassist, stats, timeutil
 from app.asn import asndb
 from app.classify import GENERIC_APPS
 from app.config import get_settings
-from app import database
+from app import database, rulejobs
 from app.database import get_db
 from app.engine import engine, parse_cidrs
 from app.models import CustomRule, Setting
@@ -92,14 +92,17 @@ def _check_app(req: RuleApp) -> int:
     return 1 if req.share and info.category != "selfhost" else 0
 
 
-def _reclass_rule(db, kind: str, pattern: str, from_app: str | None = None) -> int:
-    """规则改动后只重算它涉及的历史（debug26），返回搬动的字节数；端口规则历史里没有端口，不重算"""
-    from app.reclass import reclassify_rule
-    res = reclassify_rule(engine, db, kind, pattern, from_app)
-    if res is None:
-        return 0
-    db.commit()
-    return res["bytes_moved"]
+def _queue_rules(items, user):
+    items = [item for item in items if item[0] != "port"]
+    if not items:
+        return "none"
+    rulejobs.queue(items, user)
+    return "queued"
+
+
+@router.get("/rules/reclass-status")
+def rule_reclass_status():
+    return rulejobs.status()
 
 
 @router.get("/rules")
@@ -116,8 +119,7 @@ def add_rule(req: RuleIn, request: Request, user: str = Depends(current_user), d
     db.add(r)
     oplog.log(db, request, user, "rule_add", req.model_dump())
     engine.reload_rules()
-    moved = _reclass_rule(db, r.kind, r.pattern)
-    return {**_rule_dict(r), "bytes_moved": moved}
+    return {**_rule_dict(r), "reclass": _queue_rules([(r.kind, r.pattern, None)], user)}
 
 
 @router.post("/rules/classify")
@@ -140,8 +142,8 @@ def classify_domains(req: ClassifyIn, request: Request, user: str = Depends(curr
             r.app_id, r.app_name, r.category, r.share = req.app_id, req.app_name, req.category, share
     oplog.log(db, request, user, "rule_classify", {**req.model_dump(exclude={"patterns"}), "patterns": pats})
     engine.reload_rules()
-    moved = sum(_reclass_rule(db, "domain", p, old) for p, old in changed)
-    return {"patterns": pats, "app": stats.app_meta(req.app_id), "bytes_moved": moved}
+    return {"patterns": pats, "app": stats.app_meta(req.app_id),
+            "reclass": _queue_rules([("domain", p, old) for p, old in changed], user)}
 
 
 @router.put("/rules/{rule_id}")
@@ -156,8 +158,7 @@ def edit_rule(rule_id: int, req: RuleApp, request: Request, user: str = Depends(
     r.app_id, r.app_name, r.category, r.share = req.app_id, req.app_name, req.category, share
     oplog.log(db, request, user, "rule_edit", {"id": rule_id, "pattern": r.pattern, "from": old, **req.model_dump()})
     engine.reload_rules()
-    moved = _reclass_rule(db, r.kind, r.pattern, old) if old != req.app_id else 0
-    return {**_rule_dict(r), "bytes_moved": moved}
+    return {**_rule_dict(r), "reclass": _queue_rules([(r.kind, r.pattern, old)] if old != req.app_id else [], user)}
 
 
 @router.delete("/rules/{rule_id}")
@@ -171,7 +172,7 @@ def delete_rule(rule_id: int, request: Request, user: str = Depends(current_user
     oplog.log(db, request, user, "rule_delete", detail)
     engine.reload_rules()
     # 原来按这条规则归过去的历史退回识别库现在的结果（debug26）
-    return {"ok": True, "bytes_moved": _reclass_rule(db, kind, pattern, old)}
+    return {"ok": True, "reclass": _queue_rules([(kind, pattern, old)], user)}
 
 
 @router.get("/rules/unknown-domains")
