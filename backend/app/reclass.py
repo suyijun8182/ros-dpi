@@ -158,12 +158,21 @@ def rules_scope(items):
 
 
 def reclassify_rules(engine, db, items):
-    total = {"bytes_moved": 0, "rows_moved": 0, "scanned": 0}
-    for where, pred, force in rules_scope(items):
-        res = reclassify(engine, db, where=where, pred=pred, force=force)
-        for key in total:
-            total[key] += res[key]
-    return total
+    scopes = rules_scope(items)
+    for attempt in range(3):
+        total = {"bytes_moved": 0, "rows_moved": 0, "scanned": 0}
+        try:
+            for where, pred, force in scopes:
+                # A rollback affects earlier groups too: retry the whole batch.
+                res = reclassify(engine, db, where=where, pred=pred, force=force, attempts=1)
+                for key in total:
+                    total[key] += res[key]
+            return total
+        except (OperationalError, IntegrityError) as exc:
+            db.rollback()
+            if attempt == 2 or not _retryable(exc):
+                raise
+            time.sleep(2 + attempt * 2)
 
 
 def reclassify_rule(engine, db, rule_kind: str, pattern: str, from_app: str | None = None) -> dict | None:
