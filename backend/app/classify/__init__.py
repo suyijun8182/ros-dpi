@@ -73,7 +73,7 @@ class Classifier:
         if extra_file == "":
             extra_file = active_v2fly_file()
         with open(rules_file, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+            data = yaml.load(f, Loader=_Loader)
         self.groups: dict[str, dict] = data["groups"]
         self.categories: dict[str, dict] = data["categories"]
         self._base_apps = data["apps"]
