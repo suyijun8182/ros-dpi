@@ -177,6 +177,10 @@
         </div>
       </div>
     </div>
+
+    <!-- 识别校验、抓包采样（0.6.29） -->
+    <AccuracyPanel :meta="meta" />
+    <CapturePanel v-if="isAdmin" />
   </div>
 </template>
 
@@ -184,7 +188,9 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import http, { isAdmin } from '../api.js'
+import AccuracyPanel from '../components/AccuracyPanel.vue'
 import BarList from '../components/BarList.vue'
+import CapturePanel from '../components/CapturePanel.vue'
 import ClassifyModal from '../components/ClassifyModal.vue'
 import Icon from '../components/Icon.vue'
 import RangeTabs from '../components/RangeTabs.vue'

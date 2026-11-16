@@ -129,6 +129,20 @@ class Setting(Base):
     value = Column(Text)
 
 
+class AccuracyProbe(Base):
+    """识别校验（0.6.29）：某台终端在一段时间里只用了某个应用，拿来核对这段时间的流量认对了多少。
+    end 为空表示还在进行；结束 2 分钟后把结果冻结进 result（每分钟明细只留 2 天）"""
+    __tablename__ = "accuracy_probes"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    host = Column(String(64), nullable=False)
+    expected = Column(String(48), nullable=False)
+    start = Column(Integer, nullable=False)
+    end = Column(Integer)
+    note = Column(String(128))
+    created_by = Column(String(64))
+    result = Column(Text)
+
+
 class ApiToken(Base):
     """只读 API 令牌（0.6.25）：给 Home Assistant 等外部程序长期读取数据用，不过期、可随时删除。
     只存 SHA-256，令牌原文只在创建时显示一次"""

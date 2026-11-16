@@ -36,6 +36,8 @@ services:
 
 ## What's new
 
+- **0.6.29**: 识别规则页新增「识别校验」（选终端和应用，开始 / 结束或回看最近几分钟，算出命中 / 同类 / 笼统 / 认错的比例）和「抓包采样」（实验：存 pcap + 每条连接的识别结果，配合 `scripts/ndpi_eval.py` 用 nDPI 离线对照）。Accuracy check (known-answer probes per device and app) and packet sampling (beta: pcap plus per-connection labels for offline comparison with nDPI).
+- **0.6.28**: 保存规则立即返回，历史改算在后台排队；按主域名加索引；认证库换成 PyJWT + bcrypt（旧密码和登录状态继续有效）；CI 加依赖漏洞扫描。Rule saves return immediately with history re-attributed in the background; base-domain index; PyJWT + bcrypt (existing passwords and sessions keep working); dependency audit in CI.
 - **0.6.27**: 重做「未识别域名 Top」的归类——点「归类」弹窗选应用（可搜索、有推荐），可选主域名 / 只这个域名（共用 CDN 默认后者），保存后立即改算近 31 天历史；规则可编辑，修改 / 删除同样改算历史；新增「忽略」与批量处理；手动归类默认不上报社区，可勾选贡献。Reworked "Classify" for unidentified domains: an in-place dialog with search and suggestions, scope choice, immediate history re-attribution, rule editing, ignore and bulk actions; manual rules are not shared with the community unless opted in.
 - **0.6.26**: 降低「其他」占比——完全没有域名的国内流量按远端 ASN 推断（家宽 → P2P/PCDN 加速，IDC → 国内云/IDC）；视频站域名兜底；CDN 云服务、广告统计移到「常用协议」；新增「自建服务」小类；识别规则页新增未匹配流量诊断（远端类型 / 端口 / 终端，保留 30 天）；一台终端占大部分流量时提示双重 NAT。Lower "Other" share: no-domain traffic inferred from the remote ASN (broadband → P2P/PCDN, IDC → cloud/IDC), video-site hostname fallback, CDN and ads moved to Common protocols, unmatched-traffic diagnostics and a double-NAT hint.
 - **0.6.25**: 只读 API 令牌（系统设置 → 用户管理），给 Home Assistant 等外部程序长期读取；新增汇总接口 `/api/ha/summary`（流量、在线、识别率、健康指数、应用构成、终端及其主要应用）。Read-only API tokens and a `/api/ha/summary` endpoint for Home Assistant.
@@ -134,7 +136,3 @@ Open `http://<host>:8080`. The setup wizard has two steps. 打开网页后按两
 | `TZ` | `Asia/Shanghai` | statistics time zone (weeks start Monday) |
 
 Full list: https://github.com/suyijun8182/ros-dpi#环境变量
-
-0.6.28：保存规则立即返回，历史流量在后台排队改算，界面最多轮询两分钟显示完成结果。
-
-认证依赖已替换为 PyJWT 和直接 bcrypt；升级后原有密码与未过期的登录状态继续有效，无需重置密码或重新登录。

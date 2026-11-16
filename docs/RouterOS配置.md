@@ -95,6 +95,22 @@ IPv6 也开了 FastTrack（ROS 7.18 起支持）时同样处理：
 - LAN 的 IPv6 前缀：配了只读 API 会自动加入；没配时在 系统设置 → 网络 手动填写。
 - **系统设置 → 接入自检** 会检查：路由器有 IPv6 公网地址却没有 IPv6 嗅探规则、IPv4 / IPv6 的 FastTrack 没有限定 connection-bytes，都会提示并给出要执行的命令。
 
+### 抓包采样用的临时规则（0.6.29，可选）
+
+上面的规则只镜像 DNS 和 443 端口。做 **识别规则 → 抓包采样** 时，想让 nDPI 也看到游戏、P2P、语音通话等其它端口，就在采样期间临时加上这几条（`192.168.88.10` / `37008` 换成你的 ROS-DPI 地址和端口，面板里给出的命令已经替换好）：
+
+```
+/ip firewall mangle add chain=forward protocol=tcp dst-port=1-442,444-65535 connection-bytes=0-4000 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-SAMPLE
+/ip firewall mangle add chain=forward protocol=udp dst-port=1-52,54-442,444-65535 connection-bytes=0-4000 action=sniff-tzsp sniff-target=192.168.88.10 sniff-target-port=37008 comment=ROSDPI-SAMPLE
+```
+
+IPv6 把 `/ip` 换成 `/ipv6` 再加两条。连接很多（尤其开着 P2P 下载）时会明显增加路由器 CPU 占用，采样结束就删掉：
+
+```
+/ip firewall mangle remove [find comment=ROSDPI-SAMPLE]
+/ipv6 firewall mangle remove [find comment=ROSDPI-SAMPLE]
+```
+
 ## 4. 只读 API 账号（可选）
 
 ```routeros

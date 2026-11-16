@@ -23,7 +23,7 @@
 | **家庭成员 / 员工** | 把一个人的设备归到一起按人统计。**家庭**场景看孩子上网健康（屏幕时间、游戏和短视频、熬夜），**企业**场景看效率与合规 |
 | **审计日志** | 访问日志；审计规则（应用、域名、时段、流量阈值、大流量外发、私接路由、新设备）；14 种通知渠道（Telegram、飞书、企业微信、钉钉、Bark、邮件、Server酱、Pushplus、Discord、Slack、ntfy、Gotify、QQ、Webhook）；日报 / 周报；操作日志 |
 | **管控命令** | 按应用、时段生成 RouterOS 命令（封禁应用、定时断网、限速）并附撤销命令。**只生成，不会改路由器** |
-| **识别规则** | 按域名 / IP 段 / 端口自定义规则；未识别域名 Top 一键归类；各识别库的规模与更新状态 |
+| **识别规则** | 按域名 / IP 段 / 端口自定义规则；未识别域名 Top 一键归类；各识别库的规模与更新状态；识别校验（用已知答案核对准确率）；抓包采样（实验，配合 nDPI 离线对照） |
 
 中英双语，浅色 / 深色主题，手机上也能用。
 
@@ -404,7 +404,3 @@ These data sources are **not** included in this repository or the Docker image; 
 - [Hagezi DNS blocklists](https://github.com/hagezi/dns-blocklists) — GPL-3.0 (`HAGEZI_DB`).
 - [UT1 blacklists](https://dsi.ut-capitole.fr/blacklists/), Université Toulouse Capitole, via the [olbat/ut1-blacklists](https://github.com/olbat/ut1-blacklists) mirror — CC BY-SA 4.0 (`UT1_DB`).
 - [dnsmasq-china-list](https://github.com/felixonmars/dnsmasq-china-list) — WTFPL; [chnroutes2](https://github.com/misakaio/chnroutes2) — CC BY-SA 4.0; [iptoasn](https://iptoasn.com) — PDDL; IEEE OUI; official Google / Cloudflare / AWS / GitHub IP range feeds.
-
-0.6.28：保存规则立即返回，历史流量在后台排队改算，界面最多轮询两分钟显示完成结果。
-
-认证依赖已替换为 PyJWT 和直接 bcrypt；升级后原有密码与未过期的登录状态继续有效，无需重置密码或重新登录。

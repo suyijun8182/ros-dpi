@@ -16,7 +16,7 @@ from app.engine import engine
 from app.models import Setting
 from app.ros_poller import poller
 from app import audit  # noqa: F401  挂上审计（engine.audit）
-from app.routers import admin, auth, setup, stats
+from app.routers import admin, auth, diag, setup, stats
 from app.routers import share as share_router
 from app.routers import audit as audit_router
 from app.routers import compliance as compliance_router
@@ -200,6 +200,8 @@ async def lifespan(app: FastAPI):
         sched.shutdown(wait=False)   # 不等长任务（历史重算可能跑几分钟）；落库之间由 engine 的落库锁串行
     for t in transports:
         t.close()
+    from app.capture import capture
+    _safe(capture.stop, "capture")()   # 正在抓包采样：收尾写好 pcap 和识别结果
     _safe(lambda: engine.flush(final=True), "flush")()  # 关闭前把还没结束的访问也写进访问日志
 
 
@@ -214,7 +216,7 @@ async def _unhandled(request: Request, exc: Exception):
 
 
 for r in (setup.router, auth.router, stats.router, admin.router, audit_router.router, people_router.router,
-          compliance_router.router, share_router.router):
+          compliance_router.router, share_router.router, diag.router):
     app.include_router(r)
 
 

@@ -17,6 +17,7 @@ from app.config import get_settings
 from app import database, hostnames
 from app.database import upsert_add
 from app import dnsmap
+from app.capture import capture
 from app.dnsmap import ConnNames, DnsMap, pick_cname
 from app.models import (AccessLog, AuditEvent, CustomRule, DnsCache, DomainGeo, Host, HostDomainDay, OpLog, Setting, TrafficDay,
                         TrafficHour, UnmatchedDay,
@@ -202,6 +203,8 @@ class Engine:
             return
         self.stats["dns_packets"] += 1
         frame = tzsp_payload(data)
+        if frame and capture.active:
+            capture.write(frame)   # 抓包采样（0.6.29）：原样存 pcap，给 nDPI 等工具离线对照
         ip = ethernet_ip(frame) if frame else None
         if ip is None:
             return

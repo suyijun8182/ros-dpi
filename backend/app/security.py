@@ -64,7 +64,8 @@ def make_token(username: str, version: int | None = None) -> str:
 
 # 普通用户（role=user）只读：除了改自己的密码，所有写操作都要管理员；这些读接口也只给管理员
 USER_WRITABLE = {"/api/auth/password"}
-ADMIN_ONLY_GET = ("/api/settings", "/api/audit/notify", "/api/audit/oplog", "/api/auth/users", "/api/auth/tokens", "/api/compliance")
+ADMIN_ONLY_GET = ("/api/settings", "/api/audit/notify", "/api/audit/oplog", "/api/auth/users", "/api/auth/tokens", "/api/compliance",
+                  "/api/diag")
 API_PREFIX = "rdp_"   # 只读 API 令牌的前缀；登录令牌是 JWT（eyJ 开头），两者不会混淆
 _api_cache: dict[str, tuple[str | None, float]] = {}   # 令牌哈希 -> (名称，不存在为 None, 缓存时间)
 _api_used: dict[int, float] = {}                       # 令牌 id -> 上次写 last_used 的时间（5 分钟写一次）
