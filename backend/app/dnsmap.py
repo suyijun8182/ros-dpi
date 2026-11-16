@@ -105,43 +105,49 @@ class ConnNames:
     PAIR_KEEP = 12 * 3600
 
     def __init__(self, max_conn: int = 200_000, max_pair: int = 300_000):
+        self._lock = threading.RLock()
         self.conn: OrderedDict[tuple, tuple[str, str | None, int]] = OrderedDict()
         self.pair: OrderedDict[tuple, tuple[str, str | None, int]] = OrderedDict()
         self.max_conn, self.max_pair = max_conn, max_pair
 
-    @staticmethod
-    def _put(d: OrderedDict, key, val, cap: int):
-        d[key] = val
-        d.move_to_end(key)
-        while len(d) > cap:
-            d.popitem(last=False)
+    def _put(self, d: OrderedDict, key, val, cap: int):
+        with self._lock:
+            d[key] = val
+            d.move_to_end(key)
+            while len(d) > cap:
+                d.popitem(last=False)
 
     def add_conn(self, client: str, cport: int, server: str, name: str, now: float | None = None):
         now = int(now or time.time())
-        self._put(self.conn, (client, cport, server), (name, None, now), self.max_conn)
-        self._put(self.pair, (client, server), (name, None, now), self.max_pair)
+        with self._lock:
+            self._put(self.conn, (client, cport, server), (name, None, now), self.max_conn)
+            self._put(self.pair, (client, server), (name, None, now), self.max_pair)
 
     def add_conn_only(self, client: str, cport: int, server: str, name: str, now: float | None = None):
         now = int(now or time.time())
-        self._put(self.conn, (client, cport, server), (name, None, now), self.max_conn)
+        with self._lock:
+            self._put(self.conn, (client, cport, server), (name, None, now), self.max_conn)
 
     def add_pair(self, client: str, server: str, name: str, cname: str | None, now: float | None = None):
         now = int(now or time.time())
-        self._put(self.pair, (client, server), (name, cname, now), self.max_pair)
+        with self._lock:
+            self._put(self.pair, (client, server), (name, cname, now), self.max_pair)
 
     def lookup(self, client: str, cport: int, server: str) -> tuple[str, str | None, str] | None:
         """返回 (域名, CNAME, 来源 conn|pair)"""
-        v = self.conn.get((client, cport, server))
-        if v:
-            return v[0], v[1], "conn"
-        v = self.pair.get((client, server))
-        if v:
-            return v[0], v[1], "pair"
-        return None
+        with self._lock:
+            v = self.conn.get((client, cport, server))
+            if v:
+                return v[0], v[1], "conn"
+            v = self.pair.get((client, server))
+            if v:
+                return v[0], v[1], "pair"
+            return None
 
     def purge(self, now: float | None = None):
         now = now or time.time()
-        for d, keep in ((self.conn, self.CONN_KEEP), (self.pair, self.PAIR_KEEP)):
-            # 按插入/更新顺序排列，从最旧的开始删
-            while d and now - next(iter(d.values()))[2] > keep:
-                d.popitem(last=False)
+        with self._lock:
+            for d, keep in ((self.conn, self.CONN_KEEP), (self.pair, self.PAIR_KEEP)):
+                # 按插入/更新顺序排列，从最旧的开始删
+                while d and now - next(iter(d.values()))[2] > keep:
+                    d.popitem(last=False)
