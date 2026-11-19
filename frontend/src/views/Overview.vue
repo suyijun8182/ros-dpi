@@ -12,7 +12,7 @@
     <template v-if="d">
       <div v-if="!d.totals.month.total" class="panel nodata">
         <span>{{ t('overview.noData') }}</span>
-        <router-link to="/settings#guide" class="btn sm">{{ t('overview.openGuide') }}</router-link>
+        <router-link v-if="isAdmin" to="/settings#guide" class="btn sm">{{ t('overview.openGuide') }}</router-link>
       </div>
 
       <!-- 第一行：路由器 / 健康指数 / 在线终端 / DHCP 分配 -->
@@ -31,9 +31,15 @@
                 <div><span>{{ t('overview.cpu') }}</span><span class="meter" :class="lvl(d.router.cpu_load / 100)"><i :style="{ width: (d.router.cpu_load || 0) + '%' }" /></span><b class="num">{{ d.router.cpu_load ?? '-' }}%</b></div>
                 <div v-if="d.router.mem_total"><span>{{ t('overview.memory') }}</span><span class="meter" :class="lvl(memUsed)"><i :style="{ width: memUsed * 100 + '%' }" /></span><b class="num">{{ pct(memUsed, 0) }}</b></div>
               </div>
-              <div v-else class="err small">{{ d.router.error }}</div>
             </template>
-            <div v-else class="hint">{{ t('overview.rosOff') }} <router-link to="/settings#guide" class="link">{{ t('overview.openGuide') }}</router-link></div>
+            <div v-if="!d.router.enabled || !d.router.ok" class="hint">
+              <template v-if="d.router.enabled">
+                <span class="err">{{ t('overview.rosFailed') }}</span>
+                <div v-if="d.router.error">{{ d.router.error }}</div>
+              </template>
+              <span v-else>{{ t(isAdmin ? 'overview.rosOff' : 'settings.rosViewerHint') }}</span>
+              <router-link v-if="isAdmin" to="/settings#ros-api" class="btn sm">{{ t('overview.configureRos') }}</router-link>
+            </div>
           </div>
         </div>
 
@@ -153,7 +159,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import http, { enc } from '../api.js'
+import http, { enc, isAdmin } from '../api.js'
 import { gaugeOption, onlineOption } from '../charts.js'
 import BarList from '../components/BarList.vue'
 import Chart from '../components/Chart.vue'

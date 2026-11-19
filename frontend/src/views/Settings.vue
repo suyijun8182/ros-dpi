@@ -305,6 +305,10 @@ const tab = computed(() => {
     : route.hash === '#guide' || route.hash === '#check' ? 'access' : route.hash === '#sources' ? 'sources' : 'status'
   return TABS.value.includes(k) ? k : 'status'
 })
+// 等状态请求返回、卡片渲染后再定位；从同一页的接入向导跳过来也会触发。
+watch(() => route.hash === '#ros-api' && tab.value === 'status' && !!sys.value, visible => {
+  if (visible) document.getElementById('ros-api')?.scrollIntoView({ block: 'start' })
+}, { flush: 'post' })
 const setTab = k => router.replace({ query: k === 'status' ? {} : { tab: k } })
 // 有问题的标签页上标一个红点
 const badge = computed(() => ({
