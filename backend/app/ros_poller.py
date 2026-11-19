@@ -1,6 +1,7 @@
 """通过 RouterOS REST API（只读，仅 GET）获取终端名称、IP↔MAC、LAN 前缀、接口速率、WAN 线路、DHCP 地址池和系统状态。"""
 import ipaddress
 import json
+import ssl
 import threading
 import time
 from collections import deque
@@ -393,6 +394,16 @@ class RosPoller:
         }
 
 
+def _cert_verification_failed(error: BaseException | None) -> bool:
+    seen = set()
+    while error is not None and id(error) not in seen:
+        if isinstance(error, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY_FAILED" in str(error):
+            return True
+        seen.add(id(error))
+        error = error.__cause__ or error.__context__
+    return False
+
+
 def _explain(e: Exception) -> str:
     """常见错误翻译成可操作的提示。"""
     if isinstance(e, httpx.HTTPStatusError):
@@ -403,6 +414,8 @@ def _explain(e: Exception) -> str:
             return "RouterOS 权限不足（403）：用户组需要 read、rest-api 权限"
         return f"RouterOS 返回 HTTP {code}"
     if isinstance(e, httpx.ConnectError):
+        if _cert_verification_failed(e):
+            return "RouterOS 的 HTTPS 证书校验失败：路由器用自签证书时，请取消勾选「校验 HTTPS 证书」"
         return "连不上 RouterOS：检查 RouterOS 地址，并确认 /ip service 中 www-ssl（或 www）已启用"
     if isinstance(e, httpx.TimeoutException):
         return "连接 RouterOS 超时：检查 RouterOS 地址 与防火墙"

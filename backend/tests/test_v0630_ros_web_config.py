@@ -1,3 +1,4 @@
+import ssl
 from types import SimpleNamespace
 
 import httpx
@@ -9,7 +10,7 @@ from app.main import _apply_saved, app
 from app.models import OpLog, Setting
 
 from app.config import get_settings
-from app.ros_poller import ROS_KEYS, RosPoller, effective, poller
+from app.ros_poller import ROS_KEYS, RosPoller, _explain, effective, poller
 
 
 @pytest.mark.parametrize(("env", "saved", "url", "source", "tls"), [
@@ -88,6 +89,18 @@ def test_stale_poll_failure_after_switch(monkeypatch):
     monkeypatch.setattr(p, "_client", lambda url, *args: httpx.Client(base_url=url, transport=httpx.MockTransport(handler)))
     p.poll()
     assert p.url == "https://second" and not p.error and not p.last_poll
+
+
+@pytest.mark.parametrize("wrapped", [True, False])
+def test_certificate_failure_gives_tls_hint(wrapped):
+    if wrapped:
+        error = httpx.ConnectError("connection failed")
+        error.__cause__ = OSError("TLS handshake")
+        error.__cause__.__context__ = ssl.SSLCertVerificationError("private certificate details")
+    else:
+        error = httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] private certificate details")
+    assert _explain(error) == "RouterOS 的 HTTPS 证书校验失败：路由器用自签证书时，请取消勾选「校验 HTTPS 证书」"
+
 
 @pytest.fixture
 def api():
