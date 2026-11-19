@@ -1,12 +1,13 @@
 import ipaddress
 import re
 import time
+from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app import __version__, integrations, oplog, ruleassist, stats, timeutil
+from app import __version__, integrations, oplog, ros_poller, ruleassist, stats, timeutil
 from app.asn import asndb
 from app.classify import GENERIC_APPS
 from app.config import get_settings
@@ -251,6 +252,10 @@ def test_rule(domain: str):
 
 # ---------- 设置 ----------
 class SettingsIn(BaseModel):
+    ros_url: str | None = Field(None, max_length=255)
+    ros_user: str | None = Field(None, max_length=64)
+    ros_password: str | None = Field(None, max_length=255)
+    ros_verify_tls: bool | None = None
     lan_cidrs: str | None = Field(None, max_length=2000)
     wan_interface: str | None = Field(None, max_length=64)
     # 外部数据源（可选），每个人的地址不同，由用户填写；空字符串表示清除
@@ -279,9 +284,31 @@ def _put(db, key, value):
         row.value = value
 
 
+def _ros_values(db):
+    return dict(db.query(Setting.key, Setting.value).filter(Setting.key.in_(ros_poller.ROS_KEYS)).all())
+
+
+def _ros_url(value: str) -> str:
+    url = value.strip()
+    try:
+        parts = urlsplit(url)
+        if parts.username is not None or parts.password is not None:
+            raise HTTPException(400, "账号密码请填在下面的用户名 / 密码栏，不要写进地址")
+        if parts.scheme not in ("http", "https") or not parts.hostname:
+            raise ValueError
+        # 读取 port 会校验端口格式及范围。
+        _ = parts.port
+        if "?" in url or "#" in url or "\\" in url or any(c.isspace() or ord(c) < 32 for c in url):
+            raise ValueError
+    except ValueError:
+        raise HTTPException(400, "请输入有效的 http:// 或 https:// RouterOS 地址，不要带查询参数或片段")
+    return url.rstrip("/").removesuffix("/rest").rstrip("/")
+
+
 @router.get("/settings")
 def get_settings_api(db: Session = Depends(get_db)):
     s = get_settings()
+    ros = ros_poller.effective(_ros_values(db))
     return {
         "lan_cidrs": engine.lan_cidrs_text,
         "lan_auto": [str(n) for n in engine.auto_nets],
@@ -290,7 +317,8 @@ def get_settings_api(db: Session = Depends(get_db)):
         "interfaces": [i["name"] for i in poller.interfaces],
         "retention": {"minute": s.retention_minute_days, "hour": s.retention_hour_days,
                       "day": s.retention_day_days, "domain": s.retention_domain_days},
-        "ros_url": s.ros_url, "ros_user": s.ros_user,
+        "ros": {"url": integrations._no_userinfo(ros["ros_url"]), "user": ros["ros_user"],
+                "has_password": bool(ros["ros_password"]), "verify_tls": ros["ros_verify_tls"], "source": ros["source"]},
         "ports": {"http": s.http_port, "ipfix": s.ipfix_port, "tzsp": s.tzsp_port},
         "share_enabled": _get(db, "share_enabled", "1" if s.share_enabled else "0") == "1",
         "share_hub_url": _get(db, "share_hub_url", ""),
@@ -330,7 +358,33 @@ def _db_info():
 
 
 @router.put("/settings")
-def put_settings(req: SettingsIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
+def put_settings(req: SettingsIn, request: Request, background: BackgroundTasks,
+                 user: str = Depends(current_user), db: Session = Depends(get_db)):
+    changes = req.model_dump(include=set(ros_poller.ROS_KEYS), exclude_none=True)
+    if not changes:
+        return _save_settings(req, request, user, db)
+    if req.ros_url is not None:
+        if req.ros_url == "":
+            changes.update(ros_user="", ros_password="")
+        else:
+            changes["ros_url"] = _ros_url(req.ros_url)
+    if req.ros_verify_tls is not None:
+        changes["ros_verify_tls"] = "1" if req.ros_verify_tls else "0"
+    with ros_poller.settings_lock:
+        if "ros_url" not in changes and _get(db, "ros_url", None) is None:
+            # 首次只修改环境变量账号或 TLS 时，记录此次网页选择的地址和来源。
+            changes["ros_url"] = get_settings().ros_url
+        for key, value in changes.items():
+            _put(db, key, value)
+        db.flush()
+        saved = _ros_values(db)
+        result = _save_settings(req, request, user, db)
+        if ros_poller.apply(saved) and poller.enabled:
+            background.add_task(poller.poll)  # 响应发出后再请求路由器，慢设备不会拖住保存
+    return result
+
+
+def _save_settings(req, request, user, db):
     if req.lan_cidrs is not None:
         text = ",".join(x.strip() for x in req.lan_cidrs.replace("\n", ",").split(",") if x.strip())
         bad = [x for x in text.split(",") if x and not parse_cidrs(x)]
@@ -513,9 +567,22 @@ def integrations_test():
             "adguard": integrations.adguard.status()}
 
 
+class RosTestIn(BaseModel):
+    url: str | None = Field(None, max_length=255)
+    user: str | None = Field(None, max_length=64)
+    password: str | None = Field(None, max_length=255)
+    verify_tls: bool | None = None
+
+
 @router.post("/ros/test")
-def ros_test():
+def ros_test(req: RosTestIn | None = None, db: Session = Depends(get_db)):
+    if req is not None and req.url is not None:
+        url = _ros_url(req.url)
+        cfg = ros_poller.effective(_ros_values(db))
+        return poller.probe(url, req.user if req.user is not None else cfg["ros_user"],
+                            req.password or cfg["ros_password"],
+                            cfg["ros_verify_tls"] if req.verify_tls is None else req.verify_tls)
     if not poller.enabled:
-        raise HTTPException(400, "未配置 ROS_URL，请在环境变量中设置 RouterOS REST 地址和只读账号")
+        raise HTTPException(400, "还没有配置 RouterOS API，请在 系统设置 → RouterOS API 填写")
     poller.poll()
     return poller.status()

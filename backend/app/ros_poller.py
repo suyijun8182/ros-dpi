@@ -9,6 +9,7 @@ import httpx
 
 from app.config import get_settings
 
+settings_lock = threading.Lock()  # 串行化网页保存与数据库就绪时的配置加载
 ROS_KEYS = ("ros_url", "ros_user", "ros_password", "ros_verify_tls")
 
 
@@ -384,7 +385,7 @@ class RosPoller:
     def status(self) -> dict:
         r = self.resource if isinstance(self.resource, dict) else {}
         return {
-            "enabled": self.enabled, "ok": self.ok, "error": self.error, "last_poll": self.last_poll,
+            "enabled": self.enabled, "source": self.source, "ok": self.ok, "error": self.error, "last_poll": self.last_poll,
             "identity": self.identity, "version": r.get("version"), "board": r.get("board-name"),
             "uptime": r.get("uptime"), "cpu_load": _int(r.get("cpu-load")),
             "mem_total": _int(r.get("total-memory")), "mem_free": _int(r.get("free-memory")),

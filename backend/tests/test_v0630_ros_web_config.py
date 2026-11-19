@@ -2,9 +2,14 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
+
+from app import database
+from app.main import _apply_saved, app
+from app.models import OpLog, Setting
 
 from app.config import get_settings
-from app.ros_poller import RosPoller, effective
+from app.ros_poller import ROS_KEYS, RosPoller, effective, poller
 
 
 @pytest.mark.parametrize(("env", "saved", "url", "source", "tls"), [
@@ -83,3 +88,96 @@ def test_stale_poll_failure_after_switch(monkeypatch):
     monkeypatch.setattr(p, "_client", lambda url, *args: httpx.Client(base_url=url, transport=httpx.MockTransport(handler)))
     p.poll()
     assert p.url == "https://second" and not p.error and not p.last_poll
+
+@pytest.fixture
+def api():
+    with TestClient(app) as client:
+        if not client.get("/api/auth/status").json()["initialized"]:
+            client.post("/api/auth/setup", json={"username": "admin", "password": "secret1"})
+        token = client.post("/api/auth/login", json={"username": "admin", "password": "secret1"}).json()["token"]
+        client.headers["Authorization"] = f"Bearer {token}"
+        yield client
+    with database.session() as db:
+        db.query(Setting).filter(Setting.key.in_(ROS_KEYS)).delete()
+        db.commit()
+    poller.configure("", "", "", False)
+
+
+def test_settings_save_reload_and_disable(api, monkeypatch):
+    calls = []
+    monkeypatch.setattr(poller, "poll", lambda: calls.append(poller.url))
+    monkeypatch.setattr(get_settings(), "ros_url", "https://env")
+    secret = "private-router-password"
+    body = {"ros_url": "https://192.168.88.1/rest/", "ros_user": "u", "ros_password": secret, "ros_verify_tls": True}
+    response = api.put("/api/settings", json=body)
+    assert response.status_code == 200 and secret not in response.text
+    cfg = api.get("/api/settings").json()["ros"]
+    assert cfg == {"url": "https://192.168.88.1", "user": "u", "has_password": True, "verify_tls": True, "source": "web"}
+    assert calls == [cfg["url"]]
+    assert api.put("/api/settings", json={"ros_user": "new"}).is_success
+    assert poller.user == "new" and poller.password == secret
+    assert api.put("/api/settings", json={"ros_user": "new"}).is_success
+    assert len(calls) == 2
+    poller.configure("", "", "", False)
+    _apply_saved()
+    assert poller.enabled and poller.verify_tls and poller.password == secret
+    for path in ("/api/settings", "/api/system", "/api/audit/oplog"):
+        result = api.get(path)
+        assert result.is_success and secret not in result.text
+    assert api.get("/api/system").json()["router"]["source"] == "web"
+    with database.session() as db:
+        logs = [row.detail for row in db.query(OpLog).filter_by(action="settings")]
+        assert all(secret not in detail for detail in logs)
+        assert any('"ros_password": "***"' in detail for detail in logs)
+    assert api.post("/api/ros/test").json()["enabled"] and len(calls) == 3
+    assert api.put("/api/settings", json={"ros_url": ""}).is_success
+    cfg = api.get("/api/settings").json()["ros"]
+    assert not poller.enabled and cfg["source"] == "web"
+    assert cfg["url"] == cfg["user"] == "" and not cfg["has_password"]
+    assert api.post("/api/ros/test").status_code == 400
+
+
+@pytest.mark.parametrize("url", ["ftp://x", "https://u:p@1.2.3.4", "https://1.2.3.4/?a=1",
+                                 "https://router/#part", "http://", "https://host:wrong"])
+def test_reject_router_url(api, url):
+    assert api.put("/api/settings", json={"ros_url": url}).status_code == 400
+    assert api.post("/api/ros/test", json={"url": url}).status_code == 400
+    assert not poller.enabled
+
+
+@pytest.mark.parametrize("status", [200, 401])
+def test_trial_uses_saved_password_without_saving(api, monkeypatch, status):
+    monkeypatch.setattr(poller, "poll", lambda: None)
+    secret = "saved-probe-password"
+    assert api.put("/api/settings", json={"ros_url": "https://live", "ros_user": "u", "ros_password": secret}).is_success
+    before = poller.status()
+    settings = api.get("/api/settings").json()["ros"]
+
+    def handler(request):
+        assert request.method == "GET" and request.url.host == "trial"
+        return httpx.Response(status, json={"name": "trial-router", "version": "7"})
+
+    def client(url, user, password, verify_tls, **kwargs):
+        assert (url, user, password, verify_tls) == ("https://trial", "trial-user", secret, True)
+        return httpx.Client(base_url=url + "/rest", transport=httpx.MockTransport(handler))
+
+    monkeypatch.setattr(poller, "_client", client)
+    result = api.post("/api/ros/test", json={"url": "https://trial/rest/", "user": "trial-user", "verify_tls": True}).json()
+    if status == 200:
+        assert result["ok"] and result["identity"] == "trial-router"
+    else:
+        assert not result["ok"] and "拒绝登录（401）" in result["error"]
+    assert poller.status() == before and api.get("/api/settings").json()["ros"] == settings
+
+
+def test_viewer_cannot_write_or_probe(api):
+    user = {"username": "ros-viewer", "password": "viewer-pass"}
+    created = api.post("/api/auth/users", json={**user, "role": "user"})
+    assert created.is_success
+    try:
+        token = api.post("/api/auth/login", json=user).json()["token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        assert api.put("/api/settings", json={"ros_url": "http://trial"}, headers=headers).status_code == 403
+        assert api.post("/api/ros/test", json={"url": "http://trial"}, headers=headers).status_code == 403
+    finally:
+        api.delete(f"/api/auth/users/{created.json()['id']}")

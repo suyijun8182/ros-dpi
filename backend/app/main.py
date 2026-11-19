@@ -37,12 +37,13 @@ def _safe(fn, name):
 
 
 def _apply_saved():
-    with database.session() as db:
-        wan = db.get(Setting, "wan_interface")
-        poller.wan_override = wan.value if wan and wan.value else ""
-        keys = (*integrations.KEYS, *ros_poller.ROS_KEYS)
-        saved = dict(db.query(Setting.key, Setting.value).filter(Setting.key.in_(keys)).all())
-    ros_poller.apply(saved)
+    with ros_poller.settings_lock:
+        with database.session() as db:
+            wan = db.get(Setting, "wan_interface")
+            poller.wan_override = wan.value if wan and wan.value else ""
+            keys = (*integrations.KEYS, *ros_poller.ROS_KEYS)
+            saved = dict(db.query(Setting.key, Setting.value).filter(Setting.key.in_(keys)).all())
+        ros_poller.apply(saved)
     integrations.apply(saved)
 
 
