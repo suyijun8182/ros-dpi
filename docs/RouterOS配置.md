@@ -119,7 +119,7 @@ IPv6 把 `/ip` 换成 `/ipv6` 再加两条。连接很多（尤其开着 P2P 下
 /ip service set www-ssl disabled=no   # REST API 走 HTTPS（或用 www 的 HTTP）
 ```
 
-然后在 `.env` 设置：
+然后在 ROS-DPI 网页 **系统设置 → RouterOS API** 填写地址、用户名和密码，点击「测试连接」，成功后保存。密码框留空会保留当前密码。也可以在 `.env` 或二进制部署的 `/etc/ros-dpi.env` 中填写下列变量，网页填写的值优先。
 
 ```
 ROS_URL=https://192.168.88.1

@@ -36,6 +36,7 @@ services:
 
 ## What's new
 
+- **0.6.30** · 管理员可从概览页进入 **系统设置 → RouterOS API**，测试并保存只读账号，立即生效。Admins can open **Settings → RouterOS API** from Overview, test the read-only connection and apply changes without restarting.
 - **0.6.29**: 识别规则页新增「识别校验」（选终端和应用，开始 / 结束或回看最近几分钟，算出命中 / 同类 / 笼统 / 认错的比例）和「抓包采样」（实验：存 pcap + 每条连接的识别结果，配合 `scripts/ndpi_eval.py` 用 nDPI 离线对照）。Accuracy check (known-answer probes per device and app) and packet sampling (beta: pcap plus per-connection labels for offline comparison with nDPI). 同时修复 Linux 单文件二进制缺识别规则文件、启动即崩的问题 / Fixed the Linux single-file binary crashing at startup because rule yaml files were not bundled.
 - **0.6.28**: 保存规则立即返回，历史改算在后台排队；按主域名加索引；认证库换成 PyJWT + bcrypt（旧密码和登录状态继续有效）；CI 加依赖漏洞扫描。Rule saves return immediately with history re-attributed in the background; base-domain index; PyJWT + bcrypt (existing passwords and sessions keep working); dependency audit in CI.
 - **0.6.27**: 重做「未识别域名 Top」的归类——点「归类」弹窗选应用（可搜索、有推荐），可选主域名 / 只这个域名（共用 CDN 默认后者），保存后立即改算近 31 天历史；规则可编辑，修改 / 删除同样改算历史；新增「忽略」与批量处理；手动归类默认不上报社区，可勾选贡献。Reworked "Classify" for unidentified domains: an in-place dialog with search and suggestions, scope choice, immediate history re-attribution, rule editing, ignore and bulk actions; manual rules are not shared with the community unless opted in.
@@ -109,6 +110,7 @@ Open `http://<host>:8080`. The setup wizard has two steps. 打开网页后按两
 
 - Change database later: delete `./data/db_config.json` and restart. 更换数据库：删除该文件后重启容器。
 - RouterOS commands: **Settings → Setup & check / 系统设置 → 接入与自检**. Full guide: https://github.com/suyijun8182/ros-dpi
+- 推荐在 **系统设置 → RouterOS API** 填写地址和只读账号，也可以用环境变量 `ROS_URL` / `ROS_USER` / `ROS_PASSWORD`。网页填写的值优先。 We recommend entering the router address and read-only credentials under **Settings → RouterOS API**. Environment variables supply the defaults.
 - Then choose the scenario under **Settings → Scenario & network**, assign devices to people, and set up notifications under **Audit → Notifications**.
 
 ## Ports
@@ -126,7 +128,7 @@ Open `http://<host>:8080`. The setup wizard has two steps. 打开网页后按两
 | `DATABASE_URL` | set in compose | `mysql+pymysql://user:pass@host:3306/rosdpi?charset=utf8mb4`；二进制部署留空则用 SQLite |
 | `LAN_CIDRS` | private ranges | LAN ranges, comma separated |
 | `ADMIN_PASSWORD` | empty | initial password for `admin` |
-| `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | empty | RouterOS REST + read-only user |
+| `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | empty | Default RouterOS REST address and read-only credentials. Web settings take precedence. |
 | `SINGBOX_URL` / `MOSDNS_URL` / `ADGUARD_URL` | empty | external sources (Clash API, MosDNS audit, AdGuard Home query log) |
 | `SHARE_HUB_URL` | `https://rosdpi.vviip.dpdns.org:8443` | community hub (built in); point it at your own hub for a private community |
 | `SHARE_HUB` | `false` | run this instance as the community hub (only the hub sets `true`) |

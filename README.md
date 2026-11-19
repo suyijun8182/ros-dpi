@@ -163,7 +163,7 @@ services:
 /user add name=rosdpi group=rosdpi password=<强密码> address=192.168.88.10
 ```
 
-第 6 步的地址和账号填在 **系统设置 → 接入与自检**，或者用环境变量 `ROS_URL` / `ROS_USER` / `ROS_PASSWORD`。SNI 的开销、双层 NAT、排错等见 [docs/RouterOS配置.md](docs/RouterOS配置.md)。
+完成第 6 步并在 RouterOS 启用 REST 服务后，推荐在网页 **系统设置 → RouterOS API** 填写路由器地址和只读账号，点击「测试连接」，成功后点「保存」即可生效。网页填写的值优先，也可以用环境变量 `ROS_URL` / `ROS_USER` / `ROS_PASSWORD`。SNI 的开销、双层 NAT、排错等见 [docs/RouterOS配置.md](docs/RouterOS配置.md)。
 
 ### 应用是怎么识别出来的
 
@@ -271,8 +271,8 @@ Linux 一键安装写在 `/etc/ros-dpi.env`，Docker 写在 compose 的 `environ
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | 空 | RouterOS REST 地址和只读账号（网页可改） |
-| `ROS_VERIFY_TLS` | `false` | 是否校验 RouterOS 的证书 |
+| `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | 空 | RouterOS REST 地址和只读账号的默认值，网页 **系统设置 → RouterOS API** 中保存的值优先 |
+| `ROS_VERIFY_TLS` | `false` | 是否校验 RouterOS 的 HTTPS 证书，网页可改 |
 | `ROS_POLL_SECONDS` / `ROS_RATE_SECONDS` | 30 / 5 | 完整轮询间隔 / WAN 口速率采样间隔（秒） |
 | `WAN_INTERFACE` | 自动 | WAN 接口名，默认按默认路由判断 |
 | `COLLECTOR_ALLOWED` | 空 | 采集端口只收这些地址的包（一般填路由器 IP）；留空不限制 |

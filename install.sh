@@ -79,6 +79,7 @@ if [ ! -f "$ENV_FILE" ]; then
 # 内网网段（之后也可在 系统设置 → 网络 里改）：
 # LAN_CIDRS=192.168.88.0/24
 # RouterOS 只读 API（可选）：
+# 也可以在网页 系统设置 → RouterOS API 里填写，网页填写的优先。
 # ROS_URL=https://192.168.88.1
 # ROS_USER=
 # ROS_PASSWORD=
