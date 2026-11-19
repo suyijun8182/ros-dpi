@@ -160,3 +160,28 @@
 ## 完成后给我的回报
 
 在本文件末尾追加“执行记录”：每个任务的 commit 号、改了哪些文件、新增测试数和全量测试结果、`npm run build` 结果，以及偏离本单的地方和理由。不要 push。
+
+## 执行记录
+
+2026-11-19，在已有任务单提交 `c47c05f` 上完成五项工作。下表的新增测试数按 pytest 收集的用例计数，包含参数化组合。
+
+| 任务 | 本地提交 | 修改文件 | 新增测试 | 后端全量测试 | 前端构建及中英键检查 |
+|---|---|---|---:|---|---|
+| 1 · 运行时配置与轮询 | `d8e8c2b` | `backend/app/ros_poller.py`、`engine.py`、`main.py`、`oplog.py`，`backend/tests/test_ros_poller.py`、`test_v0630_ros_web_config.py` | 10 | 189 passed | 通过，1,223 个键 |
+| 2 · 设置与试连接口 | `cc2b13e` | `backend/app/routers/admin.py`、`backend/app/main.py`、`backend/app/ros_poller.py`、`backend/tests/test_v0630_ros_web_config.py` | 10 | 199 passed | 通过，1,223 个键 |
+| 3 · 设置卡片与向导 | `1242133` | `frontend/src/components/RouterOsCard.vue`、`frontend/src/views/Settings.vue`、`frontend/src/i18n/zh.js`、`en.js` | 0 | 199 passed | 通过，1,239 个键 |
+| 4 · 概览入口与定位 | `fdc03c1` | `frontend/src/views/Overview.vue`、`Settings.vue`、`frontend/src/i18n/zh.js`、`en.js` | 0 | 199 passed | 通过，1,241 个键 |
+| 5 · 版本与部署文档 | `ebe859c` | `backend/app/__init__.py`、`CHANGELOG.md`、`README.md`、`DOCKERHUB.md`、`docs/RouterOS配置.md`、`.env.example`、`install.sh` | 0 | 199 passed | 通过，1,241 个键 |
+
+每一步均按任务单运行完整 pytest 和 `npm run build`。后端每次有 3 条测试依赖警告，来自 Starlette 测试客户端、AnyIO 和既有 JWT 兼容测试。控制字符扫描无匹配，`git diff --check` 通过。
+
+**补充验收**
+
+- 用隔离的 SQLite 数据库、真实后端和本机模拟的 RouterOS REST 服务，在 Edge 的 390 像素宽视口走通管理员操作。覆盖从概览进入设置、成功试连、保存、留空复用密码、401 错误、回到概览查看失败摘要、取消和确认停用，以及从接入向导跳回卡片。
+- 普通用户在概览可见联系管理员的提示，设置卡片字段禁用。接口测试另行验证保存和试连均返回 403。两条浏览器流程均无未捕获的页面异常。本次验收没有连接现场设备。
+
+**实现取舍**
+
+- 用 FastAPI 后台任务在保存响应发出后立即轮询，避免路由器响应时间影响网页保存。轮询与采样核对配置代次，可丢弃切换前已发出请求的迟到结果。
+- 设置页沿用原有权限，普通用户从系统状态接口读取状态与来源。表单和确认对话框封装为独立 Vue 组件，设置页负责刷新数据和定位。首次仅修改环境变量配置的账号或 TLS 时，同时记录当前地址，供来源标签和停用操作使用。
+- 五项任务各有一个本地提交。为在本文件写入第五项的实际提交号，执行记录单独提交。未推送，未打标签。
