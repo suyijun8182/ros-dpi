@@ -6,6 +6,13 @@ from PyInstaller.utils.hooks import collect_all, collect_data_files
 block_cipher = None
 
 datas = [("frontend/dist", "frontend_dist")]
+# 后端包里的非 .py 数据文件（识别规则 apps.yaml、apps_v2fly.yaml、bm7_map.yaml 等）：
+# 代码按 os.path.dirname(__file__) 读取，冻结后对应 _MEIPASS/app/<子目录>，必须原样带上，否则启动即 FileNotFoundError
+for root, dirs, files in os.walk("backend/app"):
+    dirs[:] = [d for d in dirs if d != "__pycache__"]
+    for name in files:
+        if not name.endswith((".py", ".pyc")):
+            datas.append((os.path.join(root, name), os.path.relpath(root, "backend")))
 hidden = ["uvicorn.logging", "uvicorn.loops", "uvicorn.loops.auto", "uvicorn.protocols",
           "uvicorn.protocols.http", "uvicorn.protocols.http.auto", "uvicorn.protocols.websockets",
           "uvicorn.protocols.websockets.auto", "uvicorn.lifespan", "uvicorn.lifespan.on",

@@ -8,6 +8,7 @@
 - **抓包采样**（实验，仅管理员）：把 TZSP 镜像包原样存成 pcap，同时每 20 秒记下实时连接表里每条连接的识别结果（应用、域名、来源、是否笼统），单次最长 30 分钟 / 200MB，文件 48 小时后自动删除。面板里给出采样期间临时加在 RouterOS 上的嗅探规则（除 DNS 和 443 外所有端口、每条连接开头约 4KB）及删除命令。
 - 新增 `scripts/ndpi_eval.py`：用 nfstream（内含 nDPI，LGPL-3.0）分析采样的 pcap，和 ROS-DPI 的识别结果逐条对照，输出「ROS-DPI 只认到笼统分类的流量里 nDPI 能认出多少、认成什么」、两边结论对照表、两边都没认出的端口分布。nfstream 不进 ROS-DPI 的依赖，只在跑脚本的机器上安装。
 - 文档：README / DOCKERHUB 的 0.6.28 说明从文件末尾移到正确位置。
+- **修复 Linux 单文件二进制启动即崩**：打包配置没带上 `backend/app` 里的识别规则 yaml（apps.yaml 等），二进制 / install.sh 部署启动时报 `FileNotFoundError: .../app/classify/apps.yaml`（Docker 镜像不受影响）。现在打包时自动收录后端包里所有非 .py 数据文件；CI 打完二进制后真正启动一次并请求首页，漏文件会在发版前失败。
 
 ## [0.6.28] - 2026-11-16
 
