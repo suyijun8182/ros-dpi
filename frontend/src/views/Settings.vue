@@ -14,7 +14,7 @@
 
     <div class="panel" v-if="sys && tab === 'status'">
       <div class="panel-h">{{ t('settings.status') }}<span class="sp" /><button class="btn sm" @click="loadSys">{{ t('common.refresh') }}</button></div>
-      <div class="panel-b grid g3">
+      <div class="panel-b grid g2">
         <div class="stc">
           <div class="st-h"><span class="dot" :class="sys.collector.flow_ok ? 'on' : 'warn'" />{{ t('settings.collector') }}
             <span class="faint">udp/{{ s?.ports.ipfix }}</span></div>
@@ -35,19 +35,8 @@
           <div class="kv"><span>{{ t('settings.last') }} SNI</span><span>{{ ago(sys.sni.last) }}</span></div>
           <p class="faint small what">{{ t('settings.dnsWhat') }}</p>
         </div>
-        <div class="stc">
-          <div class="st-h"><span class="dot" :class="!sys.router.enabled ? '' : sys.router.ok ? 'on' : 'bad'" />{{ t('settings.ros') }}
-            <button v-if="sys.router.enabled" class="btn sm" @click="testRos">{{ t('settings.test') }}</button></div>
-          <template v-if="sys.router.enabled">
-            <div class="kv"><span>URL</span><span class="num">{{ s?.ros_url }}</span></div>
-            <div class="kv"><span>{{ t('login.username') }}</span><span>{{ s?.ros_user }}</span></div>
-            <div class="kv" v-if="sys.router.identity"><span>Identity</span><span>{{ sys.router.identity }} · {{ sys.router.version }}</span></div>
-            <div class="kv"><span>{{ t('settings.last') }}</span><span>{{ ago(sys.router.last_poll) }}</span></div>
-            <div class="err" v-if="sys.router.error">{{ sys.router.error }}</div>
-          </template>
-          <div v-else class="muted small">{{ t('settings.rosHint') }}</div>
-        </div>
       </div>
+      <RouterOsCard :status="sys.router" :config="s?.ros" @saved="routerSaved" />
       <div class="panel-b match" v-if="matchTotal">
         <div class="st-h">{{ t('settings.match') }}<span class="faint small">{{ t('settings.matchHint') }}</span></div>
         <div class="mbar"><i v-for="m in matchParts" :key="m.k" :class="m.k" :style="{ flexGrow: m.v }" :title="`${t('settings.matchKind.' + m.k)} ${pct(m.v / matchTotal)}`" /></div>
@@ -274,6 +263,7 @@
         <p class="muted guide">{{ t('settings.guideIntro', { ip: '<HOST_IP>' }) }}</p>
         <div class="ipin"><span class="muted small">HOST_IP</span><input class="input num" v-model="hostIp" /></div>
         <pre class="code">{{ guide }}</pre>
+        <p class="small"><router-link class="link" to="/settings#ros-api">{{ t('settings.rosGuideNext') }}</router-link></p>
         <p class="faint small">{{ t('settings.guideNote') }}</p>
       </div>
     </div>
@@ -281,10 +271,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import http, { auth, isAdmin, setAuth } from '../api.js'
+import RouterOsCard from '../components/RouterOsCard.vue'
 import UsersPanel from '../components/UsersPanel.vue'
 import ApiTokensPanel from '../components/ApiTokensPanel.vue'
 import ScenePicker from '../components/ScenePicker.vue'
@@ -429,9 +420,15 @@ async function doUpdate() {
   } catch (e) { updErr.value = e.message } finally { updating.value = false }
 }
 
-async function testRos() {
-  try { sys.value.router = await http.post('/ros/test') } catch (e) { sys.value.router.error = e.message }
+let routerRefresh
+function routerSaved(settings) {
+  s.value = settings
+  loadCfg()
+  loadSys()
+  clearTimeout(routerRefresh)
+  routerRefresh = setTimeout(loadSys, 2000)
 }
+onBeforeUnmount(() => clearTimeout(routerRefresh))
 
 async function changePw() {
   pwErr.value = ''
@@ -477,7 +474,9 @@ const guide = computed(() => {
 
 # 4. 只读 API 账号（可选，用于主机名、WAN 速率）
 /user group add name=rosdpi policy=read,rest-api,api,!write,!policy,!sensitive
-/user add name=rosdpi group=rosdpi password=<强密码> address=${ip}`
+/user add name=rosdpi group=rosdpi password=<强密码> address=${ip}
+/ip service set www-ssl disabled=no
+# ${t('settings.rosHttpNote')}`
 })
 
 // 按自检结果生成修改命令：有注释时按注释定位，没有就用规则编号
