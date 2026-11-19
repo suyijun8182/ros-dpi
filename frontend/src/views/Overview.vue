@@ -21,7 +21,7 @@
           <div class="panel-h"><h2>{{ t('overview.router') }}</h2><span class="sp" /><router-link to="/settings" class="more">{{ t('common.details') }} ›</router-link></div>
           <div class="panel-b">
             <template v-if="d.router.enabled">
-              <div class="rt"><span class="dot" :class="d.router.ok ? 'on' : 'bad'" /><b>{{ d.router.identity || 'RouterOS' }}</b></div>
+              <div class="rt"><span class="dot" :class="{ on: d.router.ok, bad: !d.router.ok && !!d.router.last_poll }" /><b>{{ d.router.identity || 'RouterOS' }}</b></div>
               <dl class="kv">
                 <div><dt>{{ t('overview.model') }}</dt><dd>{{ d.router.board || '-' }}</dd></div>
                 <div><dt>{{ t('overview.rosVersion') }}</dt><dd class="num">{{ d.router.version || '-' }}</dd></div>
@@ -32,7 +32,8 @@
                 <div v-if="d.router.mem_total"><span>{{ t('overview.memory') }}</span><span class="meter" :class="lvl(memUsed)"><i :style="{ width: memUsed * 100 + '%' }" /></span><b class="num">{{ pct(memUsed, 0) }}</b></div>
               </div>
             </template>
-            <div v-if="!d.router.enabled || !d.router.ok" class="hint">
+            <div v-if="d.router.enabled && !d.router.ok && !d.router.last_poll" class="hint">{{ t('overview.rosConnecting') }}</div>
+            <div v-else-if="!d.router.enabled || !d.router.ok" class="hint">
               <template v-if="d.router.enabled">
                 <span class="err">{{ t('overview.rosFailed') }}</span>
                 <div v-if="d.router.error">{{ d.router.error }}</div>

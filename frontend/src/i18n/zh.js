@@ -61,7 +61,7 @@ export default {
     openGuide: '打开接入向导',
     heroToday: '今天经过路由器的流量', heroRange: '{range}流量', live: '此刻', mix: '流量构成',
     weekShort: '本周', monthShort: '本月', model: '型号', rosVersion: '系统版本', health: '健康指数',
-    configureRos: '去配置', rosFailed: 'RouterOS API 连接失败',
+    configureRos: '去配置', rosConnecting: '正在连接 RouterOS…', rosFailed: 'RouterOS API 连接失败',
     rosOff: '没有配置 RouterOS API，看不到路由器状态。', newToday: '今日新增 {n} 台', dhcp: 'DHCP 分配统计', leases: '租约',
     poolFree: '剩余可分配', poolSize: '最多可分配', morePools: '另有 {n} 个地址池', noPool: '没有读到 DHCP 地址池。',
     status: '全网状态', statusHint: 'WAN 线路、此刻速率、本期流量', wanUp: '已连接', wanDown: '未连接',

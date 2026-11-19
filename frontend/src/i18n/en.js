@@ -61,7 +61,7 @@ export default {
     openGuide: 'Open setup guide',
     heroToday: 'Through the router today', heroRange: 'Traffic, {range}', live: 'Right now', mix: 'Traffic mix',
     weekShort: 'Week', monthShort: 'Month', model: 'Model', rosVersion: 'RouterOS', health: 'Health score',
-    configureRos: 'Configure', rosFailed: 'RouterOS API connection failed',
+    configureRos: 'Configure', rosConnecting: 'Connecting to RouterOS…', rosFailed: 'RouterOS API connection failed',
     rosOff: 'The RouterOS API is not configured, so router status is unavailable.', newToday: '{n} new today', dhcp: 'DHCP pools', leases: 'Leases',
     poolFree: 'Free addresses', poolSize: 'Pool size', morePools: '{n} more pools', noPool: 'No DHCP pools found.',
     status: 'Network status', statusHint: 'WAN lines, live rate, traffic this period', wanUp: 'Up', wanDown: 'Down',

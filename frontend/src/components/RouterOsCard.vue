@@ -77,7 +77,7 @@ async function save(body) {
 <template>
   <section id="ros-api" class="panel-b router-card" aria-labelledby="ros-api-title">
     <div class="status">
-      <span class="dot" :class="status.enabled ? (status.ok ? 'on' : 'bad') : ''" />
+      <span class="dot" :class="{ on: status.enabled && status.ok, bad: status.enabled && !status.ok && !!status.last_poll }" />
       <h2 id="ros-api-title">{{ t('settings.ros') }}</h2>
       <span class="pill grey">{{ t('settings.rosSource.' + status.source) }}</span>
       <span v-if="status.identity">{{ status.identity }} · {{ status.version }}</span>
