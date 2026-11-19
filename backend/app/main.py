@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import __version__, database, integrations
+from app import __version__, database, integrations, ros_poller
 from app.asn import asndb
 from app.collector import start_listeners
 from app.config import get_settings
@@ -40,7 +40,9 @@ def _apply_saved():
     with database.session() as db:
         wan = db.get(Setting, "wan_interface")
         poller.wan_override = wan.value if wan and wan.value else ""
-        saved = {k: (db.get(Setting, k).value if db.get(Setting, k) else None) for k in integrations.KEYS}
+        keys = (*integrations.KEYS, *ros_poller.ROS_KEYS)
+        saved = dict(db.query(Setting.key, Setting.value).filter(Setting.key.in_(keys)).all())
+    ros_poller.apply(saved)
     integrations.apply(saved)
 
 
@@ -134,6 +136,7 @@ def _reconnect():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     s = get_settings()
+    ros_poller.apply({})
     database.add_ready_hook(_on_db_ready)
     if database.configured_url():
         # 放到后台连接，网页可以立刻打开（MySQL 未就绪时会重试约 1 分钟，之后由 _reconnect 接手）
@@ -184,12 +187,11 @@ async def lifespan(app: FastAPI):
         sched.add_job(_safe(_auto_update_db(rule_lists.update), "rule-lists"), "interval", hours=6,
                       max_instances=1, coalesce=True)
         asyncio.get_running_loop().run_in_executor(None, _safe(rule_lists.update, "rule-lists"))
-    if poller.enabled:
-        sched.add_job(_safe(poller.sample, "ros-rate"), "interval", seconds=max(s.ros_rate_seconds, 2),
-                      max_instances=1, coalesce=True)
-        sched.add_job(_safe(poller.poll, "ros-poll"), "interval", seconds=s.ros_poll_seconds,
-                      max_instances=1, coalesce=True)
-        asyncio.get_running_loop().run_in_executor(None, poller.poll)
+    sched.add_job(_safe(poller.sample, "ros-rate"), "interval", seconds=max(s.ros_rate_seconds, 2),
+                  max_instances=1, coalesce=True)
+    sched.add_job(_safe(poller.poll, "ros-poll"), "interval", seconds=s.ros_poll_seconds,
+                  max_instances=1, coalesce=True)
+    asyncio.get_running_loop().run_in_executor(None, poller.poll)
     if not os.environ.get("ROSDPI_NO_JOBS"):  # 测试里不跑后台任务，避免整点落库打乱测试数据
         sched.start()
     print(f"[startup] ROS-DPI {__version__} 已启动，Web 端口 {s.http_port}", flush=True)

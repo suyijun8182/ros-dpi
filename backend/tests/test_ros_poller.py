@@ -1,7 +1,7 @@
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
-from app.config import get_settings
 from app.engine import engine
 from app.main import app
 from app.ros_poller import poller
@@ -39,6 +39,12 @@ ROS = {
 }
 
 
+@pytest.fixture(autouse=True)
+def reset_router():
+    yield
+    poller.configure("", "", "", False)
+
+
 def _use_mock(monkeypatch, status=200):
     def handler(req: httpx.Request):
         if status != 200:
@@ -46,9 +52,9 @@ def _use_mock(monkeypatch, status=200):
         body = ROS.get(req.url.path)
         return httpx.Response(200, json=body) if body is not None else httpx.Response(404, json={})
 
-    monkeypatch.setattr(get_settings(), "ros_url", "https://192.168.88.1")
+    poller.configure("https://192.168.88.1", "u", "p", False)
     monkeypatch.setattr(poller, "_client",
-                        lambda: httpx.Client(base_url="https://192.168.88.1/rest", transport=httpx.MockTransport(handler)))
+                        lambda *args: httpx.Client(base_url="https://192.168.88.1/rest", transport=httpx.MockTransport(handler)))
 
 
 def test_poll_success_populates_router_state(monkeypatch):
@@ -77,26 +83,27 @@ def test_poll_success_populates_router_state(monkeypatch):
     assert len(poller.samples) == 1 and poller.samples[0][2] > 0
 
     # 配置了 ROS 后，概览页能正常返回路由器信息（此前这里会 500）
-    with TestClient(app) as c:
-        if not c.get("/api/auth/status").json()["initialized"]:
-            c.post("/api/auth/setup", json={"username": "admin", "password": "secret1"})
-        tok = c.post("/api/auth/login", json={"username": "admin", "password": "secret1"}).json()["token"]
-        r = c.get("/api/overview", headers={"Authorization": f"Bearer {tok}"})
-        assert r.status_code == 200 and r.json()["router"]["identity"] == "MikroTik-Home"
-        ov = r.json()
-        assert ov["wans"][0]["running"] and ov["pools"][0]["size"] == 14
-        codes = {i["code"]: i for i in ov["health"]["items"]}
-        assert codes["wan"]["ok"] and codes["cpu"]["ok"] and 0 <= ov["health"]["score"] <= 100
-        chk = c.get("/api/system", headers={"Authorization": f"Bearer {tok}"}).json()["ros_check"]
-        sni = next(x for x in chk["rules"] if x["kind"] == "sni")
-        assert chk["checked"] and sni["problems"] == ["port"] and sni["target_port"] == 37880
-        # SNI 规则存在、只是端口错：建议改端口，不建议重复新增；但缺 UDP（QUIC）规则
-        assert "rule_problem" in chk["issues"] and "no_sni" not in chk["issues"] and "no_quic" in chk["issues"]
-        # 路由器有 IPv6 公网地址，嗅探规则却只有 IPv4 的一份
-        assert "no_ipv6" in chk["issues"] and "fasttrack" not in chk["issues"]
-        assert not codes["rules"]["ok"] and codes["rules"]["params"]["wrong"] == [37880]
-        leases = c.get("/api/dhcp/leases", headers={"Authorization": f"Bearer {tok}"}).json()
-        assert leases["leases"][0]["mac"] == "AA:BB:CC:DD:EE:31" and leases["leases"][0]["host_name"] == "iPhone"
+    c = TestClient(app)
+    if not c.get("/api/auth/status").json()["initialized"]:
+        c.post("/api/auth/setup", json={"username": "admin", "password": "secret1"})
+    tok = c.post("/api/auth/login", json={"username": "admin", "password": "secret1"}).json()["token"]
+    r = c.get("/api/overview", headers={"Authorization": f"Bearer {tok}"})
+    assert r.status_code == 200 and r.json()["router"]["identity"] == "MikroTik-Home"
+    ov = r.json()
+    assert ov["wans"][0]["running"] and ov["pools"][0]["size"] == 14
+    codes = {i["code"]: i for i in ov["health"]["items"]}
+    assert codes["wan"]["ok"] and codes["cpu"]["ok"] and 0 <= ov["health"]["score"] <= 100
+    chk = c.get("/api/system", headers={"Authorization": f"Bearer {tok}"}).json()["ros_check"]
+    sni = next(x for x in chk["rules"] if x["kind"] == "sni")
+    assert chk["checked"] and sni["problems"] == ["port"] and sni["target_port"] == 37880
+    # SNI 规则存在、只是端口错：建议改端口，不建议重复新增；但缺 UDP（QUIC）规则
+    assert "rule_problem" in chk["issues"] and "no_sni" not in chk["issues"] and "no_quic" in chk["issues"]
+    # 路由器有 IPv6 公网地址，嗅探规则却只有 IPv4 的一份
+    assert "no_ipv6" in chk["issues"] and "fasttrack" not in chk["issues"]
+    assert not codes["rules"]["ok"] and codes["rules"]["params"]["wrong"] == [37880]
+    leases = c.get("/api/dhcp/leases", headers={"Authorization": f"Bearer {tok}"}).json()
+    assert leases["leases"][0]["mac"] == "AA:BB:CC:DD:EE:31" and leases["leases"][0]["host_name"] == "iPhone"
+
 
 def test_fasttrack_check_respects_connection_bytes(monkeypatch):
     """FastTrack 开着：规则没限定 connection-bytes 要提示；已经限定（连接开头不走 FastTrack）就不再提示"""
@@ -130,4 +137,4 @@ def test_poll_401_gives_actionable_error_and_keeps_status_usable(monkeypatch):
     _use_mock(monkeypatch, status=401)
     poller.poll()
     st = poller.status()
-    assert not st["ok"] and "401" in st["error"] and "ROS_USER" in st["error"]
+    assert not st["ok"] and "401" in st["error"] and "用户名 / 密码" in st["error"]

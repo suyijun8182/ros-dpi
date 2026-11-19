@@ -1,6 +1,7 @@
 """通过 RouterOS REST API（只读，仅 GET）获取终端名称、IP↔MAC、LAN 前缀、接口速率、WAN 线路、DHCP 地址池和系统状态。"""
 import ipaddress
 import json
+import threading
 import time
 from collections import deque
 
@@ -8,6 +9,21 @@ import httpx
 
 from app.config import get_settings
 
+ROS_KEYS = ("ros_url", "ros_user", "ros_password", "ros_verify_tls")
+
+
+def effective(db_values: dict) -> dict:
+    settings = get_settings()
+    cfg = {k: db_values[k] if db_values.get(k) is not None else getattr(settings, k) for k in ROS_KEYS}
+    if db_values.get("ros_verify_tls") is not None:
+        cfg["ros_verify_tls"] = db_values["ros_verify_tls"] == "1"
+    cfg["source"] = "web" if db_values.get("ros_url") is not None else ("env" if cfg["ros_url"] else "none")
+    return cfg
+
+
+def apply(db_values: dict) -> bool:
+    cfg = effective(db_values)
+    return poller.configure(*(cfg[k] for k in ROS_KEYS), source=cfg["source"])
 
 
 def _global_v6(addr: str | None) -> bool:
@@ -22,6 +38,15 @@ def _global_v6(addr: str | None) -> bool:
 class RosPoller:
     def __init__(self, engine):
         self.engine = engine
+        self._lock = threading.Lock()
+        self._generation = 0
+        self.url = self.user = self.password = ""
+        self.verify_tls = False
+        self.source = "none"
+        self.wan_override = ""
+        self._reset()
+
+    def _reset(self):
         self.ok = False
         self.error = ""
         self.last_poll = 0
@@ -31,7 +56,6 @@ class RosPoller:
         self.wan_name = ""
         self.wan_rate = (0.0, 0.0)  # (上行 tx, 下行 rx) 字节/秒
         self._wan_prev: tuple[float, int, int] | None = None
-        self.wan_override = ""
         self.leases: dict[str, dict] = {}  # mac -> lease
         self.lease_list: list[dict] = []
         self.if_rate: dict[str, tuple[float, float]] = {}  # 接口 -> (tx, rx) 字节/秒
@@ -49,12 +73,37 @@ class RosPoller:
 
     @property
     def enabled(self) -> bool:
-        return bool(get_settings().ros_url)
+        return bool(self.url)
 
-    def _client(self) -> httpx.Client:
-        s = get_settings()
-        return httpx.Client(base_url=s.ros_url.rstrip("/") + "/rest", auth=(s.ros_user, s.ros_password),
-                            verify=s.ros_verify_tls, timeout=10.0)
+    def _connection(self):
+        return self.url, self.user, self.password, self.verify_tls
+
+    def configure(self, url, user, password, verify_tls, *, source=None) -> bool:
+        with self._lock:
+            self.source = source or ("web" if url else "none")
+            connection = (url, user, password, verify_tls)
+            if connection == self._connection():
+                return False
+            self.url, self.user, self.password, self.verify_tls = connection
+            self._generation += 1
+            self._reset()
+            self.engine.ros_managed = bool(url)
+            return True
+
+    @staticmethod
+    def _client(url, user, password, verify_tls, *, timeout=10.0) -> httpx.Client:
+        return httpx.Client(base_url=url.rstrip("/") + "/rest", auth=(user, password),
+                            verify=verify_tls, timeout=timeout, follow_redirects=False)
+
+    def probe(self, url, user, password, verify_tls) -> dict:
+        try:
+            with self._client(url, user, password, verify_tls, timeout=8.0) as c:
+                ident = self._get(c, "/system/identity")
+                resource = self._get(c, "/system/resource")
+            return {"ok": True, "identity": ident.get("name", ""), "version": resource.get("version", ""),
+                    "board": resource.get("board-name", "")}
+        except Exception as e:
+            return {"ok": False, "error": _explain(e)}
 
     @classmethod
     def _opt(cls, c: httpx.Client, path: str):
@@ -76,10 +125,12 @@ class RosPoller:
         return json.loads(r.content.decode("utf-8", "replace"))
 
     def poll(self):
-        if not self.enabled:
-            return
+        with self._lock:
+            if not self.enabled:
+                return
+            connection, generation = self._connection(), self._generation
         try:
-            with self._client() as c:
+            with self._client(*connection) as c:
                 ident = self._get(c, "/system/identity")
                 resource = self._get(c, "/system/resource")
                 ifaces = self._get(c, "/interface")
@@ -100,23 +151,30 @@ class RosPoller:
                     ("pppoe", "/interface/pppoe-client"), ("mangle", "/ip/firewall/mangle"),
                     ("mangle6", "/ipv6/firewall/mangle"), ("ipset", "/ip/settings"),
                     ("filter", "/ip/firewall/filter"), ("filter6", "/ipv6/firewall/filter"))}
-            self._apply(ifaces, arp, leases, addrs, routes, nb6, addrs6)
-            self._apply_status(ifaces, addrs, leases, routes, extra)
-            self.mangle = [{**r, "_family": "ipv4"} for r in extra["mangle"] or []] + \
-                [{**r, "_family": "ipv6"} for r in extra["mangle6"] or []]
-            self.ip_settings = extra["ipset"] if isinstance(extra["ipset"], dict) else {}
-            self.filter_rules = extra["filter"] if isinstance(extra["filter"], list) else None
-            self.filter6_rules = extra["filter6"] if isinstance(extra["filter6"], list) else []
-            self.has_ipv6 = any(_global_v6(a.get("address")) and a.get("disabled") != "true"
-                                for a in addrs6 or [])
-            # 全部成功后再更新展示用的状态，失败时保留上一次的结果
-            self.identity = ident.get("name", "") if isinstance(ident, dict) else ""
-            self.resource = resource if isinstance(resource, dict) else {}
-            self.ok, self.error = True, ""
+            with self._lock:
+                if generation != self._generation:
+                    return
+                self._apply(ifaces, arp, leases, addrs, routes, nb6, addrs6)
+                self._apply_status(ifaces, addrs, leases, routes, extra)
+                self.mangle = [{**r, "_family": "ipv4"} for r in extra["mangle"] or []] + \
+                    [{**r, "_family": "ipv6"} for r in extra["mangle6"] or []]
+                self.ip_settings = extra["ipset"] if isinstance(extra["ipset"], dict) else {}
+                self.filter_rules = extra["filter"] if isinstance(extra["filter"], list) else None
+                self.filter6_rules = extra["filter6"] if isinstance(extra["filter6"], list) else []
+                self.has_ipv6 = any(_global_v6(a.get("address")) and a.get("disabled") != "true"
+                                    for a in addrs6 or [])
+                # 全部成功后再更新展示用的状态，失败时保留上一次的结果
+                self.identity = ident.get("name", "") if isinstance(ident, dict) else ""
+                self.resource = resource if isinstance(resource, dict) else {}
+                self.ok, self.error = True, ""
+                self.last_poll = int(time.time())
         except Exception as e:  # noqa: BLE001
-            self.ok, self.error = False, _explain(e)
-            print(f"[ros] 轮询失败：{self.error}", flush=True)
-        self.last_poll = int(time.time())
+            with self._lock:
+                if generation != self._generation:
+                    return
+                self.ok, self.error = False, _explain(e)
+                print(f"[ros] 轮询失败：{self.error}", flush=True)
+                self.last_poll = int(time.time())
 
     def _apply(self, ifaces, arp, leases, addrs, routes, nb6, addrs6):
         now = time.time()
@@ -232,32 +290,39 @@ class RosPoller:
 
     def sample(self):
         """只读一次接口计数，算出所有 WAN 线路的合计速率（比 poll 轻得多，可以几秒一次）"""
-        names = [w["name"] for w in self.wans] or ([self.wan_name] if self.wan_name else [])
-        if not self.enabled or not names:
-            return
+        with self._lock:
+            if not self.enabled:
+                return
+            connection, generation = self._connection(), self._generation
+            names = [w["name"] for w in self.wans] or ([self.wan_name] if self.wan_name else [])
+            if not names:
+                return
         try:
-            with self._client() as c:
+            with self._client(*connection) as c:
                 ifaces = self._get(c, "/interface?.proplist=name,rx-byte,tx-byte")
         except Exception:  # noqa: BLE001  采样失败不影响主轮询，下次再试
             return
-        now = time.time()
-        up = down = 0.0
-        got = False
-        for i in ifaces:
-            n = i.get("name")
-            if n not in names:
-                continue
-            rx, tx = int(i.get("rx-byte", 0) or 0), int(i.get("tx-byte", 0) or 0)
-            prev = self._sample_prev.get(n)
-            self._sample_prev[n] = (now, rx, tx)
-            if prev and now > prev[0]:
-                dt = now - prev[0]
-                up += max(tx - prev[2], 0) / dt
-                down += max(rx - prev[1], 0) / dt
-                got = True
-        if got:
-            self.samples.append((int(now), up, down))
-            self.wan_rate = (up, down)
+        with self._lock:
+            if generation != self._generation:
+                return
+            now = time.time()
+            up = down = 0.0
+            got = False
+            for i in ifaces:
+                n = i.get("name")
+                if n not in names:
+                    continue
+                rx, tx = int(i.get("rx-byte", 0) or 0), int(i.get("tx-byte", 0) or 0)
+                prev = self._sample_prev.get(n)
+                self._sample_prev[n] = (now, rx, tx)
+                if prev and now > prev[0]:
+                    dt = now - prev[0]
+                    up += max(tx - prev[2], 0) / dt
+                    down += max(rx - prev[1], 0) / dt
+                    got = True
+            if got:
+                self.samples.append((int(now), up, down))
+                self.wan_rate = (up, down)
 
     def check(self) -> dict:
         """接入自检：检查 RouterOS 上镜像到 ROS-DPI 的 sniff-tzsp 规则（目标端口、是否停用、有没有命中）。
@@ -332,15 +397,15 @@ def _explain(e: Exception) -> str:
     if isinstance(e, httpx.HTTPStatusError):
         code = e.response.status_code
         if code == 401:
-            return "RouterOS 拒绝登录（401）：检查 ROS_USER / ROS_PASSWORD，以及该用户的 address 是否允许本机 IP"
+            return "RouterOS 拒绝登录（401）：检查 用户名 / 密码，以及该用户的 address 是否允许本机 IP"
         if code == 403:
             return "RouterOS 权限不足（403）：用户组需要 read、rest-api 权限"
-        return f"RouterOS 返回 HTTP {code}：{e.request.url.path}"
+        return f"RouterOS 返回 HTTP {code}"
     if isinstance(e, httpx.ConnectError):
-        return f"连不上 RouterOS：检查 ROS_URL，并确认 /ip service 中 www-ssl（或 www）已启用（{e}）"
+        return "连不上 RouterOS：检查 RouterOS 地址，并确认 /ip service 中 www-ssl（或 www）已启用"
     if isinstance(e, httpx.TimeoutException):
-        return "连接 RouterOS 超时：检查 ROS_URL 与防火墙"
-    return f"{type(e).__name__}: {str(e)[:200]}"
+        return "连接 RouterOS 超时：检查 RouterOS 地址 与防火墙"
+    return f"RouterOS 响应异常（{type(e).__name__}）"
 
 
 def _int(v):

@@ -67,7 +67,7 @@ class Engine:
         # CNAME 链里挑能认出应用的那一跳（按当时的识别器）
         dnsmap.cname_matcher = lambda name: self.classifier.match_domain(name)
         self.allowed_sources = parse_cidrs(s.collector_allowed) if s.collector_allowed else []
-        self.ros_managed = bool(s.ros_url)   # 配了 ROS 轮询时 IP→MAC 以路由器的 ARP / 租约为准
+        self.ros_managed = False   # 配了 ROS 轮询时 IP→MAC 以路由器的 ARP / 租约为准
         self.lan_cidrs_text = s.lan_cidrs
         self.lan_nets = parse_cidrs(s.lan_cidrs)
         self.auto_nets: list = []        # ros_poller 自动发现的 LAN 前缀（主要是 IPv6 公网前缀）
