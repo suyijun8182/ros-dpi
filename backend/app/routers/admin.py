@@ -305,6 +305,20 @@ def _ros_url(value: str) -> str:
     return url.rstrip("/").removesuffix("/rest").rstrip("/")
 
 
+def _same_origin(a: str, b: str) -> bool:
+    def origin(url):
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.hostname:
+            raise ValueError
+        default_port = 443 if parts.scheme == "https" else 80
+        return parts.scheme, parts.hostname, parts.port if parts.port is not None else default_port
+
+    try:
+        return origin(a) == origin(b)
+    except ValueError:
+        return False
+
+
 @router.get("/settings")
 def get_settings_api(db: Session = Depends(get_db)):
     s = get_settings()
@@ -371,6 +385,10 @@ def put_settings(req: SettingsIn, request: Request, background: BackgroundTasks,
     if req.ros_verify_tls is not None:
         changes["ros_verify_tls"] = "1" if req.ros_verify_tls else "0"
     with ros_poller.settings_lock:
+        if changes.get("ros_url") and not req.ros_password:
+            current = ros_poller.effective(_ros_values(db))
+            if not _same_origin(changes["ros_url"], current["ros_url"]):
+                raise HTTPException(400, "地址改了，请重新输入密码")
         if "ros_url" not in changes and _get(db, "ros_url", None) is None:
             # 首次只修改环境变量账号或 TLS 时，记录此次网页选择的地址和来源。
             changes["ros_url"] = get_settings().ros_url
@@ -579,6 +597,8 @@ def ros_test(req: RosTestIn | None = None, db: Session = Depends(get_db)):
     if req is not None and req.url is not None:
         url = _ros_url(req.url)
         cfg = ros_poller.effective(_ros_values(db))
+        if not req.password and not _same_origin(url, cfg["ros_url"]):
+            return {"ok": False, "error": "地址改了，请重新输入密码再测试"}
         return poller.probe(url, req.user if req.user is not None else cfg["ros_user"],
                             req.password or cfg["ros_password"],
                             cfg["ros_verify_tls"] if req.verify_tls is None else req.verify_tls)

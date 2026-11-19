@@ -154,20 +154,70 @@ def test_trial_uses_saved_password_without_saving(api, monkeypatch, status):
     settings = api.get("/api/settings").json()["ros"]
 
     def handler(request):
-        assert request.method == "GET" and request.url.host == "trial"
+        assert request.method == "GET" and request.url.host == "live"
         return httpx.Response(status, json={"name": "trial-router", "version": "7"})
 
     def client(url, user, password, verify_tls, **kwargs):
-        assert (url, user, password, verify_tls) == ("https://trial", "trial-user", secret, True)
+        assert (url, user, password, verify_tls) == ("https://LIVE:443", "trial-user", secret, True)
         return httpx.Client(base_url=url + "/rest", transport=httpx.MockTransport(handler))
 
     monkeypatch.setattr(poller, "_client", client)
-    result = api.post("/api/ros/test", json={"url": "https://trial/rest/", "user": "trial-user", "verify_tls": True}).json()
+    result = api.post("/api/ros/test", json={"url": "https://LIVE:443/rest/", "user": "trial-user", "verify_tls": True}).json()
     if status == 200:
         assert result["ok"] and result["identity"] == "trial-router"
     else:
         assert not result["ok"] and "拒绝登录（401）" in result["error"]
     assert poller.status() == before and api.get("/api/settings").json()["ros"] == settings
+
+
+@pytest.mark.parametrize(("source", "new_url", "password_fields"), [
+    ("web", "https://other", {}),
+    ("web", "http://live", {"password": ""}),
+    ("env", "https://live:8443", {}),
+])
+def test_origin_change_rejected_before_network_or_save(api, monkeypatch, source, new_url, password_fields):
+    if source == "env":
+        monkeypatch.setattr(get_settings(), "ros_url", "https://live")
+        monkeypatch.setattr(get_settings(), "ros_password", "saved-password")
+        _apply_saved()
+    else:
+        monkeypatch.setattr(poller, "poll", lambda: None)
+        assert api.put("/api/settings", json={"ros_url": "https://live", "ros_password": "saved-password"}).is_success
+    before = api.get("/api/settings").json()["ros"]
+    with monkeypatch.context() as guard:
+        guard.setattr(poller, "_client", lambda *a, **kw: pytest.fail("unexpected RouterOS connection"))
+        guard.setattr(poller, "configure", lambda *a, **kw: pytest.fail("unexpected reconfiguration"))
+        result = api.post("/api/ros/test", json={"url": new_url, **password_fields})
+        assert result.is_success and result.json() == {"ok": False, "error": "地址改了，请重新输入密码再测试"}
+        changes = {"ros_" + k: v for k, v in password_fields.items()}
+        saved = api.put("/api/settings", json={"ros_url": new_url, **changes})
+        assert saved.status_code == 400 and saved.json()["detail"] == "地址改了，请重新输入密码"
+    assert before == api.get("/api/settings").json()["ros"] and before["source"] == source
+    assert poller.url == "https://live"
+
+
+def test_same_origin_save_preserves_password(api, monkeypatch):
+    monkeypatch.setattr(poller, "poll", lambda: None)
+    assert api.put("/api/settings", json={"ros_url": "http://router/", "ros_password": "saved"}).is_success
+    assert api.put("/api/settings", json={"ros_url": "http://ROUTER:80/rest"}).is_success
+    assert poller.url == "http://ROUTER:80" and poller.password == "saved"
+
+
+def test_new_origin_uses_explicit_password(api, monkeypatch):
+    polls = []
+    monkeypatch.setattr(poller, "poll", lambda: polls.append((poller.url, poller.password)))
+    assert api.put("/api/settings", json={"ros_url": "https://live", "ros_password": "old"}).is_success
+    target = "https://second"
+
+    def client(url, user, password, verify_tls, **kwargs):
+        assert (url, password) == (target, "new")
+        return httpx.Client(base_url=url, transport=httpx.MockTransport(lambda r: httpx.Response(200, json={})))
+
+    monkeypatch.setattr(poller, "_client", client)
+    assert api.post("/api/ros/test", json={"url": target, "password": "new"}).json()["ok"]
+    assert poller.url == "https://live" and len(polls) == 1
+    assert api.put("/api/settings", json={"ros_url": target, "ros_password": "new"}).is_success
+    assert polls[-1] == (target, "new")
 
 
 def test_viewer_cannot_write_or_probe(api):

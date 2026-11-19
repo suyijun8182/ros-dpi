@@ -18,6 +18,21 @@ watch(() => props.config, cfg => {
   if (cfg) Object.assign(form, { url: cfg.url, user: cfg.user, verify_tls: cfg.verify_tls, password: '' })
 }, { immediate: true })
 
+const originChanged = computed(() => {
+  if (!form.url) return false
+  try {
+    return new URL(form.url).origin !== new URL(props.config?.url).origin
+  } catch {
+    return true
+  }
+})
+const canConnect = computed(() => isAdmin.value && props.config && !busy.value && form.url &&
+  (!originChanged.value || !!form.password))
+const passwordHint = computed(() => {
+  if (originChanged.value) return t('settings.rosPasswordRequired')
+  return props.config?.has_password ? t('settings.rosPasswordSaved') : ''
+})
+
 const changes = computed(() => {
   const body = {}
   for (const key of ['url', 'user', 'verify_tls']) {
@@ -82,15 +97,15 @@ async function save(body) {
         </label>
         <label>{{ t('login.password') }}
           <input v-model="form.password" type="password" class="input" autocomplete="new-password" maxlength="255"
-                 :placeholder="config?.has_password ? t('settings.rosPasswordSaved') : ''" />
+                 :required="originChanged" :placeholder="passwordHint" />
         </label>
         <label class="tls"><span><input v-model="form.verify_tls" :indeterminate="!config" type="checkbox" /> {{ t('settings.rosTls') }}</span>
           <small v-if="isAdmin" class="faint">{{ t('settings.rosTlsHint') }}</small>
         </label>
       </fieldset>
       <div v-if="isAdmin" class="actions">
-        <button type="button" class="btn sm" :disabled="!config || !!busy || !form.url" @click="test">{{ t(busy === 'test' ? 'setup.testing' : 'settings.test') }}</button>
-        <button class="btn sm primary" :disabled="!config || !!busy || !form.url || !Object.keys(changes).length">{{ t('common.save') }}</button>
+        <button type="button" class="btn sm" :disabled="!canConnect" @click="test">{{ t(busy === 'test' ? 'setup.testing' : 'settings.test') }}</button>
+        <button class="btn sm primary" :disabled="!canConnect || !Object.keys(changes).length">{{ t('common.save') }}</button>
         <button v-if="config?.source === 'web' && config.url" type="button" class="btn sm danger" :disabled="!!busy" @click="confirmDisable = true">{{ t('settings.rosDisable') }}</button>
         <span role="status" :class="failed ? 'err' : 'muted'">{{ message }}</span>
       </div>

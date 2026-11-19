@@ -447,6 +447,7 @@ export default {
     rosViewerHint: '请联系管理员配置 RouterOS API。',
     rosSource: { web: '来自网页', env: '来自环境变量', none: '未配置' },
     rosAddress: 'RouterOS 地址', rosAddressHint: 'RouterOS 7 的 REST API 需要在 /ip service 启用 www-ssl（HTTPS）或 www（HTTP）。',
+    rosPasswordRequired: '地址已修改，需要重新输入密码',
     rosPasswordSaved: '已保存，留空则不修改', rosTls: '校验 HTTPS 证书', rosTlsHint: '路由器用自签证书时不要勾选。',
     rosEnvHint: '当前使用 /etc/ros-dpi.env（或 .env）中的环境变量。在这里保存后，以网页填写的配置为准。',
     rosConnected: '已连上 {identity}（RouterOS {version}）', rosDisable: '停用', rosDisableConfirm: '停用 RouterOS API？',

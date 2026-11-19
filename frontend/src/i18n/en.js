@@ -447,6 +447,7 @@ export default {
     rosViewerHint: 'Ask an administrator to configure the RouterOS API.',
     rosSource: { web: 'From web settings', env: 'From environment', none: 'Not configured' },
     rosAddress: 'RouterOS address', rosAddressHint: 'The RouterOS 7 REST API requires www-ssl (HTTPS) or www (HTTP) under /ip service.',
+    rosPasswordRequired: 'Address changed. Enter the password again.',
     rosPasswordSaved: 'Saved. Leave blank to keep it', rosTls: 'Verify HTTPS certificate', rosTlsHint: 'Leave unchecked if the router uses a self-signed certificate.',
     rosEnvHint: 'Currently using environment variables from /etc/ros-dpi.env (or .env). Values saved here take precedence.',
     rosConnected: 'Connected to {identity} (RouterOS {version})', rosDisable: 'Disable', rosDisableConfirm: 'Disable the RouterOS API?',
