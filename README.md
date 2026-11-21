@@ -23,6 +23,7 @@
 | **家庭成员 / 员工** | 把一个人的设备归到一起按人统计。**家庭**场景看孩子上网健康（屏幕时间、游戏和短视频、熬夜），**企业**场景看效率与合规 |
 | **审计日志** | 访问日志；审计规则（应用、域名、时段、流量阈值、大流量外发、私接路由、新设备）；14 种通知渠道（Telegram、飞书、企业微信、钉钉、Bark、邮件、Server酱、Pushplus、Discord、Slack、ntfy、Gotify、QQ、Webhook）；日报 / 周报；操作日志 |
 | **管控命令** | 按应用、时段生成 RouterOS 命令（封禁应用、定时断网、限速）并附撤销命令。**只生成，不会改路由器** |
+| **多站点** | 一个平台管多台 RouterOS（家里一台、公司一台）：顶部切换站点，数据各自分开；「全部站点」总览每个站点一张卡片；普通用户可按站点授权 |
 | **识别规则** | 按域名 / IP 段 / 端口自定义规则；未识别域名 Top 一键归类；各识别库的规模与更新状态；识别校验（用已知答案核对准确率）；抓包采样（实验，配合 nDPI 离线对照） |
 
 中英双语，浅色 / 深色主题，手机上也能用。
@@ -219,6 +220,8 @@ RouterOS ◀── REST 只读（可选）── 主机名、IP↔MAC、WAN 速�
 - **Linux 一键安装**：**系统设置 → 版本更新** 出现新版本时点「一键更新」，程序会下载新版、校验 SHA256、替换后自动重启，旧版本留一份 `ros-dpi.bak`。也可以重新执行安装命令。
 - **Docker**：`docker compose pull && docker compose up -d`。想固定版本，就把镜像标签从 `latest` 改成具体版本号（如 `0.6.24`）。
 
+> **升级到 0.7.0 前请先备份数据库。** 0.7.0 首次启动会迁移表结构（多站点），数据多时需要几分钟甚至更久，期间页面打不开，日志里能看到每张表的进度。MySQL 备份示例：`mysqldump -u root -p rosdpi > rosdpi-backup.sql`。
+
 每个版本改了什么见 [CHANGELOG.md](CHANGELOG.md)。
 
 ### 接入 Home Assistant 等外部程序
@@ -344,6 +347,7 @@ pip install -r backend/requirements.txt pyinstaller && pyinstaller ros-dpi.spec
 - **Flows**: live connections, top destinations, world flow map, proxy routing per sing-box policy group and outbound.
 - **People**: group devices per person. *Home* scenario focuses on children's screen time and habits; *Business* on productivity and compliance.
 - **Audit**: access log, rules (app, domain, time window, traffic threshold, large upload, rogue router, new device), 14 notification channels, daily / weekly reports, operation log.
+- **Multiple sites**: one platform for several RouterOS (home and office): switch sites at the top, data kept apart; an “All sites” page with one card per site; viewers can be limited to certain sites.
 - **Control commands**: generates RouterOS commands (block an app, scheduled cut-off, rate limit) with undo commands. It never changes the router by itself.
 - Chinese and English UI, light and dark themes, mobile friendly.
 
@@ -383,6 +387,10 @@ Instances share anonymous votes (remote IP / domain → app) through the built-i
 ### Optional sources
 
 sing-box (Clash API) adds per-host, per-domain byte counts for proxied traffic; MosDNS or LocalDNS adds per-host DNS lookups; AdGuard Home fills in domains behind a second NAT. Configure them under **Settings → External sources**.
+
+### Upgrading to 0.7.0
+
+Back up the database first. On first start 0.7.0 migrates the schema for multiple sites; with a lot of data this takes minutes, during which the web UI is unavailable (progress is logged per table). Existing data becomes the “default site”.
 
 ### Home Assistant and other programs
 

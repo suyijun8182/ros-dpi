@@ -36,6 +36,7 @@ services:
 
 ## What's new
 
+- **0.7.0** · **多站点**：一个平台管多台 RouterOS（家里、公司），顶部切换站点、数据分开，「全部站点」总览；按源 IP 认站点，两地用 WireGuard 互通；普通用户可按站点授权；新增 LocalDNS 数据源。**升级会迁移表结构，请先备份数据库。** Multiple sites: one platform for several RouterOS with a site switcher, separate data and an all-sites overview; sites are told apart by source IP; per-site access for viewers; LocalDNS source. **Back up the database before upgrading: the schema is migrated on first start.**
 - **0.6.30** · 管理员可从概览页进入 **系统设置 → RouterOS API**，测试并保存只读账号，立即生效。Admins can open **Settings → RouterOS API** from Overview, test the read-only connection and apply changes without restarting.
 - **0.6.29**: 识别规则页新增「识别校验」（选终端和应用，开始 / 结束或回看最近几分钟，算出命中 / 同类 / 笼统 / 认错的比例）和「抓包采样」（实验：存 pcap + 每条连接的识别结果，配合 `scripts/ndpi_eval.py` 用 nDPI 离线对照）。Accuracy check (known-answer probes per device and app) and packet sampling (beta: pcap plus per-connection labels for offline comparison with nDPI). 同时修复 Linux 单文件二进制缺识别规则文件、启动即崩的问题 / Fixed the Linux single-file binary crashing at startup because rule yaml files were not bundled.
 - **0.6.28**: 保存规则立即返回，历史改算在后台排队；按主域名加索引；认证库换成 PyJWT + bcrypt（旧密码和登录状态继续有效）；CI 加依赖漏洞扫描。Rule saves return immediately with history re-attributed in the background; base-domain index; PyJWT + bcrypt (existing passwords and sessions keep working); dependency audit in CI.

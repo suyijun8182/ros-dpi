@@ -138,6 +138,51 @@ ROS-DPI 用 LAN 网段判断哪一端是终端。默认是三个私网段，以�
 - **双 NAT**（WAN 口也是 192.168.x.x 等私网地址）：只填内网实际网段，否则 WAN 侧地址会被当成终端。
 - **IPv6**：配置了 ROS API 时会自动加入 LAN 接口上的公网前缀；否则需要手动填写。
 
+## 多站点
+
+一个平台管多台 RouterOS（比如家里一台、公司一台）。平台装在其中一处（下面假设在家里，地址 `192.168.88.10`），另一处的 RouterOS 通过 **WireGuard** 把数据发过来。RouterOS 的 REST API 不要开到公网。
+
+### 1. 两台 RouterOS 之间建 WireGuard（RouterOS 7）
+
+家里（平台所在）：
+
+```
+/interface wireguard add name=wg-office listen-port=13231
+/ip address add address=10.8.0.1/30 interface=wg-office
+/interface wireguard peers add interface=wg-office public-key="<公司的公钥>" allowed-address=10.8.0.2/32
+/ip firewall filter add chain=input protocol=udp dst-port=13231 action=accept comment=wg-office place-before=0
+```
+
+公司：
+
+```
+/interface wireguard add name=wg-home listen-port=13231
+/ip address add address=10.8.0.2/30 interface=wg-home
+/interface wireguard peers add interface=wg-home public-key="<家里的公钥>" endpoint-address=<家里的公网地址或域名> endpoint-port=13231 allowed-address=10.8.0.1/32,192.168.88.10/32 persistent-keepalive=25s
+/ip route add dst-address=192.168.88.10/32 gateway=wg-home
+```
+
+公钥用 `/interface wireguard print` 查看。家里的 RouterOS 收到 `10.8.0.2` 发来的包后会转给内网的平台（`192.168.88.10`），平台回给 `10.8.0.0/30` 的包走 RouterOS 默认路由回到隧道，一般不用另加路由；平台装在别的机器上、默认网关不是这台 RouterOS 时，给它加一条到 `10.8.0.0/30` 的路由。
+
+公司要让平台读 REST API（可选）时，平台访问的是 `https://10.8.0.2`，公司 RouterOS 的 `www-ssl` 和只读账号的 `address=` 要允许这个来源。
+
+### 2. 在平台里登记站点
+
+**系统设置 → 场景与网络 → 站点 → 添加站点**：
+
+- **标识**：用在地址里，例如 `office`，创建后不能改。
+- **源 IP**：公司 RouterOS 发 IPFIX / TZSP 用的地址，走上面的隧道时就是 `10.8.0.2`。
+- **平台地址（从该站点看）**：公司 RouterOS 访问平台用的地址，这里是 `192.168.88.10`（走隧道可达）。
+- 第一次添加时还要填**家里**那台的源 IP（一般是家里 RouterOS 的内网地址，例如 `192.168.88.1`）。弹窗里会列出最近收到数据的地址，点一下即可填入。
+
+平台按 UDP 包的源 IP 认出是哪个站点。两个站点都要登记；没登记过的来源会被丢弃，列在「未登记来源」里，可以一键登记到某个站点。
+
+### 3. 在公司那台上执行接入命令
+
+顶部切换到「公司」，**系统设置 → 接入与自检** 生成的命令已经把目标换成平台地址，并给 traffic-flow 加上 `src-address=10.8.0.2`（固定 IPFIX 的源地址）。TZSP 镜像包没有 `src-address` 选项，源地址由路由决定，走隧道时一般也是 `10.8.0.2`；如果「未登记来源」里出现了别的地址，把它也登记到公司站点。
+
+之后在 **运行状态 → RouterOS API** 填公司那台的只读账号（地址填 `https://10.8.0.2`）。LAN 网段、WAN 口、外部数据源也都按站点设置。
+
 ## 排错
 
 **系统设置 → 运行状态** 会显示：
