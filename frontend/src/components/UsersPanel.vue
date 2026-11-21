@@ -8,12 +8,14 @@
     </div>
     <div class="tbl-wrap">
       <table class="tbl">
-        <thead><tr><th>{{ t('login.username') }}</th><th>{{ t('users.role') }}</th><th class="m-hide">{{ t('users.created') }}</th>
+        <thead><tr><th>{{ t('login.username') }}</th><th>{{ t('users.role') }}</th>
+          <th v-if="siteState.multi">{{ t('users.sites') }}</th><th class="m-hide">{{ t('users.created') }}</th>
           <th class="m-hide">{{ t('users.lastLogin') }}</th><th /></tr></thead>
         <tbody>
           <tr v-for="u in list" :key="u.id">
             <td><b>{{ u.username }}</b><span v-if="u.username === auth.username" class="faint small"> · {{ t('users.me') }}</span></td>
             <td><span class="pill" :class="u.role === 'admin' ? 'ok' : 'grey'">{{ t('users.roles.' + u.role) }}</span></td>
+            <td v-if="siteState.multi" class="small">{{ u.role === 'admin' ? t('users.allSites') : (u.sites || []).map(siteName).join('、') || '-' }}</td>
             <td class="m-hide num small muted">{{ u.created ? datetime(u.created) : '-' }}</td>
             <td class="m-hide num small muted">{{ u.last_login ? ago(u.last_login) : t('common.never') }}</td>
             <td class="r nowrap">
@@ -39,6 +41,15 @@
             <b>{{ t('users.roles.' + r) }}</b><span class="faint small">{{ t('users.roleHint.' + r) }}</span>
           </label>
         </div>
+        <!-- 多站点：普通用户只能看勾选的站点；管理员看全部 -->
+        <template v-if="siteState.multi && form.role === 'user'">
+          <label>{{ t('users.sites') }}</label>
+          <div class="sites">
+            <label v-for="x in siteState.list" :key="x.slug" class="site" :class="{ on: form.sites.includes(x.slug) }">
+              <input type="checkbox" :value="x.slug" v-model="form.sites" /> {{ x.name }}</label>
+          </div>
+          <div class="faint small">{{ t('users.sitesHint') }}</div>
+        </template>
         <label for="uf-pw">{{ form.id ? t('users.resetPw') : t('login.password') }}</label>
         <input id="uf-pw" class="input" type="password" v-model="form.password" :required="!form.id" minlength="6" autocomplete="new-password"
                :placeholder="form.id ? t('users.resetPwHint') : t('login.tooShort')" />
@@ -64,6 +75,7 @@ import { useI18n } from 'vue-i18n'
 import http, { auth } from '../api.js'
 import { ago, datetime } from '../format.js'
 import Modal from './Modal.vue'
+import { siteName, siteState } from '../site.js'
 
 const { t } = useI18n()
 const list = ref([])
@@ -75,14 +87,15 @@ const ask = ref(null)
 async function load() {
   try { list.value = await http.get('/auth/users'); err.value = '' } catch (e) { err.value = e.message }
 }
-function openAdd() { formErr.value = ''; form.value = { id: null, username: '', role: 'user', password: '' } }
-function openEdit(u) { formErr.value = ''; form.value = { id: u.id, username: u.username, role: u.role, password: '' } }
+function openAdd() { formErr.value = ''; form.value = { id: null, username: '', role: 'user', password: '', sites: siteState.current ? [siteState.current] : [] } }
+function openEdit(u) { formErr.value = ''; form.value = { id: u.id, username: u.username, role: u.role, password: '', sites: [...(u.sites || [])] } }
 async function save() {
   formErr.value = ''
   const f = form.value
   try {
-    if (f.id) await http.put(`/auth/users/${f.id}`, { role: f.role, password: f.password || null })
-    else await http.post('/auth/users', { username: f.username, role: f.role, password: f.password })
+    const sites = siteState.multi && f.role === 'user' ? { sites: f.sites } : {}
+    if (f.id) await http.put(`/auth/users/${f.id}`, { role: f.role, password: f.password || null, ...sites })
+    else await http.post('/auth/users', { username: f.username, role: f.role, password: f.password, ...sites })
     form.value = null
     await load()
   } catch (e) { formErr.value = e.message }
@@ -105,4 +118,7 @@ onMounted(load)
 .role.on { border-color: var(--brand-ink); background: var(--brand-weak); }
 .role .small { grid-column: 2; }
 .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+.sites { display: flex; flex-wrap: wrap; gap: 8px; }
+.site { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 13px; }
+.site.on { border-color: var(--brand-ink); background: var(--brand-weak); }
 </style>

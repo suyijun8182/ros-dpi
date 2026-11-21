@@ -5,7 +5,11 @@
         <button v-for="k in TABS" :key="k" role="tab" :aria-selected="tab === k" :class="{ on: tab === k }" @click="setTab(k)">
           {{ t('settings.tab.' + (k === 'system' && !isAdmin ? 'account' : k)) }}<span v-if="badge[k]" class="dot bad tdot" /></button>
       </div>
-      <span class="sp" /><span class="faint small" v-if="sys">{{ t('settings.version') }} {{ sys.version }}</span>
+      <span class="sp" />
+      <!-- 多站点：RouterOS、LAN / WAN、采集状态、接入向导都是当前站点的 -->
+      <span v-if="siteState.multi && ['status', 'access', 'system'].includes(tab)" class="pill site-tag" :title="t('sites.perSiteHint')">
+        {{ t('sites.current', { name: siteName(siteState.current) }) }}</span>
+      <span class="faint small" v-if="sys">{{ t('settings.version') }} {{ sys.version }}</span>
     </div>
     <div class="panel" v-if="cfgErr">
       <div class="panel-b"><span class="err">{{ t('common.loadFail') }}：{{ cfgErr }}</span>
@@ -95,6 +99,13 @@
       <div class="panel-h"><h2>{{ t('sources.title') }}</h2><span class="faint small">{{ t('sources.hint') }}</span></div>
       <div class="panel-b src">
         <form class="src-form" @submit.prevent="saveSources">
+          <div class="src-box site-box" v-if="siteState.multi">
+            <div class="sec">{{ t('sites.integrationsSite') }}</div>
+            <p class="faint small">{{ t('sites.integrationsHint') }}</p>
+            <select class="input" v-model="src.integrations_site">
+              <option v-for="x in siteState.list" :key="x.slug" :value="x.slug">{{ x.name }}</option>
+            </select>
+          </div>
           <div class="src-box">
             <div class="sec">sing-box / Clash API<span class="sp" />
               <span v-if="sys && sys.singbox.enabled" class="pill" :class="sys.singbox.ok ? 'ok' : 'bad'">{{ sys.singbox.ok ? t('sources.connected') : t('sources.failed') }}</span>
@@ -235,6 +246,7 @@
         </div>
       </div>
     </div>
+    <SitesPanel v-if="tab === 'system' && isAdmin" class="mb" @changed="loadCfg" />
     <div class="grid g2 sys" v-if="tab === 'system'">
       <div class="panel" v-if="s">
         <div class="panel-h">{{ t('settings.network') }}</div>
@@ -293,6 +305,8 @@ import UsersPanel from '../components/UsersPanel.vue'
 import ApiTokensPanel from '../components/ApiTokensPanel.vue'
 import ScenePicker from '../components/ScenePicker.vue'
 import CompliancePanel from '../components/CompliancePanel.vue'
+import SitesPanel from '../components/SitesPanel.vue'
+import { siteName, siteState } from '../site.js'
 import { ago, bytes, datetime, pct } from '../format.js'
 
 const { t } = useI18n()
@@ -333,7 +347,8 @@ async function loadSys() {
   sysErr.value = ''
   try {
     sys.value = await http.get('/system')
-    // 接入向导的 HOST_IP：优先用 RouterOS 上已经在正常工作的 DNS 镜像规则的目标地址
+    // 接入向导的 HOST_IP：多站点时用站点登记的“平台地址（从该站点看）”；
+    // 其次用 RouterOS 上已经在正常工作的 DNS 镜像规则的目标地址
     const tgt = sys.value.ros_check && sys.value.ros_check.target
     if (tgt && hostIp.value === location.hostname) hostIp.value = tgt
   } catch (e) { sysErr.value = e.message }
@@ -347,6 +362,7 @@ async function loadCfg() {
     s.value = await http.get('/settings')
     lan.value = s.value.lan_cidrs.split(',').join('\n')
     wan.value = s.value.wan_interface
+    if (siteState.multi && s.value.site_platform_addr) hostIp.value = s.value.site_platform_addr
     fillSources()
   } catch (e) { cfgErr.value = e.message }
 }
@@ -357,14 +373,14 @@ onMounted(() => {
 })
 
 // ---------- 外部数据源 ----------
-const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', localdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '', share_enabled: true, share_hub_url: '' })
+const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', localdns_url: '', integrations_site: 'default', adguard_url: '', adguard_username: '', adguard_password: '', share_enabled: true, share_hub_url: '' })
 const deploys = ref(null)
 const srcErr = ref('')
 const srcSaved = ref(false)
 const testing = ref(false)
 function fillSources() {
   const i = s.value.integrations
-  Object.assign(src, { singbox_url: i.singbox_url, singbox_secret: '', proxy_ips: i.proxy_ips, mosdns_url: i.mosdns_url, localdns_url: i.localdns_url || '',
+  Object.assign(src, { singbox_url: i.singbox_url, singbox_secret: '', proxy_ips: i.proxy_ips, mosdns_url: i.mosdns_url, localdns_url: i.localdns_url || '', integrations_site: i.site || 'default',
                        adguard_url: i.adguard_url, adguard_username: i.adguard_username, adguard_password: '',
                        share_enabled: !!s.value.share_enabled, share_hub_url: s.value.share_hub_url || '' })
 }
@@ -373,6 +389,7 @@ async function saveSources() {
   try {
     // 密钥留空表示不修改；要清除用“清除密钥/密码”按钮
     const body = { singbox_url: src.singbox_url, proxy_ips: src.proxy_ips, mosdns_url: src.mosdns_url, localdns_url: src.localdns_url,
+                   ...(siteState.multi ? { integrations_site: src.integrations_site } : {}),
                    adguard_url: src.adguard_url, adguard_username: src.adguard_username,
                    share_enabled: src.share_enabled, share_hub_url: src.share_hub_url }
     if (src.singbox_secret) body.singbox_secret = src.singbox_secret
@@ -399,6 +416,11 @@ async function testSources() {
   } catch (e) { srcErr.value = e.message } finally { testing.value = false }
 }
 
+// 版本更新的状态要在下面的 watch（immediate）之前声明：直接打开 ?tab=system 时 watch 立刻调用 loadUpdate
+const upd = ref(null)
+const updErr = ref('')
+const updMsg = ref('')
+const updating = ref(false)
 // 社区共享库显示在“外部数据源”页：以前只在“系统”页加载共享状态，外部数据源页一直显示“等待首次同步”
 watch(tab, v => {
   if (!isAdmin.value) return
@@ -416,10 +438,6 @@ async function save() {
 }
 
 // ---------- 版本更新（debug18：Linux 二进制一键自更新） ----------
-const upd = ref(null)
-const updErr = ref('')
-const updMsg = ref('')
-const updating = ref(false)
 async function loadUpdate() {
   try { upd.value = await http.get('/system/update') } catch (e) { upd.value = { supported: false, available: false } }
 }
@@ -462,9 +480,14 @@ async function changePw() {
 const guide = computed(() => {
   const ip = hostIp.value || '<HOST_IP>'
   const p = s.value?.ports || { ipfix: 2055, tzsp: 37008 }
-  return `# 1. 流量采集（IPFIX）
+  // 多站点：平台按源 IP 认站点，IPFIX 固定用登记的源 IP 发；TZSP 镜像的源地址由路由决定（走 WireGuard 时一般就是隧道 IP）
+  const multi = siteState.multi
+  const src = multi ? ((s.value?.site_sources || [])[0] || '<SRC_IP>') : ''
+  const multiNote = multi ? `# ${t('sites.guideNote', { name: siteName(siteState.current), src })}
+` : ''
+  return `${multiNote}# 1. 流量采集（IPFIX）
 /ip traffic-flow set enabled=yes interfaces=all active-flow-timeout=1m inactive-flow-timeout=15s
-/ip traffic-flow target add dst-address=${ip} port=${p.ipfix} version=ipfix
+/ip traffic-flow target add dst-address=${ip} port=${p.ipfix} version=ipfix${multi ? ` src-address=${src}` : ''}
 
 # 2. DNS 嗅探（应用识别）：只镜像 DNS 应答，用来知道"远端 IP 是哪个域名"
 #    output：路由器自己当 DNS 服务器时发给终端的应答
@@ -554,6 +577,8 @@ async function copy() {
 .scene-pick { margin-bottom: 16px; }
 .tok-panel { margin-top: 16px; }
 .mt { margin-top: 14px; }
+.mb { margin-bottom: 14px; }
+.site-tag { margin-right: 10px; }
 .small { font-size: 12.5px; }
 .stc { display: flex; flex-direction: column; gap: 6px; font-size: 13px; min-width: 0; }
 .tdot { width: 6px; height: 6px; margin-left: 4px; vertical-align: top; }

@@ -355,6 +355,9 @@ def get_settings_api(db: Session = Depends(get_db)):
     eng, poller = site_engine(db), site_poller(db)
     return {
         "site": slug,
+        # 多站点：接入向导用（sniff-target / traffic-flow 目标填平台地址，traffic-flow 加 src-address）
+        "site_platform_addr": (row.platform_addr if row is not None else "") or "",
+        "site_sources": sites.split_sources(row.sources if row is not None else ""),
         "lan_cidrs": eng.lan_cidrs_text,
         "lan_auto": [str(n) for n in eng.auto_nets],
         "wan_interface": (row.wan_interface if row is not None and row.wan_interface else "")

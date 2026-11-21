@@ -32,8 +32,15 @@ class SiteIn(BaseModel):
     enabled: bool = True
 
 
+class OtherSources(BaseModel):
+    slug: str = Field(min_length=1, max_length=32)
+    sources: list[str]
+
+
 class SiteNew(SiteIn):
     slug: str = Field(min_length=1, max_length=32)
+    # 添加第二个站点时，已有站点要同时补上源 IP：和新站点一起校验、一起保存（任何一项不通过都不改）
+    others: list[OtherSources] = []
 
 
 class SiteDelete(BaseModel):
@@ -128,6 +135,11 @@ def add_site(req: SiteNew, request: Request, user: str = Depends(require_admin),
         raise HTTPException(400, "站点标识已存在")
     if len(_rows(db)) >= MAX_SITES:
         raise HTTPException(400, f"最多 {MAX_SITES} 个站点")
+    for o in req.others:
+        row = db.get(Site, o.slug)
+        if row is None:
+            raise HTTPException(400, "站点不存在")
+        row.sources = _clean_sources(o.sources)
     sort = max((r.sort or 0 for r in _rows(db)), default=0) + 1
     db.add(Site(slug=slug, name=req.name.strip(), sources=_clean_sources(req.sources),
                 platform_addr=req.platform_addr.strip() or None, enabled=int(req.enabled), sort=sort,
@@ -211,3 +223,27 @@ def unknown_sources(_: str = Depends(require_admin), db: Session = Depends(get_d
                 seen.append({"site": slug, "ip": ip, "kind": kind, "last_seen": ts})
     return {"unknown": sorted(merged.values(), key=lambda x: -x["last_seen"]),
             "seen": sorted(seen, key=lambda x: -x["last_seen"])}
+
+
+@router.get("/overview")
+def overview(request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
+    """“全部站点”总览：每个能看的站点一张卡片。各站点的数各算各的，不相加"""
+    from app import stats, timeutil
+    from app.scoping import set_site
+    vis = set(visible_sites(request, user))
+    t0, t1 = timeutil.range_bounds("today")
+    out = []
+    for r in _rows(db):
+        if r.slug not in vis:
+            continue
+        set_site(db, r.slug)
+        e, p = registry.get(r.slug), registry.poller(r.slug)
+        wan = p is not None and p.enabled and p.ok and len(p.samples) >= 2
+        rate = p.wan_rate if wan else (e.total_rate if e else (0.0, 0.0))
+        apps = stats.top_apps(db, t0, t1, limit=5)
+        out.append({**_dict(r), "rate_up": rate[0], "rate_down": rate[1], "rate_source": "wan" if wan else "flow",
+                    "today": stats.total(db, t0, t1), "online": stats.online_count(db),
+                    "apps": [{"id": a["id"], "name": a["name"], "name_en": a["name_en"], "group": a["group"],
+                              "total": a["total"]} for a in apps]})
+    set_site(db, None)
+    return {"sites": out}

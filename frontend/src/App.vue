@@ -11,6 +11,15 @@
           <router-link v-if="c.to" :to="c.to">{{ c.label }}</router-link><b v-else>{{ c.label }}</b></template>
       </nav>
       <span class="sp" />
+      <!-- 多站点（0.7.0）：只有站点 ≥2 个时出现；离线的站点标出来 -->
+      <label v-if="siteState.multi" class="site-pick" :title="t('sites.switch')">
+        <Icon name="flow" :size="16" class="faint" />
+        <select :value="route.name === 'sites' ? 'all' : siteState.current" @change="switchSite($event.target.value)"
+                :aria-label="t('sites.switch')">
+          <option value="all">{{ t('sites.all') }}</option>
+          <option v-for="s in siteState.list" :key="s.slug" :value="s.slug">{{ s.name }}{{ siteDown(s) ? ' · ' + t('sites.offline') : '' }}</option>
+        </select>
+      </label>
       <SearchBox class="search" :pages="pages" />
       <div class="tools">
         <button class="btn ghost icon" @click="toggleTheme" :aria-label="t('common.theme')" :title="t('common.theme')"><Icon :name="ui.theme === 'dark' ? 'sun' : 'moon'" /></button>
@@ -33,7 +42,8 @@
     </aside>
 
     <main class="main">
-      <div class="page"><router-view /></div>
+      <!-- 换站点时整页重新挂载、重新取数 -->
+      <div class="page"><router-view :key="siteState.current" /></div>
       <footer class="foot">ROS-DPI v{{ version }} · {{ t('app.subtitle') }} ·
         <a href="https://github.com/suyijun8182/ros-dpi" target="_blank" rel="noopener">GitHub</a></footer>
     </main>
@@ -51,6 +61,7 @@ import SearchBox from './components/SearchBox.vue'
 import { setLang } from './i18n/index.js'
 import { toggleTheme, ui } from './state.js'
 import { L, loadScene } from './scenario.js'
+import { siteState } from './site.js'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -108,6 +119,18 @@ async function loadInfo() {
 }
 watch(() => !route.meta.public && !!auth.token && route.name, ok => { if (ok && !version.value) loadInfo() }, { immediate: true })
 
+// 站点离线：停用了，或配了 RouterOS 但连不上，或 3 分钟没收到流量
+const siteDown = s => !s.enabled || (s.ros_enabled && !s.ros_ok && s.ros_last_poll) || !s.receiving
+
+function switchSite(slug) {
+  if (slug === 'all') { router.push({ name: 'sites' }); return }
+  // 详情页（某台终端 / 某个人）在别的站点不一定有，回到它的列表页
+  const back = { host: '/hosts', app: '/apps', person: '/people' }[route.name]
+  const path = back || (route.name === 'sites' ? '/' : route.path)
+  const query = back || route.name === 'sites' ? {} : { ...route.query }
+  router.push({ path, query: { ...query, site: slug } })
+}
+
 function logout() {
   setAuth('')
   router.push('/login')
@@ -116,6 +139,12 @@ function logout() {
 
 <style scoped>
 .user .role { margin-left: 6px; height: 20px; font-size: 11px; }
+.site-pick { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 4px 0 10px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--panel); flex: none; }
+.site-pick select { border: 0; background: transparent; color: var(--ink); font: 500 13.5px/1 inherit; height: 34px;
+  max-width: 180px; cursor: pointer; padding-right: 4px; }
+.site-pick select:focus { outline: none; }
+.site-pick:focus-within { border-color: var(--brand-ink); }
 .shell { min-height: 100vh; }
 .top {
   position: sticky; top: 0; z-index: 30; height: var(--top); display: flex; align-items: center; gap: 10px;

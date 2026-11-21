@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { computed, reactive } from 'vue'
 import router from './router.js'
+import { resetSites, siteState } from './site.js'
 
 export const auth = reactive({ token: read('rosdpi.token'), username: read('rosdpi.user'), role: read('rosdpi.role') })
 // 普通用户（role=user）只读；没有角色信息时按管理员显示，真正的权限由后端判断
@@ -11,6 +12,7 @@ function read(k) {
 }
 
 export function setAuth(token, username, role) {
+  if (!token) resetSites()
   auth.token = token || ''
   auth.username = username || ''
   auth.role = role || ''
@@ -22,8 +24,15 @@ export function setAuth(token, username, role) {
 
 const http = axios.create({ baseURL: '/api', timeout: 20000 })
 
+// 不按站点的接口：登录 / 账号、安装向导、站点列表本身
+const GLOBAL_API = /^\/(auth|setup|sites|health)(\/|$)/
+
 http.interceptors.request.use(cfg => {
   if (auth.token) cfg.headers.Authorization = `Bearer ${auth.token}`
+  // 多站点：自动带上当前站点（调用方显式给了 site 时不覆盖）
+  if (siteState.multi && siteState.current && !GLOBAL_API.test(cfg.url || '')) {
+    cfg.params = { site: siteState.current, ...(cfg.params || {}) }
+  }
   return cfg
 })
 

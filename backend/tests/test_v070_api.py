@@ -84,13 +84,10 @@ def test_people_are_per_site(two_sites):
 
 def test_user_only_sees_granted_sites(two_sites):
     c, h = two_sites
-    r = c.post("/api/auth/users", json={"username": "v070user", "password": "viewer1", "role": "user"}, headers=h)
+    r = c.post("/api/auth/users", json={"username": "v070user", "password": "viewer1", "role": "user",
+                                        "sites": ["office"]}, headers=h)
     uid = r.json()["id"]
     try:
-        with database.session() as db:
-            db.add(UserSite(user_id=uid, site="office"))
-            db.commit()
-        forget_roles()
         hu = _login(c, "v070user", "viewer1")
         assert c.get("/api/overview?site=default", headers=hu).status_code == 403
         assert c.get("/api/overview?site=office", headers=hu).status_code == 200
@@ -180,3 +177,30 @@ def test_custom_rule_for_one_site(two_sites):
             db.execute(delete(TrafficDay).where(TrafficDay.host == KEY))
             db.commit()
     assert office.classifier.classify("203.0.113.9", 6, 443, "erp.v070corp.example", None) != "v070_erp"
+
+
+def test_user_site_grants_api(two_sites):
+    c, h = two_sites
+    # 多站点时新建普通用户必须选站点
+    assert c.post("/api/auth/users", json={"username": "v070g", "password": "viewer1", "role": "user"},
+                  headers=h).status_code == 400
+    assert c.post("/api/auth/users", json={"username": "v070g", "password": "viewer1", "role": "user", "sites": ["nope"]},
+                  headers=h).status_code == 400
+    r = c.post("/api/auth/users", json={"username": "v070g", "password": "viewer1", "role": "user", "sites": ["office"]},
+               headers=h)
+    assert r.status_code == 200 and r.json()["sites"] == ["office"]
+    uid = r.json()["id"]
+    try:
+        hu = _login(c, "v070g", "viewer1")
+        assert [s["slug"] for s in c.get("/api/sites/mine", headers=hu).json()["sites"]] == ["office"]
+        assert c.get("/api/overview?site=default", headers=hu).status_code == 403
+        # 改授权：同一个登录立即生效
+        assert c.put(f"/api/auth/users/{uid}", json={"sites": ["default"]}, headers=h).json()["sites"] == ["default"]
+        assert c.get("/api/overview?site=default", headers=hu).status_code == 200
+        assert c.get("/api/overview?site=office", headers=hu).status_code == 403
+        assert c.put(f"/api/auth/users/{uid}", json={"sites": []}, headers=h).status_code == 400
+        assert {u["username"]: u["sites"] for u in c.get("/api/auth/users", headers=h).json()}["v070g"] == ["default"]
+    finally:
+        c.delete(f"/api/auth/users/{uid}", headers=h)
+    with database.session() as db:
+        assert db.query(UserSite).filter(UserSite.user_id == uid).count() == 0

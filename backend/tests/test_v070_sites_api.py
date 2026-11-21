@@ -26,9 +26,12 @@ def test_site_lifecycle():
         assert r.status_code == 400 and "默认站点" in r.json()["detail"]
         assert c.get("/api/sites/mine", headers=h).json()["multi"] is False      # 没保存
         assert c.post("/api/sites", json={"slug": "Bad Slug", "name": "x"}, headers=h).status_code == 400
-        assert c.put("/api/sites/default", json={"name": "家里", "sources": ["192.168.88.1"]}, headers=h).status_code == 200
-        r = c.post("/api/sites", json={"slug": "branch", "name": "分店", "sources": ["10.9.0.2", "bad"]}, headers=h)
+        # 默认站点的源 IP 和新站点一起提交；新站点不通过时默认站点也不改
+        r = c.post("/api/sites", json={"slug": "branch", "name": "分店", "sources": ["10.9.0.2", "bad"],
+                                       "others": [{"slug": "default", "sources": ["192.168.88.1"]}]}, headers=h)
         assert r.status_code == 400
+        assert registry.accept_all == "default"
+        assert c.put("/api/sites/default", json={"name": "家里", "sources": ["192.168.88.1"]}, headers=h).status_code == 200
         r = c.post("/api/sites", json={"slug": "branch", "name": "分店", "sources": ["192.168.88.1"]}, headers=h)
         assert r.status_code == 400 and "已经登记" in r.json()["detail"]
         r = c.post("/api/sites", json={"slug": "branch", "name": "分店", "sources": ["10.9.0.2"],
@@ -78,3 +81,25 @@ def test_sites_admin_only():
         assert c.get("/api/sites", headers=hu).status_code == 403
         assert c.get("/api/sites/unknown-sources", headers=hu).status_code == 403
         assert c.post("/api/sites", json={"slug": "x", "name": "x"}, headers=hu).status_code == 403
+
+
+def test_overview_cards_not_summed():
+    from app import timeutil
+    from app.models import TrafficDay
+    day = timeutil.day_bucket(time.time())
+    with TestClient(app) as c:
+        h = _h(c)
+        c.put("/api/sites/default", json={"name": "家里", "sources": ["192.168.88.1"]}, headers=h)
+        c.post("/api/sites", json={"slug": "shop", "name": "门店", "sources": ["10.7.0.2"]}, headers=h)
+        try:
+            with database.session() as db:
+                db.add(TrafficDay(site="shop", ts=day, host="S1", app="wechat", up=300, down=700, flows=1))
+                db.commit()
+            cards = {s["slug"]: s for s in c.get("/api/sites/overview", headers=h).json()["sites"]}
+            assert set(cards) == {"default", "shop"}
+            assert cards["shop"]["today"]["total"] == 1000 and cards["shop"]["apps"][0]["id"] == "wechat"
+            own = c.get("/api/overview?site=default", headers=h).json()["totals"]["today"]["total"]
+            assert cards["default"]["today"]["total"] == own        # 各算各的，没把门店加进来
+        finally:
+            c.request("DELETE", "/api/sites/shop", json={"confirm": "shop"}, headers=h)
+            c.put("/api/sites/default", json={"name": "默认站点", "sources": []}, headers=h)

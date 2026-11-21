@@ -2,12 +2,13 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import oplog
 from app.database import get_db
-from app.models import ApiToken, Setting, User
+from app.models import ApiToken, Setting, Site, User, UserSite
 from app.security import (check_login_lock, check_setup_code, current_user, forget_api_tokens, forget_roles, make_token, new_api_token,
                           note_login_fail, note_login_ok, pwd, require_admin, role_of)
 
@@ -94,15 +95,42 @@ class UserIn(BaseModel):
     username: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.@-]+$")
     password: str = Field(min_length=6, max_length=128)
     role: str = Field("user", pattern=ROLE)
+    sites: list[str] | None = None   # 多站点：普通用户能看哪些站点（管理员不用填，看全部）
 
 
 class UserPatch(BaseModel):
     role: str | None = Field(None, pattern=ROLE)
     password: str | None = Field(None, min_length=6, max_length=128)
+    sites: list[str] | None = None
 
 
-def _user_dict(u: User) -> dict:
-    return {"id": u.id, "username": u.username, "role": u.role or "admin", "created": u.created, "last_login": u.last_login}
+def _user_dict(u: User, db=None) -> dict:
+    out = {"id": u.id, "username": u.username, "role": u.role or "admin", "created": u.created, "last_login": u.last_login}
+    if db is not None:
+        out["sites"] = sorted(db.scalars(select(UserSite.site).where(UserSite.user_id == u.id)).all())
+    return out
+
+
+def _set_sites(db, u: User, sites: list[str] | None, role: str):
+    """普通用户的站点授权。没给时：只有一个站点就授权它（以后加了站点，原来的用户照旧只看这个）；
+    多个站点时必须至少选一个"""
+    all_sites = set(db.scalars(select(Site.slug)).all())
+    if sites is None:
+        if len(all_sites) > 1:
+            if role == "user" and u.id is None:
+                raise HTTPException(400, "请选择这个账号能看的站点")
+            return
+        sites = sorted(all_sites)
+    sites = list(dict.fromkeys(x for x in sites if x))
+    bad = [x for x in sites if x not in all_sites]
+    if bad:
+        raise HTTPException(400, f"站点不存在：{', '.join(bad)}")
+    if role == "user" and not sites:
+        raise HTTPException(400, "请至少选择一个站点")
+    db.flush()
+    db.execute(delete(UserSite).where(UserSite.user_id == u.id))
+    for x in sites:
+        db.add(UserSite(user_id=u.id, site=x))
 
 
 def _admins(db) -> int:
@@ -111,7 +139,7 @@ def _admins(db) -> int:
 
 @router.get("/users")
 def users(_: str = Depends(require_admin), db: Session = Depends(get_db)):
-    return [_user_dict(u) for u in db.query(User).order_by(User.id)]
+    return [_user_dict(u, db) for u in db.query(User).order_by(User.id)]
 
 
 @router.post("/users")
@@ -119,10 +147,14 @@ def add_user(req: UserIn, request: Request, user: str = Depends(require_admin), 
     if db.query(User).filter(User.username == req.username).first():
         raise HTTPException(400, "用户名已存在")
     u = User(username=req.username, password_hash=pwd.hash(req.password), role=req.role, created=int(time.time()))
+    if req.role == "user" and req.sites is None and db.query(Site).count() > 1:
+        raise HTTPException(400, "请选择这个账号能看的站点")
     db.add(u)
-    oplog.log(db, request, user, "user_add", {"username": req.username, "role": req.role})
+    db.flush()
+    _set_sites(db, u, req.sites, req.role)
+    oplog.log(db, request, user, "user_add", {"username": req.username, "role": req.role, "sites": req.sites})
     forget_roles()
-    return _user_dict(u)
+    return _user_dict(u, db)
 
 
 @router.put("/users/{uid}")
@@ -138,9 +170,12 @@ def edit_user(uid: int, req: UserPatch, request: Request, user: str = Depends(re
         u.password_hash = pwd.hash(req.password)
     if req.password or req.role:
         u.token_version = (u.token_version or 0) + 1  # 改密码 / 降权后旧 token 立即失效
-    oplog.log(db, request, user, "user_edit", {"username": u.username, "role": req.role, "password": bool(req.password)})
+    if req.sites is not None:
+        _set_sites(db, u, req.sites, u.role or "admin")   # 授权缓存由 forget_roles 一起清，下一个请求就生效
+    oplog.log(db, request, user, "user_edit", {"username": u.username, "role": req.role, "password": bool(req.password),
+                                               "sites": req.sites})
     forget_roles()
-    return _user_dict(u)
+    return _user_dict(u, db)
 
 
 @router.delete("/users/{uid}")
@@ -153,6 +188,7 @@ def delete_user(uid: int, request: Request, user: str = Depends(require_admin), 
     if (u.role or "admin") == "admin" and _admins(db) <= 1:
         raise HTTPException(400, "至少要保留一个管理员")
     name = u.username
+    db.execute(delete(UserSite).where(UserSite.user_id == u.id))
     db.delete(u)
     oplog.log(db, request, user, "user_delete", {"username": name})
     forget_roles()
