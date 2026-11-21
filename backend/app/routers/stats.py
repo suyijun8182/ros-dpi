@@ -9,6 +9,7 @@ from app import health, hostnames, oplog, stats, timeutil
 from app.asn import asndb
 from app.database import get_db
 from app.engine import engine
+from app.models import DEFAULT_SITE
 from app.models import DomainGeo, Host, HostName
 from app.ros_poller import poller
 from app.security import current_user
@@ -109,7 +110,7 @@ class HostPatch(BaseModel):
 def host_patch(key: str, req: HostPatch, request: Request, user: str = Depends(current_user),
                db: Session = Depends(get_db)):
     """给终端改名。按 MAC 命名跟着设备走；按 IP 命名跟着地址走。"""
-    h = db.get(Host, key)
+    h = db.get(Host, (DEFAULT_SITE, key))
     if h is None:
         raise HTTPException(404, "终端不存在")
     by = req.by or ("mac" if h.mac else "ip")

@@ -9,6 +9,7 @@ import time
 
 from sqlalchemy import select
 
+from app.models import DEFAULT_SITE
 from app.models import Host, HostName
 
 _MAC_RE = re.compile(r"^[0-9A-F]{12}$")
@@ -48,7 +49,7 @@ def resolve(names: dict, mac: str | None, ip: str | None) -> tuple[str | None, s
 
 def put(db, kind: str, value: str, name: str | None):
     """name 为空表示删除这条命名。value 需已规范化。"""
-    row = db.get(HostName, (kind, value))
+    row = db.get(HostName, (DEFAULT_SITE, kind, value))
     name = (name or "").strip()
     if not name:
         if row is not None:

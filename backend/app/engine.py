@@ -19,6 +19,7 @@ from app.database import upsert_add
 from app import dnsmap
 from app.capture import capture
 from app.dnsmap import ConnNames, DnsMap, pick_cname
+from app.models import DEFAULT_SITE
 from app.models import (AccessLog, AuditEvent, CustomRule, DnsCache, DomainGeo, Host, HostDomainDay, OpLog, Setting, TrafficDay,
                         TrafficHour, UnmatchedDay,
                         TrafficMinute)
@@ -55,8 +56,9 @@ def parse_cidrs(text: str) -> list:
 
 
 class Engine:
-    def __init__(self):
+    def __init__(self, site: str = DEFAULT_SITE):
         s = get_settings()
+        self.site = site
         self.decoder = FlowDecoder()
         self.dns = DnsMap()
         self.names = ConnNames()
@@ -580,7 +582,7 @@ class Engine:
 
         # 第 0 秒执行的 flush 装的是上一分钟的数据：按 now - 1 分桶（否则 23:59 的流量会记进第二天）
         ref = now - 1
-        payload = {"ts": (timeutil.minute_bucket(ref), timeutil.hour_bucket(ref), timeutil.day_bucket(ref)),
+        payload = {"site": self.site, "ts": (timeutil.minute_bucket(ref), timeutil.hour_bucket(ref), timeutil.day_bucket(ref)),
                    "buf": dict(buf), "dom": dict(dom), "dom_ip": dict(dom_ip), "seen": dict(seen),
                    "ipdest": dict(ipdest), "unm": dict(unm), "visits": visits, "visit_upd": visit_upd,
                    "dns": self.dns.take_dirty(), "finished": getattr(self, "finished_visits", [])}
@@ -664,35 +666,38 @@ class Engine:
     @staticmethod
     def _w_traffic(db, p):
         m, h, d = p["ts"]
-        rows = [{"host": host, "app": app, "up": up, "down": down, "flows": f}
+        site = p.get("site", DEFAULT_SITE)
+        rows = [{"site": site, "host": host, "app": app, "up": up, "down": down, "flows": f}
                 for (host, app), (up, down, f) in p["buf"].items()]
         for table, ts in ((TrafficMinute.__table__, m), (TrafficHour.__table__, h), (TrafficDay.__table__, d)):
             for chunk in _chunks([{**r, "ts": ts} for r in rows], 500):
-                upsert_add(db, table, chunk, ["ts", "host", "app"], ["up", "down", "flows"])
+                upsert_add(db, table, chunk, ["site", "ts", "host", "app"], ["up", "down", "flows"])
 
     @staticmethod
     def _w_domains(db, p):
         d = p["ts"][2]
         from app.stats import base_domain
-        drows = [{"ts": d, "host": host, "domain": name[:255], "app": app, "bytes": n,
+        site = p.get("site", DEFAULT_SITE)
+        drows = [{"site": site, "ts": d, "host": host, "domain": name[:255], "app": app, "bytes": n,
                   "base": base_domain(name[:255])} for (host, name, app), n in p["dom"].items()]
         per_host: dict[str, list] = defaultdict(list)
         for (host, ip, app), n in p["ipdest"].items():
             per_host[host].append((n, ip, app))
         for host, lst in per_host.items():
             for n, ip, app in sorted(lst, reverse=True)[:IP_DEST_PER_HOST]:
-                drows.append({"ts": d, "host": host, "domain": ip, "app": app, "bytes": n, "base": base_domain(ip)})
+                drows.append({"site": site, "ts": d, "host": host, "domain": ip, "app": app, "bytes": n, "base": base_domain(ip)})
         for chunk in _chunks(drows, 500):
-            upsert_add(db, HostDomainDay.__table__, chunk, ["ts", "host", "domain"], ["bytes"], ["app", "base"])
+            upsert_add(db, HostDomainDay.__table__, chunk, ["site", "ts", "host", "domain"], ["bytes"], ["app", "base"])
 
     @staticmethod
     def _w_unmatched(db, p):
         d = p["ts"][2]
-        rows = [{"ts": d, "host": host, "proto": proto, "port": port, "kind": kind, "app": app,
+        site = p.get("site", DEFAULT_SITE)
+        rows = [{"site": site, "ts": d, "host": host, "proto": proto, "port": port, "kind": kind, "app": app,
                  "up": up, "down": down, "flows": f}
                 for (host, proto, port, kind, app), (up, down, f) in p.get("unm", {}).items()]
         for chunk in _chunks(rows, 500):
-            upsert_add(db, UnmatchedDay.__table__, chunk, ["ts", "host", "proto", "port", "kind", "app"],
+            upsert_add(db, UnmatchedDay.__table__, chunk, ["site", "ts", "host", "proto", "port", "kind", "app"],
                        ["up", "down", "flows"])
 
     def _w_hosts(self, db, p):
@@ -700,7 +705,9 @@ class Engine:
 
     @staticmethod
     def _w_visits(db, p):
-        for chunk in _chunks(database.fit(AccessLog.__table__, p["visits"]), 500):
+        site = p.get("site", DEFAULT_SITE)
+        visits = [{**r, "site": site} for r in p["visits"]]
+        for chunk in _chunks(database.fit(AccessLog.__table__, visits), 500):
             db.execute(insert(AccessLog.__table__), chunk)
         if p["visit_upd"]:
             t = AccessLog.__table__
@@ -734,10 +741,10 @@ class Engine:
         rows = []
         for key, (ip, mac, ts) in seen.items():
             name = self.mac2name.get(mac) if mac else None
-            rows.append({"key": key, "mac": mac, "ip": ip, "hostname": name[:128] if name else None,
+            rows.append({"site": self.site, "key": key, "mac": mac, "ip": ip, "hostname": name[:128] if name else None,
                          "first_seen": ts, "last_seen": ts, "online_since": ts})
         # 已存在的终端只更新 ip / last_seen，first_seen 与备注名保持不变
-        existing = {h.key: h for h in db.scalars(select(Host).where(Host.key.in_(list(seen))))}
+        existing = {h.key: h for h in db.scalars(select(Host).where(Host.site == self.site, Host.key.in_(list(seen))))}
         for r in rows:
             h = existing.get(r["key"])
             if h is None:

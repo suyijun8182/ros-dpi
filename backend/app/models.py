@@ -1,13 +1,25 @@
 """数据表。时间一律存 epoch 秒（BigInteger），分桶起点：分钟/小时按 UTC 对齐，天按配置时区的 0 点。"""
 import secrets
 
-from sqlalchemy import BigInteger, Column, Index, Integer, String, Text
+from sqlalchemy import BigInteger, Column, Index, Integer, String, Text, UniqueConstraint
 
 from app.database import Base
+
+DEFAULT_SITE = "default"
+
+
+def _site_pk():
+    """多站点（0.7.0）：按站点隔离的表，site 放在复合主键最前面"""
+    return Column("site", String(32), primary_key=True, default=DEFAULT_SITE, server_default=DEFAULT_SITE)
+
+
+def _site_col():
+    return Column("site", String(32), nullable=False, default=DEFAULT_SITE, server_default=DEFAULT_SITE)
 
 
 def _traffic_cols():
     return [
+        _site_pk(),
         # 复合主键里唯一的整数列，MySQL 上会被默认加 AUTO_INCREMENT，显式关掉
         Column("ts", BigInteger, primary_key=True, autoincrement=False),
         Column("host", String(64), primary_key=True),
@@ -20,25 +32,26 @@ def _traffic_cols():
 
 class TrafficMinute(Base):
     __tablename__ = "traffic_minute"
-    ts, host, app, up, down, flows = _traffic_cols()
+    site, ts, host, app, up, down, flows = _traffic_cols()
     __table_args__ = (Index("ix_tmin_host_ts", "host", "ts"),)
 
 
 class TrafficHour(Base):
     __tablename__ = "traffic_hour"
-    ts, host, app, up, down, flows = _traffic_cols()
+    site, ts, host, app, up, down, flows = _traffic_cols()
     __table_args__ = (Index("ix_thour_host_ts", "host", "ts"), Index("ix_thour_app_ts", "app", "ts"))
 
 
 class TrafficDay(Base):
     __tablename__ = "traffic_day"
-    ts, host, app, up, down, flows = _traffic_cols()
+    site, ts, host, app, up, down, flows = _traffic_cols()
     __table_args__ = (Index("ix_tday_host_ts", "host", "ts"), Index("ix_tday_app_ts", "app", "ts"))
 
 
 class HostDomainDay(Base):
     """每台终端每天访问的域名及字节数（主机详情 "最近访问域名"、未识别域名 Top）。"""
     __tablename__ = "host_domain_day"
+    site = _site_pk()
     ts = Column(BigInteger, primary_key=True, autoincrement=False)
     host = Column(String(64), primary_key=True)
     domain = Column(String(255), primary_key=True)
@@ -53,6 +66,7 @@ class UnmatchedDay(Base):
     """没有任何域名信号的流量（未匹配诊断，debug25）：每天按 终端 / 协议 / 端口 / 远端 ASN 类型 / 最终归类 汇总，留 30 天。
     port 为 65536 表示 1024 以上的非常用端口（P2P 端口五花八门，逐个记没有意义）"""
     __tablename__ = "unmatched_day"
+    site = _site_pk()
     ts = Column(BigInteger, primary_key=True, autoincrement=False)
     host = Column(String(64), primary_key=True)
     proto = Column(Integer, primary_key=True, autoincrement=False)
@@ -68,6 +82,7 @@ class UnmatchedDay(Base):
 class Host(Base):
     """终端。key 优先用 MAC（大写冒号格式），拿不到 MAC 时用 "IP:x.x.x.x"。"""
     __tablename__ = "hosts"
+    site = _site_pk()
     key = Column(String(64), primary_key=True)
     mac = Column(String(17))
     ip = Column(String(45))
@@ -88,6 +103,7 @@ class HostName(Base):
     旧版本把备注名存在 hosts.alias（按终端 key），启动时会迁移到这里。
     """
     __tablename__ = "host_names"
+    site = _site_pk()
     kind = Column(String(8), primary_key=True)    # mac | ip
     value = Column(String(45), primary_key=True)  # 大写冒号格式的 MAC，或规范化后的 IP
     name = Column(String(128), nullable=False)
@@ -121,6 +137,7 @@ class CustomRule(Base):
     category = Column(String(32))
     created = Column(BigInteger)
     share = Column(Integer)   # 1 = 命中的域名贡献给社区共享库（debug26，默认不贡献）
+    site = Column(String(32))  # 只在这个站点生效；空 = 全部站点（0.7.0）
 
 
 class Setting(Base):
@@ -134,6 +151,7 @@ class AccuracyProbe(Base):
     end 为空表示还在进行；结束 2 分钟后把结果冻结进 result（每分钟明细只留 2 天）"""
     __tablename__ = "accuracy_probes"
     id = Column(Integer, primary_key=True, autoincrement=True)
+    site = _site_col()
     host = Column(String(64), nullable=False)
     expected = Column(String(48), nullable=False)
     start = Column(Integer, nullable=False)
@@ -191,7 +209,8 @@ class AccessLog(Base):
     up = Column(BigInteger, nullable=False, default=0)
     down = Column(BigInteger, nullable=False, default=0)
     source = Column(String(8))                   # 域名来源：proxy / conn / pair / ip / none
-    __table_args__ = (Index("ix_alog_host_ts", "host", "ts_start"), Index("ix_alog_ts", "ts_start"),
+    site = _site_col()
+    __table_args__ = (Index("ix_alog_site_ts", "site", "ts_start"), Index("ix_alog_host_ts", "host", "ts_start"), Index("ix_alog_ts", "ts_start"),
                       Index("ix_alog_app_ts", "app", "ts_start"), Index("ix_alog_dest", "dest"))
 
 
@@ -211,6 +230,7 @@ class AuditRule(Base):
     notify = Column(Integer, nullable=False, default=1)
     channels = Column(String(255))                   # 推送到哪些渠道（逗号分隔）；空 = 所有已启用的渠道
     created = Column(BigInteger)
+    site = Column(String(32))                        # 只在这个站点评估；空 = 全部站点（0.7.0）
 
 
 class AuditEvent(Base):
@@ -222,7 +242,8 @@ class AuditEvent(Base):
     host = Column(String(64))
     detail = Column(Text)                            # JSON：命中的应用 / 域名 / 字节数
     notified = Column(Integer, default=0)
-    __table_args__ = (Index("ix_aevent_ts", "ts"), Index("ix_aevent_host_ts", "host", "ts"))
+    site = _site_col()
+    __table_args__ = (Index("ix_aevent_site_ts", "site", "ts"), Index("ix_aevent_ts", "ts"), Index("ix_aevent_host_ts", "host", "ts"))
 
 
 class OpLog(Base):
@@ -244,13 +265,16 @@ class Department(Base):
     """部门 / 分组（家里可以是“家长”“孩子”）"""
     __tablename__ = "departments"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(64), unique=True, nullable=False)
+    site = _site_col()
+    name = Column(String(64), nullable=False)
+    __table_args__ = (UniqueConstraint("site", "name", name="uq_dept_site_name"),)
 
 
 class Person(Base):
     """人员：一个人可以有多台设备，统计、报表、审计规则都能按人"""
     __tablename__ = "people"
     id = Column(Integer, primary_key=True, autoincrement=True)
+    site = _site_col()
     name = Column(String(64), nullable=False)
     dept_id = Column(Integer, index=True)
     note = Column(String(255))
@@ -260,6 +284,7 @@ class Person(Base):
 class PersonDevice(Base):
     """设备归属：终端 key（MAC 或 IP:x）→ 人员"""
     __tablename__ = "person_devices"
+    site = _site_pk()
     host = Column(String(64), primary_key=True)
     person_id = Column(Integer, nullable=False, index=True)
 
@@ -298,3 +323,40 @@ class ShareDomain(Base):
     reporter = Column(String(36), primary_key=True)
     bytes = Column(BigInteger, nullable=False, default=0)
     ts = Column(BigInteger, nullable=False)
+
+
+# ---------------- 多站点（0.7.0） ----------------
+
+class Site(Base):
+    """一台 RouterOS 一个站点。按 UDP 源 IP（sources）认出数据是哪个站点的；
+    只有一个站点且没登记源 IP 时接收所有来源（与 0.6.x 相同）"""
+    __tablename__ = "sites"
+    slug = Column(String(32), primary_key=True)       # 标识，创建后不可改（URL ?site= 用它）
+    name = Column(String(64), nullable=False)
+    sources = Column(Text)                            # 逗号分隔的源 IP
+    ros_url = Column(String(255))
+    ros_user = Column(String(64))
+    ros_password = Column(String(255))
+    ros_verify_tls = Column(Integer, default=0)
+    platform_addr = Column(String(255))               # 从该站点看平台的地址（生成 sniff-target / traffic-flow target）
+    lan_cidrs = Column(Text)                          # 空 = 用全局 LAN_CIDRS
+    wan_interface = Column(String(64))
+    enabled = Column(Integer, nullable=False, default=1)
+    sort = Column(Integer, default=0)
+    created = Column(BigInteger)
+
+
+class UserSite(Base):
+    """普通用户能看哪些站点（管理员不需要，默认全部）"""
+    __tablename__ = "user_sites"
+    user_id = Column(Integer, primary_key=True, autoincrement=False)
+    site = Column(String(32), primary_key=True)
+
+
+class UnknownSource(Base):
+    """未登记来源：多站点时没对上任何站点的 IPFIX / TZSP 数据包（丢弃，只计数），保留 7 天"""
+    __tablename__ = "unknown_sources"
+    ip = Column(String(45), primary_key=True)
+    kind = Column(String(8), primary_key=True)       # ipfix | tzsp
+    last_seen = Column(BigInteger, nullable=False)
+    packets = Column(BigInteger, nullable=False, default=0)

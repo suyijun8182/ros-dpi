@@ -35,7 +35,7 @@ def _seed_minutes(now):
     with database.session() as db:
         db.query(TrafficMinute).filter(TrafficMinute.host == H).delete(synchronize_session=False)
         db.query(AccuracyProbe).filter(AccuracyProbe.host == H).delete(synchronize_session=False)
-        if db.get(Host, H) is None:
+        if db.get(Host, ("default", H)) is None:
             db.add(Host(key=H, mac=H, ip="192.168.88.29"))
         rows = [("douyin", 700), ("https", 200), ("wechat", 100)]   # 预期抖音：命中 70%，笼统 20%，认错 10%
         for i in range(3):

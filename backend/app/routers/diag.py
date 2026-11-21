@@ -13,6 +13,7 @@ from app.capture import files as capture_files
 from app.capture import path_of
 from app.database import get_db
 from app.engine import engine
+from app.models import DEFAULT_SITE
 from app.models import AccuracyProbe, Host
 from app.security import current_user, require_admin
 
@@ -52,7 +53,7 @@ def list_probes(db: Session = Depends(get_db)):
 
 @router.post("/accuracy/probes")
 def add_probe(req: ProbeIn, request: Request, user: str = Depends(require_admin), db: Session = Depends(get_db)):
-    if db.get(Host, req.host) is None:
+    if db.get(Host, (DEFAULT_SITE, req.host)) is None:
         raise HTTPException(400, "终端不存在")
     if req.expected not in engine.classifier.apps:
         raise HTTPException(400, "应用不存在")

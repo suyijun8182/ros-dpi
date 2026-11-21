@@ -190,29 +190,29 @@ def _reclassify_once(engine, db, before: int | None, since: int | None = None, w
     cache = _dns_domain_map(db)
     moves: dict = defaultdict(lambda: defaultdict(int))  # (ts, host, 旧应用) -> {新应用: 字节}
     marks: list[dict] = []
-    q = select(HostDomainDay.ts, HostDomainDay.host, HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)         .where(HostDomainDay.ts < before)
+    q = select(HostDomainDay.site, HostDomainDay.ts, HostDomainDay.host, HostDomainDay.domain, HostDomainDay.app, HostDomainDay.bytes)         .where(HostDomainDay.ts < before)
     if since is not None:
         q = q.where(HostDomainDay.ts >= since)
     if where:
         q = q.where(*where)
     rows = db.execute(q).all()
     if pred is not None:
-        rows = [r for r in rows if pred(r[2])]
-    for ts, host, dom, old_app, b in rows:
+        rows = [r for r in rows if pred(r[3])]
+    for site, ts, host, dom, old_app, b in rows:
         if not b:
             continue
         new_app = (_forced_app if force else _new_app)(classifier, dom, old_app, cache)
         if new_app:
-            moves[(int(ts), host, old_app)][new_app] += int(b)
-            marks.append({"ts": int(ts), "host": host, "domain": dom, "app": new_app})
+            moves[(site, int(ts), host, old_app)][new_app] += int(b)
+            marks.append({"site": site, "ts": int(ts), "host": host, "domain": dom, "app": new_app})
     if marks:
         db.bulk_update_mappings(HostDomainDay, marks)
 
     # 先在内存里把搬移汇总（同一个目标行可能来自多个源、同一个源可能拆给多个目标），再统一落库
     srcs: dict = defaultdict(lambda: [0, 0, 0])  # (ts, host, 旧应用) -> 要减掉的 [up, down, flows]
     dsts: dict = defaultdict(lambda: [0, 0, 0])  # (ts, host, 新应用) -> 要加上的 [up, down, flows]
-    for (ts, host, old_app), tgts in moves.items():
-        src = db.get(TrafficDay, {"ts": ts, "host": host, "app": old_app})
+    for (site, ts, host, old_app), tgts in moves.items():
+        src = db.get(TrafficDay, {"site": site, "ts": ts, "host": host, "app": old_app})
         if src is None:
             continue
         total_old = src.up + src.down
@@ -232,26 +232,28 @@ def _reclassify_once(engine, db, before: int | None, since: int | None = None, w
             down = min(mv - up, down_left)
             flows = min(round(mv * flows_per_byte), flows_left)
             up_left, down_left, flows_left = up_left - up, down_left - down, flows_left - flows
-            d = dsts[(ts, host, new_app)]
+            d = dsts[(site, ts, host, new_app)]
             d[0] += up
             d[1] += down
             d[2] += flows
-            s_ = srcs[(ts, host, old_app)]
+            s_ = srcs[(site, ts, host, old_app)]
             s_[0] += up
             s_[1] += down
             s_[2] += flows
     for key, (up, down, flows) in srcs.items():
         # 负增量也走 upsert：并发重算串行化了（见 reclassify 的锁），但落库任务可能同时碰同一行
-        if db.get(TrafficDay, {"ts": key[0], "host": key[1], "app": key[2]}) is None:
+        if db.get(TrafficDay, {"site": key[0], "ts": key[1], "host": key[2], "app": key[3]}) is None:
             continue
         upsert_add(db, TrafficDay.__table__,
-                   [{"ts": key[0], "host": key[1], "app": key[2], "up": -up, "down": -down, "flows": -flows}],
-                   ["ts", "host", "app"], ["up", "down", "flows"])
+                   [{"site": key[0], "ts": key[1], "host": key[2], "app": key[3],
+                     "up": -up, "down": -down, "flows": -flows}],
+                   ["site", "ts", "host", "app"], ["up", "down", "flows"])
     for key, (up, down, flows) in dsts.items():
         # upsert：落库任务 / 并发的重算可能刚写入了同一行（0.6.7 及以前用 db.get + add，撞主键整笔回滚）
         upsert_add(db, TrafficDay.__table__,
-                   [{"ts": key[0], "host": key[1], "app": key[2], "up": up, "down": down, "flows": flows}],
-                   ["ts", "host", "app"], ["up", "down", "flows"])
+                   [{"site": key[0], "ts": key[1], "host": key[2], "app": key[3],
+                     "up": up, "down": down, "flows": flows}],
+                   ["site", "ts", "host", "app"], ["up", "down", "flows"])
     return {"scanned": len(rows), "rows_moved": len(dsts), "bytes_moved": sum(v[0] + v[1] for v in dsts.values()),
             "flows_moved": sum(v[2] for v in dsts.values()), "seconds": round(time.time() - t0, 1)}
 

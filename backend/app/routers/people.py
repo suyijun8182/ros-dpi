@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import devtype, insight, oplog, people, stats, timeutil
 from app.database import get_db
+from app.models import DEFAULT_SITE
 from app.models import Department, Host, Person, PersonDevice, Setting, TrafficDay
 from app.security import current_user
 
@@ -53,7 +54,7 @@ def _set_devices(db, pid: int, hosts: list[str]):
         db.delete(d)
     db.flush()
     for h in dict.fromkeys(hosts):
-        old = db.get(PersonDevice, h)
+        old = db.get(PersonDevice, (DEFAULT_SITE, h))
         if old:
             old.person_id = pid
         else:
@@ -172,7 +173,7 @@ def delete_person(pid: int, request: Request, user: str = Depends(current_user),
 @router.put("/devices/bind")
 def bind(req: BindIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
     """设置一台设备属于谁（主机详情、未分配设备列表里用）"""
-    old = db.get(PersonDevice, req.host)
+    old = db.get(PersonDevice, (DEFAULT_SITE, req.host))
     if req.person_id is None:
         if old:
             db.delete(old)
@@ -271,7 +272,7 @@ def host_insight(key: str, range: str = Query("today", pattern=RANGES), db: Sess
 
 @router.put("/hosts/{key}/dtype")
 def set_dtype(key: str, req: DtypeIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
-    h = db.get(Host, key)
+    h = db.get(Host, (DEFAULT_SITE, key))
     if h is None:
         raise HTTPException(404, "终端不存在")
     h.dtype = req.dtype

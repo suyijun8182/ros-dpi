@@ -91,7 +91,7 @@ def test_destinations_sql_aggregation():
         {"ts": day, "host": "H1", "domain": "203.0.113.9", "app": "https", "bytes": 700, "base": "203.0.113.9"},
     ]
     with database.session() as db:
-        upsert_add(db, HostDomainDay.__table__, rows, ["ts", "host", "domain"], ["bytes"], ["app", "base"])
+        upsert_add(db, HostDomainDay.__table__, rows, ["site", "ts", "host", "domain"], ["bytes"], ["app", "base"])
         db.commit()
         s, t = timeutil.range_bounds("today")
 
@@ -124,7 +124,7 @@ def test_backfill_base_domain():
                    [{"ts": day, "host": "H9", "domain": "cdn.example.com.cn", "app": "web", "bytes": 5}])
         db.commit()
         Engine._backfill_base(db)
-        row = db.get(HostDomainDay, (day, "H9", "cdn.example.com.cn"))
+        row = db.get(HostDomainDay, ("default", day, "H9", "cdn.example.com.cn"))
         assert row.base == "example.com.cn"
         merged = stats.destinations(db, *timeutil.range_bounds("today"), merge=True)
         assert any(r["dest"] == "example.com.cn" for r in merged)
@@ -225,7 +225,7 @@ def test_flush_long_hostname_and_bad_rows(monkeypatch):
     e.flush(time.time())
     assert not e._pending                       # 坏的那段被丢弃，不再留着重试
     with database.session() as db:
-        h = db.get(Host, "AA:00:00:00:00:77")
+        h = db.get(Host, ("default", "AA:00:00:00:00:77"))
         assert h is not None and len(h.hostname) == 128
         assert db.query(TrafficDay).filter(TrafficDay.host == "AA:00:00:00:00:77").count() == 1
     monkeypatch.setattr(e, "_w_geo", orig)

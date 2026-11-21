@@ -144,14 +144,12 @@ def init_db(retries: int = 20, delay: float = 3.0):
 
     for i in range(1, retries + 1):
         try:
-            Base.metadata.create_all(engine)
-            add_missing_columns()
+            _create_and_migrate()
             return
         except Exception as e:  # noqa: BLE001
             try:
                 if _create_database_if_missing(e):
-                    Base.metadata.create_all(engine)
-                    add_missing_columns()
+                    _create_and_migrate()
                     return
             except Exception as ce:  # noqa: BLE001
                 print(f"[db] 数据库不存在，且自动创建失败（账号可能没有建库权限）：{ce}", flush=True)
@@ -159,6 +157,13 @@ def init_db(retries: int = 20, delay: float = 3.0):
             if i == retries:
                 raise
             time.sleep(delay)
+
+
+def _create_and_migrate():
+    from app import migrate_sites
+    Base.metadata.create_all(engine)
+    migrate_sites.migrate(engine, Base.metadata)   # 0.7.0 多站点：要在补索引之前（新索引用到 site 列）
+    add_missing_columns()
 
 
 def add_missing_columns():
