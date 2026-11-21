@@ -13,11 +13,13 @@ from app.capture import files as capture_files
 from app.capture import path_of
 from app.database import get_db
 from app.engine import engine
-from app.models import DEFAULT_SITE
 from app.models import AccuracyProbe, Host
+from app.scoping import site_of
 from app.security import current_user, require_admin
+from app.sitectx import SiteCtx, site_ctx
 
-router = APIRouter(prefix="/api", tags=["diag"], dependencies=[Depends(current_user)])
+# 多站点（0.7.0）：识别校验按 ?site= 的站点；抓包采样录的是选中站点发来的镜像包
+router = APIRouter(prefix="/api", tags=["diag"], dependencies=[Depends(current_user), Depends(site_ctx)])
 MAX_RUNNING = 5
 MAX_PROBES = 200
 
@@ -53,7 +55,7 @@ def list_probes(db: Session = Depends(get_db)):
 
 @router.post("/accuracy/probes")
 def add_probe(req: ProbeIn, request: Request, user: str = Depends(require_admin), db: Session = Depends(get_db)):
-    if db.get(Host, (DEFAULT_SITE, req.host)) is None:
+    if db.get(Host, (site_of(db), req.host)) is None:
         raise HTTPException(400, "终端不存在")
     if req.expected not in engine.classifier.apps:
         raise HTTPException(400, "应用不存在")
@@ -94,18 +96,18 @@ class CaptureIn(BaseModel):
 
 
 @router.get("/diag/capture")
-def capture_status(_: str = Depends(require_admin)):
+def capture_status(_: str = Depends(require_admin), ctx: SiteCtx = Depends(site_ctx)):
     from app.config import get_settings
-    from app.ros_poller import poller
-    chk = poller.check()   # 用 RouterOS 上已经在工作的 DNS 镜像规则的目标地址 / 端口，生成临时嗅探规则
+    chk = ctx.poller.check()   # 用 RouterOS 上已经在工作的 DNS 镜像规则的目标地址 / 端口，生成临时嗅探规则
     return {**capture.status(), "files": capture_files(),
             "target": chk.get("target"), "target_port": chk.get("port") or get_settings().tzsp_port}
 
 
 @router.post("/diag/capture/start")
-def capture_start(req: CaptureIn, request: Request, user: str = Depends(require_admin), db: Session = Depends(get_db)):
+def capture_start(req: CaptureIn, request: Request, user: str = Depends(require_admin), db: Session = Depends(get_db),
+                  ctx: SiteCtx = Depends(site_ctx)):
     try:
-        st = capture.start(engine, req.minutes, user)
+        st = capture.start(ctx.engine, req.minutes, user)
     except RuntimeError as e:
         raise HTTPException(409, str(e))
     oplog.log(db, request, user, "capture_start", {"minutes": req.minutes})

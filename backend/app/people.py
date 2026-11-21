@@ -4,47 +4,65 @@ import time
 from sqlalchemy import select
 
 from app import database
-from app.models import Department, Person, PersonDevice
+from app.models import DEFAULT_SITE, Department, Person, PersonDevice
 
-_cache: dict = {"t": 0, "dev": {}, "people": {}, "depts": {}}
+# 多站点（0.7.0）：人员、部门、设备归属都按站点，缓存也按站点各一份
+_caches: dict[str, dict] = {}
 
 
-def load(db=None, force: bool = False) -> dict:
-    """{dev: host -> person_id, people: id -> {id,name,dept_id}, depts: id -> name}，缓存 30 秒"""
-    if not force and time.time() - _cache["t"] < 30:
-        return _cache
+def _site(db, site):
+    if site:
+        return site
+    if db is not None:
+        from app.scoping import site_of
+        return site_of(db)
+    return DEFAULT_SITE
+
+
+def load(db=None, force: bool = False, site: str | None = None) -> dict:
+    """{dev: host -> person_id, people: id -> {id,name,dept_id}, depts: id -> name}，缓存 30 秒。
+    site 不给时用 db 会话的站点（没有会话时为默认站点）"""
+    site = _site(db, site)
+    c = _caches.setdefault(site, {"t": 0, "dev": {}, "people": {}, "depts": {}})
+    if not force and time.time() - c["t"] < 30:
+        return c
     own = db is None
     if own:
         if not database.is_configured():
-            return _cache
+            return c
         db = database.SessionLocal()
     try:
-        _cache["dev"] = {d.host: d.person_id for d in db.scalars(select(PersonDevice))}
-        _cache["people"] = {p.id: {"id": p.id, "name": p.name, "dept_id": p.dept_id} for p in db.scalars(select(Person))}
-        _cache["depts"] = {d.id: d.name for d in db.scalars(select(Department))}
-        _cache["t"] = time.time()
+        opt = {"all_sites": True}   # 下面显式按站点过滤，不依赖会话设置的站点
+        c["dev"] = {d.host: d.person_id for d in db.scalars(
+            select(PersonDevice).where(PersonDevice.site == site), execution_options=opt)}
+        c["people"] = {p.id: {"id": p.id, "name": p.name, "dept_id": p.dept_id} for p in db.scalars(
+            select(Person).where(Person.site == site), execution_options=opt)}
+        c["depts"] = {d.id: d.name for d in db.scalars(
+            select(Department).where(Department.site == site), execution_options=opt)}
+        c["t"] = time.time()
     finally:
         if own:
             db.close()
-    return _cache
+    return c
 
 
 def forget():
-    _cache["t"] = 0
+    for c in _caches.values():
+        c["t"] = 0
 
 
-def hosts_of_person(pid: int, db=None) -> list[str]:
-    return sorted(h for h, p in load(db)["dev"].items() if p == pid)
+def hosts_of_person(pid: int, db=None, site: str | None = None) -> list[str]:
+    return sorted(h for h, p in load(db, site=site)["dev"].items() if p == pid)
 
 
-def hosts_of_dept(did: int, db=None) -> list[str]:
-    c = load(db)
+def hosts_of_dept(did: int, db=None, site: str | None = None) -> list[str]:
+    c = load(db, site=site)
     pids = {p["id"] for p in c["people"].values() if p["dept_id"] == did}
     return sorted(h for h, p in c["dev"].items() if p in pids)
 
 
-def person_of(host: str) -> dict | None:
-    c = load()
+def person_of(host: str, site: str = DEFAULT_SITE) -> dict | None:
+    c = load(site=site)
     pid = c["dev"].get(host)
     p = c["people"].get(pid) if pid else None
     if not p:
@@ -52,14 +70,14 @@ def person_of(host: str) -> dict | None:
     return {"id": p["id"], "name": p["name"], "dept_id": p["dept_id"], "dept": c["depts"].get(p["dept_id"])}
 
 
-def expand_scope(tokens) -> set[str]:
+def expand_scope(tokens, site: str = DEFAULT_SITE) -> set[str]:
     """审计规则的适用范围：终端 key、person:<id>、dept:<id> 混合，展开成终端 key 集合；空 = 全部"""
     out: set[str] = set()
     for t in tokens or []:
         if t.startswith("person:"):
-            out.update(hosts_of_person(int(t[7:])))
+            out.update(hosts_of_person(int(t[7:]), site=site))
         elif t.startswith("dept:"):
-            out.update(hosts_of_dept(int(t[5:])))
+            out.update(hosts_of_dept(int(t[5:]), site=site))
         elif t:
             out.add(t)
     if tokens and not out:
@@ -67,12 +85,12 @@ def expand_scope(tokens) -> set[str]:
     return out
 
 
-def scope_hosts(person: int | None, dept: int | None, host: str | None = None) -> list[str] | None:
+def scope_hosts(person: int | None, dept: int | None, host: str | None = None, site: str = DEFAULT_SITE) -> list[str] | None:
     """接口筛选参数 → 终端列表；都没给返回 None（不限）"""
     if host:
         return [host]
     if person:
-        return hosts_of_person(person) or ["-"]
+        return hosts_of_person(person, site=site) or ["-"]
     if dept:
-        return hosts_of_dept(dept) or ["-"]
+        return hosts_of_dept(dept, site=site) or ["-"]
     return None

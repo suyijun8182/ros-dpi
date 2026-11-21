@@ -10,7 +10,7 @@ import time
 
 from sqlalchemy import delete, select
 
-from app import database, ros_poller
+from app import database, ros_poller, scoping  # noqa: F401  scoping：注册会话级站点过滤
 from app.config import get_settings
 from app.engine import Engine, engine as default_engine
 from app.ros_poller import RosPoller, poller as default_poller
@@ -69,6 +69,7 @@ class SiteRegistry:
     def apply(self, sites: list[dict]):
         env_lan = get_settings().lan_cidrs
         removed = []
+        added = False
         with self.lock:
             info = {s["slug"]: s for s in sites} or dict(self.info)
             for slug in info:
@@ -76,6 +77,7 @@ class SiteRegistry:
                     e = Engine(site=slug)
                     e.audit = default_engine.audit
                     self.engines[slug] = e
+                    added = True
                 if slug not in self.pollers:
                     p = RosPoller(self.engines[slug])
                     p.env_wan = ""
@@ -104,6 +106,12 @@ class SiteRegistry:
             ros_poller.apply(s["ros"] if s.get("enabled") else {"ros_url": ""}, target=p, env=slug == DEFAULT_SITE)
             if p.wan_override != (s.get("wan_interface") or ""):
                 p.wan_override, p._wan_prev = s.get("wan_interface") or "", None
+        if added and database.is_configured():
+            # 新站点的 Engine：装上只对它生效的自定义规则
+            try:
+                default_engine.reload_rules()
+            except Exception as ex:  # noqa: BLE001
+                print(f"[sites] 加载站点规则失败：{type(ex).__name__}: {ex}", flush=True)
         for e in removed:   # 删掉的站点：把内存里还没写的先写掉
             try:
                 e.flush(final=True)

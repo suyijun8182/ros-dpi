@@ -7,11 +7,13 @@ from sqlalchemy.orm import Session
 
 from app import compliance, control, oplog, people, sharing, stats
 from app.database import get_db
-from app.engine import engine
-from app.models import Setting
+from app.models import Host, Setting
+from app.scoping import site_of
 from app.security import current_user
+from app.sitectx import SiteCtx, site_ctx
 
-router = APIRouter(prefix="/api", tags=["compliance"], dependencies=[Depends(current_user)])
+# 多站点（0.7.0）：留存、Syslog 全局；私接检测、管控命令按 ?site= 的站点
+router = APIRouter(prefix="/api", tags=["compliance"], dependencies=[Depends(current_user), Depends(site_ctx)])
 
 
 class SyslogIn(BaseModel):
@@ -79,6 +81,8 @@ def syslog_test(req: SyslogIn):
 @router.get("/sharing")
 def sharing_list(db: Session = Depends(get_db)):
     """私接路由 / 共享上网嫌疑（今天的数据）"""
+    from app.sitectx import site_engine
+    engine = site_engine(db)
     base, rows = sharing.suspects(engine.ttl_snapshot())
     meta = stats.host_meta(db, [r["host"] for r in rows])
     return {"base_hops": base, "hosts": len(engine.ttl), "rows": [{**r, "meta": meta[r["host"]]} for r in rows]}
@@ -102,6 +106,9 @@ class ControlIn(BaseModel):
 def control_script(req: ControlIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
     """生成 RouterOS 管控命令（只生成，不下发）"""
     if req.target == "host":
+        # 只能是当前站点的终端（管控命令是给这个站点的路由器的）
+        if db.get(Host, (site_of(db), req.target_id)) is None:
+            raise HTTPException(404, "终端不存在")
         hosts, label = [req.target_id], ""
     elif req.target == "person":
         hosts = people.hosts_of_person(int(req.target_id), db)

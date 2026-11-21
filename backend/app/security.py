@@ -129,6 +129,8 @@ def role_of(username: str) -> str | None:
 
 def forget_roles():
     _roles.clear()
+    from app import sitectx
+    sitectx.forget()   # 站点授权缓存也一起清（改账号 / 改授权后立即生效）
 
 
 def current_user(request: Request, cred: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> str:

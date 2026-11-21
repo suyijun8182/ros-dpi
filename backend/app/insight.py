@@ -289,7 +289,8 @@ def _app(a: str) -> dict:
 def analyze_hosts(db, hosts: list[str], start: int, end: int, cfg: dict | None = None) -> dict:
     """带缓存（2 分钟）的 analyze"""
     cfg = cfg or get_config(db)
-    key = (tuple(sorted(hosts)), start // 60, end // 60, json.dumps(cfg, sort_keys=True))
+    from app.scoping import site_of
+    key = (site_of(db), tuple(sorted(hosts)), start // 60, end // 60, json.dumps(cfg, sort_keys=True))
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_SECONDS:
         return hit[1]
@@ -305,7 +306,8 @@ def analyze_many(db, groups: dict, start: int, end: int, cfg: dict | None = None
     rows：调用方已经查出的更大区间的访问日志（如 today + last7 共用一次查询），这里裁到本区间"""
     cfg = cfg or get_config(db)
     hosts = sorted({h for hs in groups.values() for h in hs})
-    key = ("many", tuple((k, tuple(sorted(v))) for k, v in sorted(groups.items())), start // 60, end // 60,
+    from app.scoping import site_of
+    key = ("many", site_of(db), tuple((k, tuple(sorted(v))) for k, v in sorted(groups.items())), start // 60, end // 60,
            json.dumps(cfg, sort_keys=True))
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_SECONDS:

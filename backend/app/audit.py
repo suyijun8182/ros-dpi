@@ -19,7 +19,8 @@ from sqlalchemy import func, select, update
 
 from app import database, notify, people, sharing
 from app.config import get_settings
-from app.models import AuditEvent, AuditRule, Setting
+from app.models import DEFAULT_SITE, AuditEvent, AuditRule, Setting
+from app.scoping import set_site
 
 
 
@@ -57,6 +58,17 @@ def window_start(rule, ts: float) -> float:
     return start.timestamp()
 
 
+def site_prefix(site: str) -> str:
+    """多站点（启用站点 ≥2 个）时通知前加 [站点名]；只有一个站点时不加"""
+    from app.sites import registry
+    return f"[{registry.name(site)}] " if registry.multi() else ""
+
+
+def rule_applies(rule, site: str) -> bool:
+    """审计规则的站点范围：空 = 全部站点"""
+    return not rule.site or rule.site == site
+
+
 def domain_match(domain: str, suffix: str) -> bool:
     suffix = suffix.lower().strip(".")
     return domain == suffix or domain.endswith("." + suffix)
@@ -67,8 +79,9 @@ class Auditor:
         self.engine = engine
         self._rules: list = []
         self._loaded = 0
-        self._acc: dict[tuple, int] = defaultdict(int)     # (rule, host, 日期) -> 生效时段内累计字节
-        self._fired: dict[tuple, float] = {}               # (rule, host) -> 上次命中时间
+        # 多站点：两个站点可能有同一个终端 key，键里都带上站点
+        self._acc: dict[tuple, int] = defaultdict(int)     # (rule, 站点, host, 日期) -> 生效时段内累计字节
+        self._fired: dict[tuple, float] = {}               # (rule, 站点, host) -> 上次命中时间
         self._restored = False
         self._acc_dirty = False
         self.events = 0
@@ -90,23 +103,26 @@ class Auditor:
         上次命中时间从审计事件表取（每次命中都会写一条事件），累计字节从设置表 audit_acc 读"""
         since = _day_start(now) - 86400
         with database.session() as db:
-            q = (select(AuditEvent.rule_id, AuditEvent.host, func.max(AuditEvent.ts))
-                 .where(AuditEvent.ts >= int(since)).group_by(AuditEvent.rule_id, AuditEvent.host))
-            for rid, host, ts in db.execute(q):
-                self._fired[(rid, host)] = max(self._fired.get((rid, host), 0), ts)
+            q = (select(AuditEvent.rule_id, AuditEvent.site, AuditEvent.host, func.max(AuditEvent.ts))
+                 .where(AuditEvent.ts >= int(since))
+                 .group_by(AuditEvent.rule_id, AuditEvent.site, AuditEvent.host))
+            for rid, site, host, ts in db.execute(q):
+                k = (rid, site, host)
+                self._fired[k] = max(self._fired.get(k, 0), ts)
             row = db.get(Setting, ACC_KEY)
             saved = json.loads(row.value) if row and row.value else []
-        for rid, host, day, b in saved:
+        for r in saved:
+            rid, site, host, day, b = r if len(r) == 5 else (r[0], DEFAULT_SITE, *r[1:])   # 0.6.x 存的没有站点
             if day >= since:
-                self._acc[(rid, host, day)] = max(self._acc[(rid, host, day)], b)
+                self._acc[(rid, site, host, day)] = max(self._acc[(rid, site, host, day)], b)
         self._restored = True
 
     def _save_acc(self, now: float):
         """把近两天还没命中的累计写进设置表（每分钟一次）。只存没命中的：已经提醒过的这一时段不会再报。
         设置表的值在 MySQL 里是 TEXT（64KB），超了就丢掉字节数最小的——它们离阈值最远"""
         since = _day_start(now) - 86400
-        rows = sorted(([k[0], k[1], k[2], v] for k, v in self._acc.items()
-                       if k[2] >= since and self._fired.get((k[0], k[1]), 0) < k[2]), key=lambda r: -r[3])
+        rows = sorted(([k[0], k[1], k[2], k[3], v] for k, v in self._acc.items()
+                       if k[3] >= since and self._fired.get((k[0], k[1], k[2]), 0) < k[3]), key=lambda r: -r[4])
         out, size = [], 2
         for r in rows:
             size += len(json.dumps(r, ensure_ascii=False)) + 1
@@ -118,14 +134,16 @@ class Auditor:
             db.commit()
         self._acc_dirty = False
 
-    def evaluate(self, buf: dict, dom: dict, new_hosts: list, now: float):
-        """buf: {(host, app): [up, down, flows]}；dom: {(host, domain, app): bytes}；new_hosts: [(key, ip, mac)]"""
+    def evaluate(self, buf: dict, dom: dict, new_hosts: list, now: float, site: str = DEFAULT_SITE):
+        """一个站点这一分钟的流量。buf: {(host, app): [up, down, flows]}；dom: {(host, domain, app): bytes}；
+        new_hosts: [(key, ip, mac)]"""
         try:
             rules = self._rules_now()
             if rules and not self._restored:
                 self._restore(now)
         except Exception:  # noqa: BLE001  数据库暂时不可用
             return
+        rules = [r for r in rules if rule_applies(r, site)]
         if not rules:
             return
         cl = self.engine.classifier
@@ -133,13 +151,13 @@ class Auditor:
         # 只保留近两天的累计（以前按天累积的键永远不删）
         if len(self._acc) > 1000:
             keep = _day_start(now) - 86400
-            self._acc = defaultdict(int, {k: v for k, v in self._acc.items() if k[2] >= keep})
+            self._acc = defaultdict(int, {k: v for k, v in self._acc.items() if k[3] >= keep})
         sharing_hits = None
         for rule in rules:
             if not in_window(rule, now):
                 continue
             day = window_start(rule, now)
-            only = people.expand_scope([x for x in (rule.hosts or "").split(",") if x])
+            only = people.expand_scope([x for x in (rule.hosts or "").split(",") if x], site)
             hits: dict[str, dict] = defaultdict(lambda: {"bytes": 0, "items": defaultdict(int)})
             if rule.kind == "new_host":
                 for key, ip, mac in new_hosts:
@@ -147,7 +165,9 @@ class Auditor:
                         hits[key]["items"][ip or key] += 0
             elif rule.kind == "sharing":
                 if sharing_hits is None:
-                    sharing_hits = sharing.suspects(self.engine.ttl_snapshot())[1]
+                    from app.sites import registry
+                    eng = registry.get(site) or self.engine
+                    sharing_hits = sharing.suspects(eng.ttl_snapshot())[1]
                 for s in sharing_hits:
                     if not only or s["host"] in only:
                         for ttl, n in s["ttls"].items():
@@ -182,7 +202,8 @@ class Auditor:
             for host, h in hits.items():
                 if rule.kind not in ("new_host", "sharing") and h["bytes"] <= 0:
                     continue
-                key = (rule.id, host)
+                key = (rule.id, site, host)
+                acc_key = (rule.id, site, host, day)
                 if rule.kind == "sharing":
                     if self._fired.get(key, 0) >= _day_start(now):  # 私接路由：每台一天提醒一次
                         continue
@@ -190,41 +211,44 @@ class Auditor:
                     events.append((rule, host, {"bytes": 0, "total": 0, "items": list(h["items"].items())[:6]}))
                     continue
                 if rule.min_bytes:
-                    self._acc[(rule.id, host, day)] += h["bytes"]
+                    self._acc[acc_key] += h["bytes"]
                     self._acc_dirty = True
-                    if self._acc[(rule.id, host, day)] < rule.min_bytes:
+                    if self._acc[acc_key] < rule.min_bytes:
                         continue
                     if self._fired.get(key, 0) >= day:  # 每个生效时段一次
                         continue
                 elif now - self._fired.get(key, 0) < 3600:          # 一小时一次
                     continue
                 self._fired[key] = now
-                total = self._acc.get((rule.id, host, day), h["bytes"])
+                total = self._acc.get(acc_key, h["bytes"])
                 top = sorted(h["items"].items(), key=lambda x: -x[1])[:5]
                 events.append((rule, host, {"bytes": h["bytes"], "total": total, "items": top}))
         if len(self._acc) > 50_000:
-            self._acc = defaultdict(int, {k: v for k, v in self._acc.items() if k[2] == day})
+            self._acc = defaultdict(int, {k: v for k, v in self._acc.items() if k[3] == day})
         if events:
-            self._record(events, now)
+            self._record(events, now, site)
         if self._acc_dirty:
             try:
                 self._save_acc(now)
             except Exception as e:  # noqa: BLE001  存不上只影响重启后的接续，不能打断落库
                 print(f"[audit] 保存累计失败：{type(e).__name__}: {str(e)[:120]}", flush=True)
 
-    def _record(self, events, now):
+    def _record(self, events, now, site: str = DEFAULT_SITE):
         from app import stats
         with database.session() as db:
+            set_site(db, site)
             meta = stats.host_meta(db, {h for _r, h, _d in events})
+            for m in meta.values():
+                m["site"] = site
             rows = []
             for rule, host, detail in events:
-                rows.append(AuditEvent(ts=int(now), rule_id=rule.id, rule_name=rule.name, host=host,
+                rows.append(AuditEvent(site=site, ts=int(now), rule_id=rule.id, rule_name=rule.name, host=host,
                                        detail=json.dumps(detail, ensure_ascii=False), notified=0))
             db.add_all(rows)
             db.commit()
             from app import compliance
             for rule, host, detail in events:
-                compliance.send_event(rule.name, host, detail)
+                compliance.send_event(rule.name, host, detail, site)
             push = [(row.id, rule, host, detail) for row, (rule, host, detail) in zip(rows, events) if rule.notify]
         self.events += len(events)
         if not push:
@@ -242,7 +266,7 @@ class Auditor:
         what = "、".join(self._label(x) for x, _b in detail.get("items", [])[:3])
         size = _fmt_bytes(detail.get("total") or detail.get("bytes") or 0)
         who = m["name"] + (f"（{m['person']['name']}）" if m.get("person") else "")
-        return f"· {who} {m.get('ip') or ''} {what} {size if kind not in ('new_host', 'sharing') else ''}".rstrip() + f"  [{rule_name}]"
+        return f"· {site_prefix(m.get('site') or DEFAULT_SITE)}{who} {m.get('ip') or ''} {what} {size if kind not in ('new_host', 'sharing') else ''}".rstrip() + f"  [{rule_name}]"
 
     def _dispatch(self, items: list, now: float, title: str | None = None):
         """items: [(事件 id, 规则, 终端, detail, 终端信息)]。按规则选的渠道分组发送，成功后标成已推送"""
@@ -278,7 +302,12 @@ class Auditor:
                 db.commit()
                 return
             rules = {r.id: r for r in db.scalars(select(AuditRule))}
-            meta = stats.host_meta(db, {e.host for e in evs})
+            meta = {}
+            for site in {e.site for e in evs}:        # 终端信息按各自站点查
+                set_site(db, site)
+                for k, m in stats.host_meta(db, {e.host for e in evs if e.site == site}).items():
+                    meta[(site, k)] = {**m, "site": site}
+            set_site(db, None)
             items = []
             for e in evs:
                 r = rules.get(e.rule_id)
@@ -286,7 +315,7 @@ class Auditor:
                 # 规则已删除的直接作废，不能一直占着前 500 条让新积压的永远排不上
                 e.notified = 3 if r is not None else 0
                 if r is not None:
-                    items.append((e.id, r, e.host, json.loads(e.detail or "{}"), meta[e.host]))
+                    items.append((e.id, r, e.host, json.loads(e.detail or "{}"), meta[(e.site, e.host)]))
             db.commit()
         self._dispatch(items, time.time(), title=f"ROS-DPI 免打扰期间的审计提醒（{len(items)} 条）")
 
@@ -379,17 +408,21 @@ def report_text(r: dict) -> tuple[str, str]:
 
 
 def push_report(kind: str):
-    """kind: daily（昨天）| weekly（近 7 天）。在设置里开启后由定时任务调用"""
+    """kind: daily（昨天）| weekly（近 7 天）。在设置里开启后由定时任务调用；多站点时每个启用站点各发一份"""
     if not database.is_configured():
         return
+    from app.sites import registry
     key = {"daily": "report_daily", "weekly": "report_weekly"}[kind]
     with database.session() as db:
         row = db.get(Setting, key)
         if not row or row.value != "1":
             return
-        r = report(db, "yesterday" if kind == "daily" else "last7")
-    title, text = report_text(r)
-    notify.send(title, text)
+    for site in registry.enabled_slugs() or [DEFAULT_SITE]:
+        with database.session() as db:
+            set_site(db, site)
+            r = report(db, "yesterday" if kind == "daily" else "last7")
+        title, text = report_text(r)
+        notify.send(site_prefix(site) + title, text)
 
 
 def _make():

@@ -9,7 +9,6 @@ import time
 
 from sqlalchemy import select
 
-from app.models import DEFAULT_SITE
 from app.models import Host, HostName
 
 _MAC_RE = re.compile(r"^[0-9A-F]{12}$")
@@ -47,16 +46,18 @@ def resolve(names: dict, mac: str | None, ip: str | None) -> tuple[str | None, s
     return None, None
 
 
-def put(db, kind: str, value: str, name: str | None):
-    """name 为空表示删除这条命名。value 需已规范化。"""
-    row = db.get(HostName, (DEFAULT_SITE, kind, value))
+def put(db, kind: str, value: str, name: str | None, site: str | None = None):
+    """name 为空表示删除这条命名。value 需已规范化。site 不给时用会话的站点"""
+    from app.scoping import site_of
+    site = site or site_of(db)
+    row = db.get(HostName, (site, kind, value))
     name = (name or "").strip()
     if not name:
         if row is not None:
             db.delete(row)
         return
     if row is None:
-        db.add(HostName(kind=kind, value=value, name=name, updated=int(time.time())))
+        db.add(HostName(site=site, kind=kind, value=value, name=name, updated=int(time.time())))
     else:
         row.name, row.updated = name, int(time.time())
 
@@ -66,11 +67,11 @@ def migrate_aliases(db):
     hosts = db.scalars(select(Host).where(Host.alias.is_not(None))).all()
     if not hosts:
         return
-    names = load(db)
+    names = {(n.site, n.kind, n.value) for n in db.scalars(select(HostName))}
     for h in hosts:
         kind, value = ("mac", h.mac) if h.mac else ("ip", h.ip)
-        if value and (kind, value) not in names and h.alias.strip():
-            put(db, kind, value, h.alias)
-            names[(kind, value)] = h.alias
+        if value and (h.site, kind, value) not in names and h.alias.strip():
+            put(db, kind, value, h.alias, site=h.site)
+            names.add((h.site, kind, value))
         h.alias = None
     db.commit()

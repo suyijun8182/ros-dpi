@@ -8,11 +8,13 @@ from sqlalchemy.orm import Session
 
 from app import devtype, insight, oplog, people, stats, timeutil
 from app.database import get_db
-from app.models import DEFAULT_SITE
 from app.models import Department, Host, Person, PersonDevice, Setting, TrafficDay
+from app.scoping import site_of
 from app.security import current_user
+from app.sitectx import site_ctx
 
-router = APIRouter(prefix="/api", tags=["people"], dependencies=[Depends(current_user)])
+# 多站点（0.7.0）：人员、部门、设备归属都按站点（?site=），查询自动按站点过滤
+router = APIRouter(prefix="/api", tags=["people"], dependencies=[Depends(current_user), Depends(site_ctx)])
 RANGES = "^(today|yesterday|week|month|last7|last30)$"
 
 
@@ -54,7 +56,7 @@ def _set_devices(db, pid: int, hosts: list[str]):
         db.delete(d)
     db.flush()
     for h in dict.fromkeys(hosts):
-        old = db.get(PersonDevice, (DEFAULT_SITE, h))
+        old = db.get(PersonDevice, (site_of(db), h))
         if old:
             old.person_id = pid
         else:
@@ -173,7 +175,7 @@ def delete_person(pid: int, request: Request, user: str = Depends(current_user),
 @router.put("/devices/bind")
 def bind(req: BindIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
     """设置一台设备属于谁（主机详情、未分配设备列表里用）"""
-    old = db.get(PersonDevice, (DEFAULT_SITE, req.host))
+    old = db.get(PersonDevice, (site_of(db), req.host))
     if req.person_id is None:
         if old:
             db.delete(old)
@@ -186,7 +188,7 @@ def bind(req: BindIn, request: Request, user: str = Depends(current_user), db: S
             db.add(PersonDevice(host=req.host, person_id=req.person_id))
     oplog.log(db, request, user, "person_bind", {"host": req.host, "person_id": req.person_id})
     people.forget()
-    return {"ok": True, "person": people.person_of(req.host) if req.person_id else None}
+    return {"ok": True, "person": people.person_of(req.host, site_of(db)) if req.person_id else None}
 
 
 @router.post("/departments")
@@ -267,12 +269,12 @@ def host_insight(key: str, range: str = Query("today", pattern=RANGES), db: Sess
     cfg = insight.get_config(db)
     w0, w1 = timeutil.range_bounds("last7")
     return {"scenario": cfg["scenario"], "usage": insight.analyze_hosts(db, [key], start, end, cfg),
-            "week": insight.analyze_hosts(db, [key], w0, w1, cfg), "person": people.person_of(key)}
+            "week": insight.analyze_hosts(db, [key], w0, w1, cfg), "person": people.person_of(key, site_of(db))}
 
 
 @router.put("/hosts/{key}/dtype")
 def set_dtype(key: str, req: DtypeIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
-    h = db.get(Host, (DEFAULT_SITE, key))
+    h = db.get(Host, (site_of(db), key))
     if h is None:
         raise HTTPException(404, "终端不存在")
     h.dtype = req.dtype

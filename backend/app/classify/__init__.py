@@ -122,6 +122,8 @@ class Classifier:
             if r.app_id not in self.apps:
                 self.apps[r.app_id] = App(r.app_id, r.app_name or r.app_id, r.app_name or r.app_id,
                                           r.category or "web", custom=True)
+            if getattr(r, "site", None):
+                continue   # 只对一个站点生效的规则：应用要认得，匹配由那个站点的 SiteClassifier 先做（engine.py）
             try:
                 if r.kind == "domain":
                     self.custom_domains[r.pattern.lower().strip(".")] = r.app_id

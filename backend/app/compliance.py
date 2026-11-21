@@ -87,16 +87,16 @@ def _fmt(cfg: dict, msgid: str, fields: dict, severity: int = 6) -> str:
     return f"<{pri}>1 {ts} {socket.gethostname()[:48]} ros-dpi - {msgid} - {msg}"
 
 
-def send_visits(rows: list[dict], names: dict | None = None):
-    """访问日志：一次访问结束（或满一小时封口）时外发一条"""
+def send_visits(rows: list[dict], names: dict | None = None, site: str = "default"):
+    """访问日志：一次访问结束（或满一小时封口）时外发一条。多站点时带上 site 字段"""
     cfg = syslog_config()
     if not (cfg.get("enabled") and cfg.get("host") and cfg.get("access")) or not rows:
         return
     from app import people
     out = []
     for r in rows:
-        p = people.person_of(r["host"])
-        out.append(_fmt(cfg, "ACCESS", {
+        p = people.person_of(r["host"], site)
+        out.append(_fmt(cfg, "ACCESS", {"site": _site_field(site),
             "start": datetime.fromtimestamp(r["ts_start"], timezone.utc).isoformat(timespec="seconds"),
             "end": datetime.fromtimestamp(r["ts_end"], timezone.utc).isoformat(timespec="seconds"),
             "device": r["host"], "ip": r["host_ip"], "user": p["name"] if p else None,
@@ -105,13 +105,19 @@ def send_visits(rows: list[dict], names: dict | None = None):
     _send(out, cfg)
 
 
-def send_event(rule: str, host: str, detail: dict):
+def _site_field(site: str) -> str | None:
+    """只有多站点时才在 Syslog 里加 site 字段，单站点的输出和 0.6.x 一样"""
+    from app.sites import registry
+    return site if registry.multi() else None
+
+
+def send_event(rule: str, host: str, detail: dict, site: str = "default"):
     cfg = syslog_config()
     if not (cfg.get("enabled") and cfg.get("host") and cfg.get("events")):
         return
     from app import people
-    p = people.person_of(host)
-    _send([_fmt(cfg, "AUDIT", {"rule": rule, "device": host, "user": p["name"] if p else None,
+    p = people.person_of(host, site)
+    _send([_fmt(cfg, "AUDIT", {"site": _site_field(site), "rule": rule, "device": host, "user": p["name"] if p else None,
                                "bytes": detail.get("total") or detail.get("bytes", 0),
                                "items": ",".join(str(k) for k, _v in detail.get("items", [])[:5])}, severity=4)], cfg)
 

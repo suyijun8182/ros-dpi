@@ -9,6 +9,13 @@ from app import hostnames, timeutil
 from app.classify import GENERIC_APPS, UNIDENTIFIED_CATEGORIES
 from app.engine import ONLINE_SECONDS, engine
 from app.models import Host, HostDomainDay, TrafficDay, TrafficHour, TrafficMinute, UnmatchedDay
+from app.scoping import site_of
+# 多站点（0.7.0）：这里的查询都靠会话的站点自动过滤（scoping.py）；实时速率等内存状态取会话站点的 Engine
+
+
+def _eng(db):
+    from app.sitectx import site_engine
+    return site_engine(db)
 
 
 
@@ -54,7 +61,7 @@ def top_apps(db, start, end, host=None, limit=None) -> list[dict]:
         q = q.limit(limit)
     out = []
     for app, up, down, flows, hosts in db.execute(q):
-        rate = engine.app_rate.get(app, (0, 0)) if not host else (0, 0)
+        rate = _eng(db).app_rate.get(app, (0, 0)) if not host else (0, 0)
         out.append({**app_meta(app), "up": int(up), "down": int(down), "total": int(up) + int(down),
                     "flows": int(flows), "hosts": int(hosts), "rate_up": rate[0], "rate_down": rate[1]})
     return out
@@ -99,7 +106,9 @@ def host_meta(db, keys) -> dict[str, dict]:
     rows = db.scalars(select(Host).where(Host.key.in_(keys))).all()
     names = hostnames.load(db)
     from app import people
+    site = site_of(db)
     people.load(db)
+    eng = _eng(db)
     out = {}
     for h in rows:
         alias, by = hostnames.resolve(names, h.mac, h.ip)
@@ -116,10 +125,10 @@ def host_meta(db, keys) -> dict[str, dict]:
             out[k] = {"key": k, "mac": None, "ip": ip, "hostname": None, "alias": alias, "alias_by": by,
                       "name": alias or ip, "first_seen": None, "last_seen": None, "online": False, "online_since": None,
                       "dtype": "unknown", "dtype_manual": None, "dtype_auto": None, "vendor": None}
-        rate = engine.host_rate.get(k, (0, 0))
+        rate = eng.host_rate.get(k, (0, 0))
         out[k]["rate_up"], out[k]["rate_down"] = rate
-        out[k]["conns"] = engine.host_conns.get(k, 0)
-        out[k]["person"] = people.person_of(k)
+        out[k]["conns"] = eng.host_conns.get(k, 0)
+        out[k]["person"] = people.person_of(k, site)
     return out
 
 

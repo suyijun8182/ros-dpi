@@ -9,12 +9,12 @@ from app import health, hostnames, oplog, stats, timeutil
 from app.asn import asndb
 from app.database import get_db
 from app.engine import engine
-from app.models import DEFAULT_SITE
 from app.models import DomainGeo, Host, HostName
-from app.ros_poller import poller
 from app.security import current_user
+from app.sitectx import SiteCtx, site_ctx
 
-router = APIRouter(prefix="/api", tags=["stats"], dependencies=[Depends(current_user)])
+# 多站点（0.7.0）：每个接口都按 ?site= 选站点（site_ctx），查询自动按站点过滤；实时状态取 ctx.engine / ctx.poller
+router = APIRouter(prefix="/api", tags=["stats"], dependencies=[Depends(current_user), Depends(site_ctx)])
 
 RANGES = "^(today|yesterday|week|month|last7|last30)$"
 
@@ -28,7 +28,9 @@ def _trend_gran(rng: str) -> str:
 
 
 @router.get("/overview")
-def overview(range: str = Query("today", pattern=RANGES), db: Session = Depends(get_db)):
+def overview(range: str = Query("today", pattern=RANGES), db: Session = Depends(get_db),
+             ctx: SiteCtx = Depends(site_ctx)):
+    poller = ctx.poller
     start, end = _bounds(range)
     apps = stats.top_apps(db, start, end)
     cats = stats.top_categories(apps)
@@ -36,7 +38,7 @@ def overview(range: str = Query("today", pattern=RANGES), db: Session = Depends(
     return {
         "totals": stats.totals3(db),
         "range_total": stats.total(db, start, end),
-        "rate": {"flow_up": engine.total_rate[0], "flow_down": engine.total_rate[1],
+        "rate": {"flow_up": ctx.engine.total_rate[0], "flow_down": ctx.engine.total_rate[1],
                  "wan_up": poller.wan_rate[0], "wan_down": poller.wan_rate[1]},
         "online": stats.online_count(db),
         "hosts_total": db.query(Host).count(),
@@ -78,8 +80,10 @@ def hosts(db: Session = Depends(get_db)):
 
 
 @router.get("/hosts/{key:path}/detail")
-def host_detail(key: str, range: str = Query("today", pattern=RANGES), db: Session = Depends(get_db)):
+def host_detail(key: str, range: str = Query("today", pattern=RANGES), db: Session = Depends(get_db),
+                ctx: SiteCtx = Depends(site_ctx)):
     start, end = _bounds(range)
+    poller = ctx.poller
     meta = stats.host_meta(db, [key])[key]
     if meta["first_seen"] is None and stats.total(db, *_bounds("month"), host=key)["total"] == 0:
         raise HTTPException(404, "终端不存在")
@@ -108,9 +112,9 @@ class HostPatch(BaseModel):
 
 @router.patch("/hosts/{key:path}")
 def host_patch(key: str, req: HostPatch, request: Request, user: str = Depends(current_user),
-               db: Session = Depends(get_db)):
+               db: Session = Depends(get_db), ctx: SiteCtx = Depends(site_ctx)):
     """给终端改名。按 MAC 命名跟着设备走；按 IP 命名跟着地址走。"""
-    h = db.get(Host, (DEFAULT_SITE, key))
+    h = db.get(Host, (ctx.slug, key))
     if h is None:
         raise HTTPException(404, "终端不存在")
     by = req.by or ("mac" if h.mac else "ip")
@@ -199,7 +203,8 @@ def search(q: str = Query(..., min_length=1, max_length=64), db: Session = Depen
 
 
 @router.get("/dhcp/leases")
-def dhcp_leases(db: Session = Depends(get_db)):
+def dhcp_leases(db: Session = Depends(get_db), ctx: SiteCtx = Depends(site_ctx)):
+    poller = ctx.poller
     """RouterOS 的 DHCP 租约（需要配置 ROS API），附带 ROS-DPI 里的命名和终端链接。"""
     names = hostnames.load(db)
     keys = {h.mac: h.key for h in db.query(Host).filter(Host.mac.isnot(None))}
@@ -232,7 +237,8 @@ def app_detail(app_id: str, range: str = Query("today", pattern=RANGES), db: Ses
 
 
 @router.get("/realtime")
-def realtime(db: Session = Depends(get_db)):
+def realtime(db: Session = Depends(get_db), ctx: SiteCtx = Depends(site_ctx)):
+    poller = ctx.poller
     """实时流量曲线（最近 1 小时，速率 B/s）。有 RouterOS API 时用 WAN 口计数器的秒级采样，否则用每分钟的流量记录。"""
     now = int(time.time())
     if poller.enabled and poller.ok and len(poller.samples) >= 2:
@@ -244,9 +250,10 @@ def realtime(db: Session = Depends(get_db)):
 
 
 @router.get("/sessions")
-def sessions(q: str = "", host: str | None = None, limit: int = Query(300, ge=10, le=2000), db: Session = Depends(get_db)):
+def sessions(q: str = "", host: str | None = None, limit: int = Query(300, ge=10, le=2000), db: Session = Depends(get_db),
+             ctx: SiteCtx = Depends(site_ctx)):
     """实时连接：此刻还在传数据的连接，按实时速率、再按累计流量排序。"""
-    rows = engine.session_list()
+    rows = ctx.engine.session_list()
     if host:
         rows = [r for r in rows if r["host"] == host]
     meta = stats.host_meta(db, {r["host"] for r in rows})
@@ -266,11 +273,12 @@ def sessions(q: str = "", host: str | None = None, limit: int = Query(300, ge=10
 
 @router.get("/destinations")
 def destinations(range: str = Query("today", pattern=RANGES), q: str = "", merge: bool = False,
-                 kind: str = Query("all", pattern="^(all|domain|ip)$"), db: Session = Depends(get_db)):
+                 kind: str = Query("all", pattern="^(all|domain|ip)$"), db: Session = Depends(get_db),
+                 ctx: SiteCtx = Depends(site_ctx)):
     """访问目标排行（远端域名 / IP）"""
     start, end = _bounds(range)
     rows = stats.destinations(db, start, end, q, merge, kind)
-    idx = engine.dns.name_index()
+    idx = ctx.engine.dns.name_index()
     names = {n for r in rows if not r["ip"] for n in [r["dest"], *r["name_list"]]}
     geo = {}
     for chunk in _chunks500(sorted(names)):  # 参数名 range 遮住了内置 range，分块放到模块级
@@ -293,14 +301,14 @@ def destinations(range: str = Query("today", pattern=RANGES), q: str = "", merge
         countries[cc] = countries.get(cc, 0) + r["bytes"]
     return {"range_total": stats.total(db, start, end), "rows": rows,
             "countries": [{"cc": k, "bytes": v} for k, v in sorted(countries.items(), key=lambda x: x[1], reverse=True)],
-            "home": _home_country()}
+            "home": _home_country(ctx.poller)}
 
 
 def _chunks500(xs: list) -> list[list]:
     return [xs[i:i + 500] for i in range(0, len(xs), 500)]
 
 
-def _home_country() -> str:
+def _home_country(poller) -> str:
     """本地所在国家（流向图的起点）：WAN 口公网 IP 的归属；拿不到时按中国"""
     for w in poller.wans:
         hit = asndb.lookup(w.get("ip") or "") if w.get("ip") else None
@@ -310,13 +318,13 @@ def _home_country() -> str:
 
 
 @router.get("/proxy/routes")
-def proxy_routes():
-    """代理分流（sing-box）：今天按 策略组 / 出口节点 的流量、连接数和主要应用"""
+def proxy_routes(ctx: SiteCtx = Depends(site_ctx)):
+    """代理分流（sing-box）：今天按 策略组 / 出口节点 的流量、连接数和主要应用（sing-box 只接在一个站点上）"""
     from app.integrations import singbox
-    rows = engine.proxy_route_list()
+    rows = ctx.engine.proxy_route_list()
     for r in rows:
         r["apps"] = [{**stats.app_meta(a["id"]), "bytes": a["bytes"]} for a in r["apps"]]
-    return {"enabled": singbox.enabled, "ok": singbox.ok, "error": singbox.error, "rows": rows,
+    return {"enabled": singbox.enabled and singbox.engine is ctx.engine, "ok": singbox.ok, "error": singbox.error, "rows": rows,
             "up": sum(r["up"] for r in rows), "down": sum(r["down"] for r in rows)}
 
 
@@ -335,7 +343,8 @@ def destination_hosts(dest: str, range: str = Query("today", pattern=RANGES), me
 
 # ---------- 给 Home Assistant 等外部程序的汇总（0.6.25）：一次请求拿到首页要的数，配合只读 API 令牌使用 ----------
 @router.get("/ha/summary")
-def ha_summary(limit: int = Query(30, ge=1, le=200), db: Session = Depends(get_db)):
+def ha_summary(limit: int = Query(30, ge=1, le=200), db: Session = Depends(get_db),
+               ctx: SiteCtx = Depends(site_ctx)):
     """字节数都是 bytes，速率都是 bytes/s（最近一分钟平均）。hosts 按今日流量排序，只给前 limit 台；
     每台的 apps 是今日前 3 个具体应用（不含 HTTPS / 国内网络这类笼统分类）"""
     from app import __version__
@@ -351,7 +360,8 @@ def ha_summary(limit: int = Query(30, ge=1, le=200), db: Session = Depends(get_d
     return {
         "version": __version__,
         "ts": int(time.time()),
-        "rate": [engine.total_rate[0], engine.total_rate[1]],
+        "site": ctx.slug,
+        "rate": [ctx.engine.total_rate[0], ctx.engine.total_rate[1]],
         "totals": {r: pair(v) for r, v in stats.totals3(db).items()},
         "online": stats.online_count(db),
         "hosts_total": db.query(Host).count(),

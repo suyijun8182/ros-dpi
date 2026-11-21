@@ -188,12 +188,13 @@ def refresh_all():
     since = timeutil.range_bounds("last7")[0]
     n = 0
     with database.session() as db:
-        apps: dict[str, set] = {}
-        for host, app in db.execute(select(TrafficDay.host, TrafficDay.app).where(TrafficDay.ts >= since)
-                                    .group_by(TrafficDay.host, TrafficDay.app)):
-            apps.setdefault(host, set()).add(app)
+        apps: dict[tuple, set] = {}   # (站点, 终端) -> 应用：两个站点可能有同一个终端 key
+        for site, host, app in db.execute(select(TrafficDay.site, TrafficDay.host, TrafficDay.app)
+                                          .where(TrafficDay.ts >= since)
+                                          .group_by(TrafficDay.site, TrafficDay.host, TrafficDay.app)):
+            apps.setdefault((site, host), set()).add(app)
         for h in db.query(Host):
-            t, v, _by = classify(h.mac, h.hostname, apps.get(h.key))
+            t, v, _by = classify(h.mac, h.hostname, apps.get((h.site, h.key)))
             v = (v or "")[:64]    # hosts.vendor 是 64：个别 IEEE 机构名更长，超长会让整次刷新回滚
             if (h.dtype_auto, h.vendor) != (t, v or None):
                 h.dtype_auto, h.vendor = t, v or None

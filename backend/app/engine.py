@@ -57,6 +57,57 @@ def _next_visit_id() -> int:
         return _vid_last[0]
 
 
+class SiteClassifier:
+    """多站点（0.7.0）：只对一个站点生效的自定义规则。先按这些规则匹配，匹配不上交给共用的识别器；
+    其它属性（应用表、分类……）都直接取共用识别器的"""
+
+    def __init__(self, base: Classifier, rules: list):
+        self._base = base
+        self._domains: dict[str, str] = {}
+        self._nets: list = []
+        self._ports: list = []
+        from app.classify import _parse_port
+        for r in rules:
+            try:
+                if r.kind == "domain":
+                    self._domains[r.pattern.lower().strip(".")] = r.app_id
+                elif r.kind == "cidr":
+                    self._nets.append((ipaddress.ip_network(r.pattern, strict=False), r.app_id))
+                elif r.kind == "port":
+                    p, lo, hi = _parse_port(r.pattern)
+                    self._ports.append((p, lo, hi, r.app_id))
+            except (ValueError, KeyError):
+                continue
+
+    def __getattr__(self, name):
+        return getattr(self._base, name)
+
+    def _own_domain(self, name: str | None) -> str | None:
+        if not name or not self._domains:
+            return None
+        parts = name.lower().strip(".").split(".")
+        for i in range(len(parts) - 1):
+            hit = self._domains.get(".".join(parts[i:]))
+            if hit:
+                return hit
+        return None
+
+    def match_domain(self, name: str | None) -> str | None:
+        return self._own_domain(name) or self._base.match_domain(name)
+
+    def classify(self, remote_ip: str, proto: int, port: int, qname: str | None, cname: str | None) -> str:
+        app = self._own_domain(qname) or self._own_domain(cname)
+        if app is None and self._nets:
+            try:
+                addr = ipaddress.ip_address(remote_ip)
+                app = next((aid for net, aid in self._nets if addr.version == net.version and addr in net), None)
+            except ValueError:
+                pass
+        if app is None and not (qname or cname):
+            app = next((aid for p, lo, hi, aid in self._ports if p == proto and lo <= port <= hi), None)
+        return app or self._base.classify(remote_ip, proto, port, qname, cname)
+
+
 def parse_cidrs(text: str) -> list:
     nets = []
     for part in (text or "").replace("\n", ",").split(","):
@@ -135,7 +186,22 @@ class Engine:
 
     @property
     def classifier(self) -> Classifier:
-        return self.__dict__.get("_own_classifier") or _shared["classifier"]
+        own = self.__dict__.get("_own_classifier")
+        if own is not None:
+            return own
+        base = _shared["classifier"]
+        rules = self.__dict__.get("_site_rules")
+        if not rules:
+            return base
+        view = self.__dict__.get("_site_view")
+        if view is None or view._base is not base:   # 共用识别器热加载过：按新的重建
+            view = self.__dict__["_site_view"] = SiteClassifier(base, rules)
+        return view
+
+    def set_site_rules(self, rules: list):
+        """只对本站点生效的自定义规则"""
+        self.__dict__["_site_rules"] = list(rules)
+        self.__dict__.pop("_site_view", None)
 
     @classifier.setter
     def classifier(self, value: Classifier):
@@ -167,10 +233,19 @@ class Engine:
         """识别库更新后热加载：建好新的识别器再整体替换，替换前后的流量都不会丢"""
         new = Classifier()
         with database.session() as db:
-            new.load_custom(db.scalars(select(CustomRule)).all())
+            rules = db.scalars(select(CustomRule)).all()
+            for r in rules:
+                db.expunge(r)
+        new.load_custom(rules)
         with self.lock:
             _shared["classifier"] = new
             self.__dict__.pop("_own_classifier", None)
+        # 只对某个站点生效的规则：交给各站点的 Engine
+        from app.sites import registry
+        engines = {e.site: e for e in registry.all()}
+        engines.setdefault(self.site, self)
+        for e in engines.values():
+            e.set_site_rules([r for r in rules if r.site == e.site])
 
     def reload_rules(self):
         """自定义规则变了：在新的识别器上建好再整体替换（以前原地清空重建，期间进来的流量查到半成品表，
@@ -234,8 +309,8 @@ class Engine:
                 del ts[min(ts, key=ts.get)]
             ts[addr] = int(time.time())
         frame = tzsp_payload(data)
-        if frame and capture.active:
-            capture.write(frame)   # 抓包采样（0.6.29）：原样存 pcap，给 nDPI 等工具离线对照
+        if frame and capture.active and capture._engine is self:
+            capture.write(frame)   # 多站点：只录正在采样的那个站点的包   # 抓包采样（0.6.29）：原样存 pcap，给 nDPI 等工具离线对照
         ip = ethernet_ip(frame) if frame else None
         if ip is None:
             return
@@ -638,10 +713,10 @@ class Engine:
                 return
             if p["finished"]:
                 from app import compliance
-                compliance.send_visits(p["finished"])
+                compliance.send_visits(p["finished"], site=self.site)
             if self.audit:
                 # 审计规则：按这一分钟的流量和新出现的终端检查
-                self.audit.evaluate(p["buf"], p["dom"], new_hosts, now)
+                self.audit.evaluate(p["buf"], p["dom"], new_hosts, now, site=self.site)
 
     def _write_payload(self, p: dict) -> list | None:
         """写一份落库数据，返回新出现的终端；数据库暂时不可用时返回 None（留到下次重试）"""

@@ -16,11 +16,13 @@ from app.database import get_db
 from app.engine import engine, parse_cidrs
 from app import sites
 from app.models import DEFAULT_SITE, CustomRule, Setting, Site
-from app.ros_poller import poller
+from app.scoping import set_site, site_of
 from app.sites import registry
 from app.security import current_user
+from app.sitectx import site_ctx, site_engine, site_poller
 
-router = APIRouter(prefix="/api", tags=["admin"], dependencies=[Depends(current_user)])
+# 多站点（0.7.0）：RouterOS / LAN / WAN、采集状态按 ?site= 的站点；识别规则、外部数据源、共享等全局
+router = APIRouter(prefix="/api", tags=["admin"], dependencies=[Depends(current_user), Depends(site_ctx)])
 
 _PORT_RE = re.compile(r"^(tcp|udp)/\d{1,5}(-\d{1,5})?$", re.I)
 _DOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$", re.I)
@@ -50,6 +52,7 @@ class RuleApp(BaseModel):
 class RuleIn(RuleApp):
     kind: str = Field(pattern="^(domain|cidr|port)$")
     pattern: str = Field(min_length=1, max_length=255)
+    site: str | None = Field(None, max_length=32)   # 多站点：只对这个站点生效；空 = 全部站点
 
 
 class ClassifyIn(RuleApp):
@@ -59,7 +62,14 @@ class ClassifyIn(RuleApp):
 
 def _rule_dict(r: CustomRule):
     return {"id": r.id, "kind": r.kind, "pattern": r.pattern, "app_id": r.app_id, "app_name": r.app_name,
-            "category": r.category, "created": r.created, "share": bool(r.share)}
+            "category": r.category, "created": r.created, "share": bool(r.share), "site": r.site or None}
+
+
+def _rule_site(db, site: str | None) -> str | None:
+    site = (site or "").strip() or None
+    if site and db.get(Site, site) is None:
+        raise HTTPException(400, "站点不存在")
+    return site
 
 
 def _norm_pattern(kind: str, pattern: str) -> str:
@@ -118,7 +128,7 @@ def add_rule(req: RuleIn, request: Request, user: str = Depends(current_user), d
     p = _norm_pattern(req.kind, req.pattern)
     share = _check_app(req)
     r = CustomRule(kind=req.kind, pattern=p, app_id=req.app_id, app_name=req.app_name,
-                   category=req.category, created=int(time.time()), share=share)
+                   category=req.category, created=int(time.time()), share=share, site=_rule_site(db, req.site))
     db.add(r)
     oplog.log(db, request, user, "rule_add", req.model_dump())
     engine.reload_rules()
@@ -239,6 +249,7 @@ def unmatched(range: str = Query("week", pattern="^(today|yesterday|week|month|l
 def rules_reclassify(request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
     """按当前规则重算历史分类：规则或识别库升级后，把历史流量搬到新归属（host_domain_day 覆盖的天数）。"""
     from app.reclass import reclassify
+    set_site(db, None)        # 重算历史是全站点的
     res = reclassify(engine, db)
     db.commit()
     oplog.log(db, request, user, "reclassify", res)
@@ -288,15 +299,20 @@ def _put(db, key, value):
         row.value = value
 
 
-def _site_row(db, slug: str = DEFAULT_SITE) -> Site:
-    row = db.get(Site, slug)
+def _site_row(db, slug: str | None = None) -> Site:
+    row = db.get(Site, slug or site_of(db))
     if row is None:
         raise HTTPException(404, "站点不存在")
     return row
 
 
-def _ros_values(db, slug: str = DEFAULT_SITE):
-    return sites.ros_values(db.get(Site, slug))
+def _ros_values(db, slug: str | None = None):
+    return sites.ros_values(db.get(Site, slug or site_of(db)))
+
+
+def _ros_cfg(db) -> dict:
+    """当前站点生效的 RouterOS 配置；环境变量 ROS_* 只作默认站点的后备"""
+    return ros_poller.effective(_ros_values(db), env=site_of(db) == DEFAULT_SITE)
 
 
 def _ros_url(value: str) -> str:
@@ -333,12 +349,16 @@ def _same_origin(a: str, b: str) -> bool:
 @router.get("/settings")
 def get_settings_api(db: Session = Depends(get_db)):
     s = get_settings()
-    ros = ros_poller.effective(_ros_values(db))
-    row = db.get(Site, DEFAULT_SITE)
+    ros = _ros_cfg(db)
+    slug = site_of(db)
+    row = db.get(Site, slug)
+    eng, poller = site_engine(db), site_poller(db)
     return {
-        "lan_cidrs": engine.lan_cidrs_text,
-        "lan_auto": [str(n) for n in engine.auto_nets],
-        "wan_interface": (row.wan_interface if row is not None and row.wan_interface else "") or s.wan_interface,
+        "site": slug,
+        "lan_cidrs": eng.lan_cidrs_text,
+        "lan_auto": [str(n) for n in eng.auto_nets],
+        "wan_interface": (row.wan_interface if row is not None and row.wan_interface else "")
+        or (s.wan_interface if slug == DEFAULT_SITE else ""),
         "wan_detected": poller.wan_name,
         "interfaces": [i["name"] for i in poller.interfaces],
         "retention": {"minute": s.retention_minute_days, "hour": s.retention_hour_days,
@@ -399,19 +419,19 @@ def put_settings(req: SettingsIn, request: Request, background: BackgroundTasks,
         changes["ros_verify_tls"] = "1" if req.ros_verify_tls else "0"
     with ros_poller.settings_lock:
         if changes.get("ros_url") and not req.ros_password:
-            current = ros_poller.effective(_ros_values(db))
+            current = _ros_cfg(db)
             if not _same_origin(changes["ros_url"], current["ros_url"]):
                 raise HTTPException(400, "地址改了，请重新输入密码")
         row = _site_row(db)
-        if "ros_url" not in changes and row.ros_url is None:
+        if "ros_url" not in changes and row.ros_url is None and row.slug == DEFAULT_SITE:
             # 首次只修改环境变量账号或 TLS 时，记录此次网页选择的地址和来源。
             changes["ros_url"] = get_settings().ros_url
         for key, value in changes.items():
             setattr(row, key, (1 if value == "1" else 0) if key == "ros_verify_tls" else value)
         db.flush()
         saved = _ros_values(db)
-        p = registry.poller(DEFAULT_SITE)
-        changed = ros_poller.apply(saved, target=p) if row.enabled else False
+        p = site_poller(db)
+        changed = ros_poller.apply(saved, target=p, env=row.slug == DEFAULT_SITE) if row.enabled else False
         result = _save_settings(req, request, user, db)
         if changed and p.enabled:
             background.add_task(p.poll)  # 响应发出后再请求路由器，慢设备不会拖住保存
@@ -425,7 +445,7 @@ def _save_settings(req, request, user, db):
         if bad:
             raise HTTPException(400, f"无效网段：{', '.join(bad)}")
         _site_row(db).lan_cidrs = text or None
-        engine.set_lan(text or get_settings().lan_cidrs)
+        site_engine(db).set_lan(text or get_settings().lan_cidrs)
     changed = False
     for k in integrations.KEYS:
         v = getattr(req, k)
@@ -473,6 +493,7 @@ def _save_settings(req, request, user, db):
 # ---------- 系统状态 ----------
 @router.get("/system")
 def system(db: Session = Depends(get_db)):
+    engine, poller = site_engine(db), site_poller(db)   # 多站点：当前站点的采集状态
     st = engine.stats
     now = int(time.time())
     return {
@@ -588,6 +609,7 @@ def library_update(request: Request, user: str = Depends(current_user), db: Sess
     oplog.log(db, request, user, "library_update", {"result": updater.state.get("result")})
     try:
         from app.reclass import auto_reclassify
+        set_site(db, None)
         res = auto_reclassify(engine, db)
         if res:
             db.commit()
@@ -620,12 +642,13 @@ class RosTestIn(BaseModel):
 def ros_test(req: RosTestIn | None = None, db: Session = Depends(get_db)):
     if req is not None and req.url is not None:
         url = _ros_url(req.url)
-        cfg = ros_poller.effective(_ros_values(db))
+        cfg = _ros_cfg(db)
         if not req.password and not _same_origin(url, cfg["ros_url"]):
             return {"ok": False, "error": "地址改了，请重新输入密码再测试"}
-        return poller.probe(url, req.user if req.user is not None else cfg["ros_user"],
+        return site_poller(db).probe(url, req.user if req.user is not None else cfg["ros_user"],
                             req.password or cfg["ros_password"],
                             cfg["ros_verify_tls"] if req.verify_tls is None else req.verify_tls)
+    poller = site_poller(db)
     if not poller.enabled:
         raise HTTPException(400, "还没有配置 RouterOS API，请在 系统设置 → RouterOS API 填写")
     poller.poll()

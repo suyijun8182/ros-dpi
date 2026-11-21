@@ -18,20 +18,23 @@ from app.config import get_settings
 from app.database import get_db
 from app.engine import engine
 from app.models import AccessLog, AuditEvent, AuditRule, OpLog, Setting
+from app.scoping import site_of
 from app.security import current_user
+from app.sitectx import SiteCtx, site_ctx
 
-router = APIRouter(prefix="/api/audit", tags=["audit"], dependencies=[Depends(current_user)])
+# 多站点（0.7.0）：访问日志、时间线、审计事件、报表按 ?site= 的站点；审计规则全局，可限定一个站点
+router = APIRouter(prefix="/api/audit", tags=["audit"], dependencies=[Depends(current_user), Depends(site_ctx)])
 
 RANGES = "^(today|yesterday|week|month|last7|last30)$"
 
 
 # ---------------- 访问日志 ----------------
 
-def _log_query(start, end, host, q, app, group, person=None, dept=None):
+def _log_query(start, end, host, q, app, group, person=None, dept=None, site=None):
     t = AccessLog
     from app.engine import VISIT_MAX_SPAN
     stmt = select(t).where(t.ts_start < end, t.ts_start >= start - VISIT_MAX_SPAN, t.ts_end >= start)
-    hosts = people.scope_hosts(person, dept, host)
+    hosts = people.scope_hosts(person, dept, host, site=site) if site else people.scope_hosts(person, dept, host)
     if hosts is not None:
         stmt = stmt.where(t.host.in_(hosts))
     if app:
@@ -66,7 +69,7 @@ def logs(range: str = Query("today", pattern=RANGES), start: int | None = None, 
          page: int = Query(1, ge=1), size: int = Query(50, ge=10, le=500), db: Session = Depends(get_db)):
     """访问日志（按开始时间倒序，分页）"""
     s, e = _bounds(range, start, end)
-    stmt = _log_query(s, e, host, q, app, group, person, dept)
+    stmt = _log_query(s, e, host, q, app, group, person, dept, site=site_of(db))
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(stmt.order_by(AccessLog.ts_start.desc()).offset((page - 1) * size).limit(size)).all()
     meta = stats.host_meta(db, {r.host for r in rows})
@@ -80,7 +83,7 @@ def logs_csv(request: Request, range: str = Query("today", pattern=RANGES), star
              user: str = Depends(current_user), db: Session = Depends(get_db)):
     """导出访问日志 CSV（最多 10 万行，UTF-8 带 BOM，Excel 直接打开）"""
     s, e = _bounds(range, start, end)
-    rows = db.scalars(_log_query(s, e, host, q, app, group, person, dept).order_by(AccessLog.ts_start.desc()).limit(100_000)).all()
+    rows = db.scalars(_log_query(s, e, host, q, app, group, person, dept, site=site_of(db)).order_by(AccessLog.ts_start.desc()).limit(100_000)).all()
     meta = stats.host_meta(db, {r.host for r in rows})
     oplog.log(db, request, user, "export_logs", {"range": range, "host": host, "q": q, "rows": len(rows)})
     tz = timeutil.tz()
@@ -104,7 +107,7 @@ def logs_csv(request: Request, range: str = Query("today", pattern=RANGES), star
 @router.get("/timeline")
 def timeline(host: str | None = None, person: int | None = None, day: str | None = None, db: Session = Depends(get_db)):
     """终端（或一个人的所有设备）某一天的上网时间线：每个应用的访问时段，以及合并后的在线时段"""
-    hosts = people.scope_hosts(person, None, host) or ["-"]
+    hosts = people.scope_hosts(person, None, host, site=site_of(db)) or ["-"]
     tz = timeutil.tz()
     d = datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=tz) if day else datetime.now(tz)
     d0 = int(d.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
@@ -154,13 +157,25 @@ class RuleIn(BaseModel):
     min_bytes: int = Field(0, ge=0)
     notify: bool = True
     channels: list[str] = []          # 推送到哪些渠道；空 = 所有已启用的渠道
+    all_sites: bool = True            # 多站点：True = 所有站点都检查；False = 只检查当前站点（?site=）
 
 
 def _rule_dict(r: AuditRule):
     return {"id": r.id, "name": r.name, "enabled": bool(r.enabled), "kind": r.kind, "value": r.value,
             "hosts": [x for x in (r.hosts or "").split(",") if x], "days": r.days, "time_from": r.time_from,
             "time_to": r.time_to, "min_bytes": r.min_bytes or 0, "notify": bool(r.notify), "created": r.created,
-            "channels": [x for x in (r.channels or "").split(",") if x]}
+            "channels": [x for x in (r.channels or "").split(",") if x], "site": r.site or None}
+
+
+def _rule_site(req: RuleIn, ctx: SiteCtx) -> str | None:
+    """规则的站点范围。限定了终端 / 人员 / 部门时只能是当前站点：终端 key 和人员 id 都是按站点的"""
+    return None if req.all_sites and not req.hosts else ctx.slug
+
+
+def _visible_rule(r: AuditRule | None, ctx: SiteCtx) -> AuditRule:
+    if r is None or (r.site and r.site != ctx.slug):
+        raise HTTPException(404, "规则不存在")
+    return r
 
 
 def _check_rule(req: RuleIn):
@@ -185,15 +200,19 @@ def _check_rule(req: RuleIn):
 
 
 @router.get("/rules")
-def list_rules(db: Session = Depends(get_db)):
-    return [_rule_dict(r) for r in db.scalars(select(AuditRule).order_by(AuditRule.id))]
+def list_rules(db: Session = Depends(get_db), ctx: SiteCtx = Depends(site_ctx)):
+    """当前站点生效的规则：全部站点的 + 只针对本站点的"""
+    return [_rule_dict(r) for r in db.scalars(select(AuditRule).where(
+        or_(AuditRule.site.is_(None), AuditRule.site == "", AuditRule.site == ctx.slug)).order_by(AuditRule.id))]
 
 
 @router.post("/rules")
-def add_rule(req: RuleIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
+def add_rule(req: RuleIn, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db),
+             ctx: SiteCtx = Depends(site_ctx)):
     _check_rule(req)
-    r = AuditRule(**{**req.model_dump(exclude={"hosts", "channels"}), "enabled": int(req.enabled), "notify": int(req.notify),
-                     "hosts": ",".join(req.hosts), "channels": ",".join(req.channels), "created": int(time.time())})
+    r = AuditRule(**{**req.model_dump(exclude={"hosts", "channels", "all_sites"}), "enabled": int(req.enabled),
+                     "notify": int(req.notify), "hosts": ",".join(req.hosts), "channels": ",".join(req.channels),
+                     "created": int(time.time()), "site": _rule_site(req, ctx)})
     db.add(r)
     db.flush()
     oplog.log(db, request, user, "audit_rule_add", req.model_dump())
@@ -203,13 +222,12 @@ def add_rule(req: RuleIn, request: Request, user: str = Depends(current_user), d
 
 @router.put("/rules/{rule_id}")
 def update_rule(rule_id: int, req: RuleIn, request: Request, user: str = Depends(current_user),
-                db: Session = Depends(get_db)):
-    r = db.get(AuditRule, rule_id)
-    if r is None:
-        raise HTTPException(404, "规则不存在")
+                db: Session = Depends(get_db), ctx: SiteCtx = Depends(site_ctx)):
+    r = _visible_rule(db.get(AuditRule, rule_id), ctx)
     _check_rule(req)
-    for k, v in req.model_dump(exclude={"hosts", "channels"}).items():
+    for k, v in req.model_dump(exclude={"hosts", "channels", "all_sites"}).items():
         setattr(r, k, int(v) if isinstance(v, bool) else v)
+    r.site = _rule_site(req, ctx)
     r.hosts = ",".join(req.hosts)
     r.channels = ",".join(req.channels)
     oplog.log(db, request, user, "audit_rule_edit", {"id": rule_id, **req.model_dump()})
@@ -218,10 +236,9 @@ def update_rule(rule_id: int, req: RuleIn, request: Request, user: str = Depends
 
 
 @router.delete("/rules/{rule_id}")
-def delete_rule(rule_id: int, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db)):
-    r = db.get(AuditRule, rule_id)
-    if r is None:
-        raise HTTPException(404, "规则不存在")
+def delete_rule(rule_id: int, request: Request, user: str = Depends(current_user), db: Session = Depends(get_db),
+                ctx: SiteCtx = Depends(site_ctx)):
+    r = _visible_rule(db.get(AuditRule, rule_id), ctx)
     name = r.name
     db.delete(r)
     oplog.log(db, request, user, "audit_rule_delete", {"id": rule_id, "name": name})
@@ -412,9 +429,11 @@ def put_report_settings(req: ReportSettings, request: Request, user: str = Depen
 
 
 @router.post("/report/push")
-def push_report_now(range: str = Query("yesterday", pattern=RANGES), db: Session = Depends(get_db)):
+def push_report_now(range: str = Query("yesterday", pattern=RANGES), db: Session = Depends(get_db),
+                    ctx: SiteCtx = Depends(site_ctx)):
+    from app.audit import site_prefix
     title, text = report_text(report(db, range))
-    res = notify.send(title, text, wait=True)
+    res = notify.send(site_prefix(ctx.slug) + title, text, wait=True)
     if not res:
         raise HTTPException(400, "还没有配置通知通道")
     return {"results": res}
@@ -431,15 +450,16 @@ def op_log(page: int = Query(1, ge=1), size: int = Query(50, ge=10, le=500), db:
 
 
 @router.get("/summary")
-def summary(db: Session = Depends(get_db)):
+def summary(db: Session = Depends(get_db), ctx: SiteCtx = Depends(site_ctx)):
     """审计页顶部的概况：今日访问记录数、今日审计事件、启用的规则数、通知通道数、保留天数"""
     s, e = timeutil.range_bounds("today")
     st = get_settings()
     return {
         "logs_today": db.scalar(select(func.count()).select_from(AccessLog).where(AccessLog.ts_start >= s)) or 0,
         "events_today": db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.ts >= s)) or 0,
-        "rules": db.scalar(select(func.count()).select_from(AuditRule).where(AuditRule.enabled == 1)) or 0,
+        "rules": db.scalar(select(func.count()).select_from(AuditRule).where(
+            AuditRule.enabled == 1, or_(AuditRule.site.is_(None), AuditRule.site == "", AuditRule.site == ctx.slug))) or 0,
         "channels": len(notify.enabled_types()),
         "retention_log_days": st.retention_log_days, "retention_event_days": st.retention_event_days,
-        "open_visits": len(engine.visits),
+        "open_visits": len(ctx.engine.visits),
     }

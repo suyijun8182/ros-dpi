@@ -185,7 +185,12 @@ def reclassify_rule(engine, db, rule_kind: str, pattern: str, from_app: str | No
 def _reclassify_once(engine, db, before: int | None, since: int | None = None, where=(), pred=None,
                      force: bool = False) -> dict:
     t0 = time.time()
-    classifier = engine.classifier
+    from app.sites import registry
+
+    def classifier_of(site):
+        """按行所在的站点取识别器：站点有自己的自定义规则时用它的（SiteClassifier）"""
+        e = registry.get(site)
+        return (e or engine).classifier
     before = timeutil.day_bucket(time.time()) if before is None else before
     cache = _dns_domain_map(db)
     moves: dict = defaultdict(lambda: defaultdict(int))  # (ts, host, 旧应用) -> {新应用: 字节}
@@ -201,7 +206,7 @@ def _reclassify_once(engine, db, before: int | None, since: int | None = None, w
     for site, ts, host, dom, old_app, b in rows:
         if not b:
             continue
-        new_app = (_forced_app if force else _new_app)(classifier, dom, old_app, cache)
+        new_app = (_forced_app if force else _new_app)(classifier_of(site), dom, old_app, cache)
         if new_app:
             moves[(site, int(ts), host, old_app)][new_app] += int(b)
             marks.append({"site": site, "ts": int(ts), "host": host, "domain": dom, "app": new_app})

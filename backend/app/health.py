@@ -7,9 +7,8 @@ import time
 from sqlalchemy import distinct, func, select
 
 from app import stats, timeutil
-from app.engine import engine
 from app.models import TrafficDay
-from app.ros_poller import poller
+from app.sitectx import site_engine, site_poller
 
 
 def _item(code, deduct, ok, **params):
@@ -19,6 +18,7 @@ def _item(code, deduct, ok, **params):
 def compute(db, today_apps: list[dict] | None = None) -> dict:
     """today_apps：调用方（/api/overview?range=today）已经查过今日应用排行时直接传入，避免重复查询"""
     now = time.time()
+    engine, poller = site_engine(db), site_poller(db)   # 多站点：会话所在站点的采集状态和 RouterOS
     st = engine.stats
     items = []
 
@@ -68,7 +68,7 @@ def compute(db, today_apps: list[dict] | None = None) -> dict:
 
     # 5. 旁路代理：某台机器的流量大头是认不出的加密隧道，又没接 Clash API 时，提示接入
     from app import integrations
-    if total and not integrations.singbox.enabled:
+    if total and not (integrations.singbox.enabled and integrations.singbox.engine is engine):
         rows = db.execute(select(TrafficDay.host, func.sum(TrafficDay.up + TrafficDay.down))
                           .where(TrafficDay.ts >= start, TrafficDay.ts < end, TrafficDay.app.in_(["other", "proxy_tunnel"]))
                           .group_by(TrafficDay.host)).all()
