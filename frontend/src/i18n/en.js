@@ -193,6 +193,8 @@ export default {
     clearSecret: 'Clear secret', proxyIps: 'Proxy gateway IP', proxyAuto: 'Empty uses {ip}', proxyIpsHint: 'Traffic from this machine to its proxy servers is labeled “Proxy gateway tunnel”; separate several with commas.',
     mdWhy: 'Queries to a LAN DNS server never cross the router, so DNS sniffing cannot see them. Reading MosDNS audit logs tells which device looked up which domain and the IPs it got.',
     mdUrl: 'MosDNS audit API address',
+    ldWhy: 'Use this when your LAN DNS is LocalDNS: its query log tells which device looked up which domain and the IPs it got (same role as MosDNS). Query logging must be on in LocalDNS.',
+    ldUrl: 'LocalDNS console API address',
     agWhy: 'Behind double NAT (an iKuai/router below your main router), upstream DNS of inner clients is proxied away and invisible to the router. Reading the query log of the DNS server they really use (AdGuard Home) identifies inner devices by domain too.',
     agUrl: 'AdGuard Home address', agUser: 'Login username (leave empty if none)', agPassword: 'Login password',
     agKept: 'Set; leave empty to keep', agNone: 'Leave empty if none', agClear: 'Clear password',

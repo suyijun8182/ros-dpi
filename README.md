@@ -211,6 +211,7 @@ RouterOS ◀── REST 只读（可选）── 主机名、IP↔MAC、WAN 速�
 |---|---|
 | **sing-box**（Clash API） | 走代理的流量：哪台终端、哪个域名、多少字节，以及策略组和出口节点 |
 | **MosDNS**（审计 API） | 每台终端查了哪个域名、解析出哪些 IP |
+| **LocalDNS**（查询日志 API） | 同上，内网 DNS 用 LocalDNS 时接入 |
 | **AdGuard Home** | 双层 NAT（RouterOS 下面还挂了一台路由器）时，下级终端的 DNS 查询路由器看不到，从 AdGuard Home 的查询日志补上 |
 
 ### 升级
@@ -285,6 +286,7 @@ Linux 一键安装写在 `/etc/ros-dpi.env`，Docker 写在 compose 的 `environ
 | `PROXY_IPS` | 空 | 旁路代理自己的 IP；留空时取 `SINGBOX_URL` 里的地址 |
 | `FAKEIP_CIDRS` | `198.18.0.0/15,fc00::/18` | FakeIP 地址段 |
 | `MOSDNS_URL` | 空 | MosDNS 审计 API 地址 |
+| `LOCALDNS_URL` | 空 | LocalDNS 控制台 API 地址（如 `http://192.168.1.3:9099`） |
 | `ADGUARD_URL` / `ADGUARD_USERNAME` / `ADGUARD_PASSWORD` | 空 | AdGuard Home 地址和账号 |
 
 **识别库与社区**
@@ -380,7 +382,7 @@ Instances share anonymous votes (remote IP / domain → app) through the built-i
 
 ### Optional sources
 
-sing-box (Clash API) adds per-host, per-domain byte counts for proxied traffic; MosDNS adds per-host DNS lookups; AdGuard Home fills in domains behind a second NAT. Configure them under **Settings → External sources**.
+sing-box (Clash API) adds per-host, per-domain byte counts for proxied traffic; MosDNS or LocalDNS adds per-host DNS lookups; AdGuard Home fills in domains behind a second NAT. Configure them under **Settings → External sources**.
 
 ### Home Assistant and other programs
 

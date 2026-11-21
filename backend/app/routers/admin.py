@@ -263,6 +263,7 @@ class SettingsIn(BaseModel):
     singbox_secret: str | None = Field(None, max_length=255)
     proxy_ips: str | None = Field(None, max_length=500)
     mosdns_url: str | None = Field(None, max_length=255)
+    localdns_url: str | None = Field(None, max_length=255)
     adguard_url: str | None = Field(None, max_length=255)
     adguard_username: str | None = Field(None, max_length=255)
     adguard_password: str | None = Field(None, max_length=255)
@@ -346,7 +347,7 @@ def _integrations(db):
     saved = {k: _get(db, k, None) for k in integrations.KEYS}
     cfg = integrations.effective(saved)
     return {"singbox_url": cfg["singbox_url"], "has_secret": bool(cfg["singbox_secret"]), "proxy_ips": cfg["proxy_ips"],
-            "mosdns_url": cfg["mosdns_url"],
+            "mosdns_url": cfg["mosdns_url"], "localdns_url": cfg["localdns_url"],
             "adguard_url": cfg["adguard_url"], "adguard_username": cfg["adguard_username"],
             "has_adguard_password": bool(cfg["adguard_password"]),
             "proxy_auto": integrations.singbox.host_ip()}
@@ -475,6 +476,7 @@ def system(db: Session = Depends(get_db)):
         "singbox": integrations.singbox.status(),
         "mosdns": integrations.mosdns.status(),
         "adguard": integrations.adguard.status(),
+        "localdns": integrations.localdns.status(),
         "local": local_status(),
         "asn": asndb.status(),
         "proxied_skipped": st["proxied_skipped"], "dns_mosdns": st["dns_mosdns"],
@@ -581,8 +583,9 @@ def integrations_test():
     integrations.singbox.poll()
     integrations.mosdns.poll()
     integrations.adguard.poll()
+    integrations.localdns.poll()
     return {"singbox": integrations.singbox.status(), "mosdns": integrations.mosdns.status(),
-            "adguard": integrations.adguard.status()}
+            "adguard": integrations.adguard.status(), "localdns": integrations.localdns.status()}
 
 
 class RosTestIn(BaseModel):

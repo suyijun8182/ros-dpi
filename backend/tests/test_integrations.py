@@ -141,3 +141,28 @@ def test_settings_api_configures_integrations():
         # 清空后停用
         c.put("/api/settings", json={"singbox_url": "", "singbox_secret": "", "mosdns_url": ""}, headers=h)
         assert not integrations.singbox.enabled and not integrations.mosdns.enabled
+
+
+def test_localdns_querylog_same_millisecond_not_skipped(monkeypatch):
+    """LocalDNS：query_time 是毫秒，trace_id 常为空，同一毫秒的条目分两次轮询到达时后到的也要处理；CNAME 与 IP 混在 data 里"""
+    e = _engine()
+    ld = integrations.LocalDnsPoller(e)
+    ld.configure("http://192.168.8.248:9099/")
+    log = lambda t, qt, name, *data: {"query_time": t, "client_ip": "192.168.8.31", "query_name": name,
+                                      "query_type": qt, "trace_id": "", "answers": [{"data": d} for d in data]}
+    a = log(1795287620260, "A", "music.163.com", "music.163.com.163jiasu.com", "203.0.113.16")
+    b = log(1795287620260, "AAAA", "music.163.com")             # 没有应答（缓存命中 / FakeIP）：跳过
+    c = log(1795287620260, "A", "www.bilibili.com", "203.0.113.17")   # 同一毫秒、下一轮才出现
+    d = log(1795287620300, "A", "www.douyin.com", "203.0.113.18")
+    monkeypatch.setattr(integrations.httpx, "get", _fake_get({"/api/v1/querylog/entries": [
+        {"logs": [b, a]}, {"logs": [d, c, b, a]}, {"logs": [d, c, b, a]}]}))
+    ld.poll()
+    assert ld.ok and ld.answers == 1
+    ld.poll()
+    assert ld.answers == 3
+    ld.poll()
+    assert ld.answers == 3      # 没有新条目
+    with e.lock:
+        r = e.add_flow(dict(src="192.168.8.31", dst="203.0.113.16", sport=1, dport=443, proto=6, bytes=10), time.time())
+    assert r[1] == "netease_music"
+    assert ld.status()["enabled"] and e.stats["dns_mosdns"] == 3

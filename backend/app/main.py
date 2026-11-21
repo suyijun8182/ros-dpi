@@ -155,6 +155,7 @@ async def lifespan(app: FastAPI):
     # 外部数据源：没配置时 poll() 直接返回
     sched.add_job(_safe(integrations.singbox.poll, "singbox"), "interval", seconds=5, max_instances=1, coalesce=True)
     sched.add_job(_safe(integrations.mosdns.poll, "mosdns"), "interval", seconds=5, max_instances=1, coalesce=True)
+    sched.add_job(_safe(integrations.localdns.poll, "localdns"), "interval", seconds=5, max_instances=1, coalesce=True)
     sched.add_job(_safe(integrations.adguard.poll, "adguard"), "interval", seconds=5, max_instances=1, coalesce=True)
     sched.add_job(_safe(_refresh_local, "local-db"), "interval", hours=1, max_instances=1, coalesce=True)
     sched.add_job(_safe(_share_cycle, "share"), "interval", minutes=30, max_instances=1, coalesce=True)

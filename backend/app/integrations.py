@@ -19,7 +19,7 @@ import httpx
 from app.config import get_settings
 
 KEYS = ("singbox_url", "singbox_secret", "proxy_ips", "mosdns_url", "adguard_url", "adguard_username",
-        "adguard_password")
+        "adguard_password", "localdns_url")
 
 
 
@@ -205,6 +205,77 @@ class MosdnsPoller:
                 "last": self.last, "answers": self.answers}
 
 
+class LocalDnsPoller(MosdnsPoller):
+    """读 LocalDNS 的查询日志（GET /api/v1/querylog/entries，最新的在前）：终端 + IP → 域名。
+
+    和 MosDNS 审计日志格式相近，区别：query_time 是毫秒整数；answers 只有 data（IP 或 CNAME，没有类型和 TTL）；
+    trace_id 常为空，同一毫秒会有好几条（A / AAAA 各一条）。所以按“最近处理到的毫秒 + 这一毫秒里处理过的条目”去重，
+    不能像 MosDNS 那样只比较 (时间, trace_id)，否则同一毫秒后到的条目会被跳过。
+    """
+
+    PAGE = 500
+
+    def __init__(self, engine):
+        super().__init__(engine)
+        self._last_ms = 0
+        self._seen_at_last: set = set()
+
+    def configure(self, url: str):
+        url = (url or "").strip().rstrip("/")
+        if url != self.url:
+            self._last_ms, self._seen_at_last = 0, set()
+        super().configure(url)
+
+    @staticmethod
+    def _key(x: dict) -> tuple:
+        return (str(x.get("client_ip") or ""), str(x.get("query_name") or ""), str(x.get("query_type") or ""),
+                str(x.get("trace_id") or ""), tuple(str(a.get("data") or "") for a in (x.get("answers") or [])
+                                                    if isinstance(a, dict)))
+
+    def poll(self):
+        if not self.enabled:
+            return
+        try:
+            r = httpx.get(f"{self.url}/api/v1/querylog/entries", params={"page": 1, "limit": self.PAGE}, timeout=8.0)
+            r.raise_for_status()
+            logs = (r.json() or {}).get("logs") or []
+        except Exception as e:  # noqa: BLE001
+            self.ok, self.error = False, _err(e)
+            self.last = int(time.time())
+            return
+        new = []
+        for x in logs:
+            try:
+                t = int(x.get("query_time") or 0)
+            except (TypeError, ValueError):
+                continue
+            if t < self._last_ms or (t == self._last_ms and self._key(x) in self._seen_at_last):
+                continue
+            new.append((t, x))
+        if new:
+            top = max(t for t, _ in new)
+            if top > self._last_ms:
+                self._last_ms, self._seen_at_last = top, set()
+            self._seen_at_last |= {self._key(x) for t, x in new if t == self._last_ms}
+        for _t, x in sorted(new, key=lambda v: v[0]):
+            ips, cnames = [], []
+            for a in x.get("answers") or []:
+                d = str((a or {}).get("data") or "").strip().rstrip(".") if isinstance(a, dict) else ""
+                if not d:
+                    continue
+                try:
+                    ipaddress.ip_address(d)
+                    ips.append((d, 0))
+                except ValueError:
+                    cnames.append(d.lower())
+            name = str(x.get("query_name") or "").lower().rstrip(".")
+            client = str(x.get("client_ip") or "").strip()
+            if ips and name and client:
+                self.engine.add_dns_answer(client, name, ips, cnames, source="localdns")
+                self.answers += 1
+        self.ok, self.error, self.last = True, "", int(time.time())
+
+
 class AdguardPoller:
     """读 AdGuard Home 的查询日志（最新的在前），把新出现的应答交给引擎：终端 + IP → 域名。
 
@@ -356,10 +427,10 @@ class AdguardPoller:
 
 def _make():
     from app.engine import engine
-    return SingboxPoller(engine), MosdnsPoller(engine), AdguardPoller(engine)
+    return SingboxPoller(engine), MosdnsPoller(engine), AdguardPoller(engine), LocalDnsPoller(engine)
 
 
-singbox, mosdns, adguard = _make()
+singbox, mosdns, adguard, localdns = _make()
 
 
 def apply(db_values: dict):
@@ -368,6 +439,7 @@ def apply(db_values: dict):
     singbox.configure(cfg["singbox_url"], cfg["singbox_secret"])
     mosdns.configure(cfg["mosdns_url"])
     adguard.configure(cfg["adguard_url"], cfg["adguard_username"], cfg["adguard_password"])
+    localdns.configure(cfg["localdns_url"])
     ips = {x.strip() for x in cfg["proxy_ips"].replace("\n", ",").split(",") if x.strip()}
     if not ips and singbox.host_ip():
         ips.add(singbox.host_ip())

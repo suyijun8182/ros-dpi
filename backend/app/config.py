@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     singbox_secret: str = ""
     proxy_ips: str = ""          # 旁路代理自身的 IP（逗号分隔）；留空时取 singbox_url 里的地址
     fakeip_cidrs: str = "198.18.0.0/15,fc00::/18"
+    localdns_url: str = ""       # LocalDNS 查询日志 API 地址，如 http://192.168.88.248:9099
     mosdns_url: str = ""         # MosDNS 审计 API 地址，如 http://192.168.1.3:9099
     adguard_url: str = ""        # 自有 DNS 服务器 AdGuard Home 的地址，如 http://192.168.9.2:3000（双层 NAT 时爱快下游的 DNS）
     adguard_username: str = ""   # AdGuard Home 登录用户名；和密码都留空表示免认证（只在内网监听时）

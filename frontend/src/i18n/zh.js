@@ -193,6 +193,8 @@ export default {
     clearSecret: '清除密钥', proxyIps: '旁路代理自身的 IP', proxyAuto: '留空则使用 {ip}', proxyIpsHint: '这台机器自己连代理服务器的流量会被识别为“旁路代理隧道”；多个用逗号分隔。',
     mdWhy: '终端向内网 DNS 查询不经过路由器，DNS 嗅探看不到。读取 MosDNS 审计日志后，能知道每台终端查了哪个域名、解析出了哪些 IP。',
     mdUrl: 'MosDNS 审计 API 地址',
+    ldWhy: '内网 DNS 用的是 LocalDNS 时接入：读取它的查询日志，知道每台终端查了哪个域名、解析出了哪些 IP（作用同 MosDNS）。需要 LocalDNS 开启查询日志记录。',
+    ldUrl: 'LocalDNS 控制台 API 地址',
     agWhy: '双层 NAT（路由器下面又挂了爱快等路由）时，下级客户端的 DNS 查询被上游代理，路由器侧看不到。接入它们真正使用的 DNS 服务器（AdGuard Home）的查询日志后，下级终端的流量也能按域名识别。',
     agUrl: 'AdGuard Home 地址', agUser: '登录用户名（没有可留空）', agPassword: '登录密码',
     agKept: '已设置，不修改请留空', agNone: '没有设置可留空', agClear: '清除密码',

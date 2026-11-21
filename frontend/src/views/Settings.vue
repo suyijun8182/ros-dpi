@@ -138,6 +138,19 @@
               <span v-else-if="sys && sys.asn.error" class="err"> {{ sys.asn.error }}</span></p>
           </div>
           <div class="src-box">
+            <div class="sec">LocalDNS<span class="sp" />
+              <span v-if="sys && sys.localdns && sys.localdns.enabled" class="pill" :class="sys.localdns.ok ? 'ok' : 'bad'">{{ sys.localdns.ok ? t('sources.connected') : t('sources.failed') }}</span>
+              <span v-else class="pill grey">{{ t('sources.off') }}</span></div>
+            <p class="faint small">{{ t('sources.ldWhy') }}</p>
+            <label for="ld-url">{{ t('sources.ldUrl') }}</label>
+            <input id="ld-url" class="input addr" v-model.trim="src.localdns_url" placeholder="http://192.168.88.248:9099" autocomplete="off" />
+            <div v-if="sys && sys.localdns && sys.localdns.enabled" class="st small">
+              <span>{{ t('settings.last') }} {{ ago(sys.localdns.last) }}</span>
+              <span>{{ t('sources.answers', { n: sys.localdns.answers.toLocaleString() }) }}</span>
+              <span class="err" v-if="sys.localdns.error">{{ sys.localdns.error }}</span>
+            </div>
+          </div>
+          <div class="src-box">
             <div class="sec">AdGuard Home<span class="sp" />
               <span v-if="sys && sys.adguard && sys.adguard.enabled" class="pill" :class="sys.adguard.ok ? 'ok' : 'bad'">{{ sys.adguard.ok ? t('sources.connected') : t('sources.failed') }}</span>
               <span v-else class="pill grey">{{ t('sources.off') }}</span></div>
@@ -313,7 +326,7 @@ const setTab = k => router.replace({ query: k === 'status' ? {} : { tab: k } })
 // 有问题的标签页上标一个红点
 const badge = computed(() => ({
   access: !!(sys.value && sys.value.ros_check && sys.value.ros_check.checked && sys.value.ros_check.rules.some(r => r.problems.length)),
-  sources: !!(sys.value && ((sys.value.singbox.enabled && !sys.value.singbox.ok) || (sys.value.mosdns.enabled && !sys.value.mosdns.ok) || (sys.value.adguard && sys.value.adguard.enabled && !sys.value.adguard.ok))),
+  sources: !!(sys.value && ((sys.value.singbox.enabled && !sys.value.singbox.ok) || (sys.value.mosdns.enabled && !sys.value.mosdns.ok) || (sys.value.adguard && sys.value.adguard.enabled && !sys.value.adguard.ok) || (sys.value.localdns && sys.value.localdns.enabled && !sys.value.localdns.ok))),
 }))
 
 async function loadSys() {
@@ -344,14 +357,14 @@ onMounted(() => {
 })
 
 // ---------- 外部数据源 ----------
-const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '', share_enabled: true, share_hub_url: '' })
+const src = reactive({ singbox_url: '', singbox_secret: '', proxy_ips: '', mosdns_url: '', localdns_url: '', adguard_url: '', adguard_username: '', adguard_password: '', share_enabled: true, share_hub_url: '' })
 const deploys = ref(null)
 const srcErr = ref('')
 const srcSaved = ref(false)
 const testing = ref(false)
 function fillSources() {
   const i = s.value.integrations
-  Object.assign(src, { singbox_url: i.singbox_url, singbox_secret: '', proxy_ips: i.proxy_ips, mosdns_url: i.mosdns_url,
+  Object.assign(src, { singbox_url: i.singbox_url, singbox_secret: '', proxy_ips: i.proxy_ips, mosdns_url: i.mosdns_url, localdns_url: i.localdns_url || '',
                        adguard_url: i.adguard_url, adguard_username: i.adguard_username, adguard_password: '',
                        share_enabled: !!s.value.share_enabled, share_hub_url: s.value.share_hub_url || '' })
 }
@@ -359,7 +372,7 @@ async function saveSources() {
   srcErr.value = ''
   try {
     // 密钥留空表示不修改；要清除用“清除密钥/密码”按钮
-    const body = { singbox_url: src.singbox_url, proxy_ips: src.proxy_ips, mosdns_url: src.mosdns_url,
+    const body = { singbox_url: src.singbox_url, proxy_ips: src.proxy_ips, mosdns_url: src.mosdns_url, localdns_url: src.localdns_url,
                    adguard_url: src.adguard_url, adguard_username: src.adguard_username,
                    share_enabled: src.share_enabled, share_hub_url: src.share_hub_url }
     if (src.singbox_secret) body.singbox_secret = src.singbox_secret
