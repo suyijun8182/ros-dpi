@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.engine import engine
 from app.models import Setting
 from app.ros_poller import poller
+from app.sites import registry
 from app import audit  # noqa: F401  挂上审计（engine.audit）
 from app.routers import admin, auth, diag, setup, stats
 from app.routers import share as share_router
@@ -51,7 +52,7 @@ def _on_db_ready():
     """数据库连接成功后（启动时或安装向导保存后）执行。各步互不依赖：一步出错只记日志，不挡住后面的
     （0.6.0 / 0.6.1 的主域名回填出错时，后面的外部数据源配置、自定义规则都没加载，外部数据源显示“未启用”）"""
     ensure_admin()   # 建管理员失败要报出来（安装向导靠这个提示）
-    for name, fn in (("load_state", engine.load_state), ("apply_settings", _apply_saved),
+    for name, fn in (("sites", registry.load), ("load_state", registry.load_state), ("apply_settings", _apply_saved),
                      ("local_db", _refresh_local), ("share_lib", _share_startup)):
         try:
             fn()
@@ -145,11 +146,11 @@ async def lifespan(app: FastAPI):
     else:
         print("[startup] 未配置数据库，请在网页安装向导中填写 MySQL 信息", flush=True)
 
-    transports = await start_listeners(engine, s.ipfix_port, s.tzsp_port)
+    transports = await start_listeners(registry, s.ipfix_port, s.tzsp_port)
     sched = BackgroundScheduler(timezone=s.tz)
-    sched.add_job(_safe(engine.flush, "flush"), "cron", second=0, max_instances=1, coalesce=True)
+    sched.add_job(_safe(registry.flush, "flush"), "cron", second=0, max_instances=1, coalesce=True)
     sched.add_job(_safe(audit.auditor.flush_deferred, "notify-deferred"), "cron", second=30, max_instances=1, coalesce=True)
-    sched.add_job(_safe(engine.cleanup, "cleanup"), "cron", minute=17, max_instances=1)
+    sched.add_job(_safe(registry.cleanup, "cleanup"), "cron", minute=17, max_instances=1)
     sched.add_job(_safe(_reconnect, "db-reconnect"), "interval", seconds=30, max_instances=1, coalesce=True)
     # 外部数据源：没配置时 poll() 直接返回
     sched.add_job(_safe(integrations.singbox.poll, "singbox"), "interval", seconds=5, max_instances=1, coalesce=True)
@@ -205,7 +206,7 @@ async def lifespan(app: FastAPI):
         t.close()
     from app.capture import capture
     _safe(capture.stop, "capture")()   # 正在抓包采样：收尾写好 pcap 和识别结果
-    _safe(lambda: engine.flush(final=True), "flush")()  # 关闭前把还没结束的访问也写进访问日志
+    _safe(lambda: registry.flush(final=True), "flush")()  # 关闭前把还没结束的访问也写进访问日志
 
 
 app = FastAPI(title="ROS-DPI", version=__version__, lifespan=lifespan)

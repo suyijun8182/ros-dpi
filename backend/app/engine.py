@@ -43,6 +43,20 @@ PENDING_MAX_AGE = 7200  # 落库失败的数据在内存里最多保留 2 小时
 CLEANUP_BATCH = 5000    # 按保留期清理时分批删除，避免大表一次删造成长事务
 
 
+# 多站点（0.7.0）：所有站点的 Engine 共用一个识别器（识别库、自定义规则只加载一份），访问日志行 ID 也共用一个计数器
+# （各站点的访问写进同一张 access_log，ID 不能撞）
+_shared: dict = {"classifier": None}
+_vid_lock = threading.Lock()
+_vid_last = [0]
+
+
+def _next_visit_id() -> int:
+    """访问日志的行 ID：毫秒时间左移 10 位再递增（到 2039 年都在 JS 安全整数内），重启后也比之前的大，不会撞号"""
+    with _vid_lock:
+        _vid_last[0] = max(_vid_last[0] + 1, int(time.time() * 1000) << 10)
+        return _vid_last[0]
+
+
 def parse_cidrs(text: str) -> list:
     nets = []
     for part in (text or "").replace("\n", ",").split(","):
@@ -63,7 +77,8 @@ class Engine:
         self.dns = DnsMap()
         self.names = ConnNames()
         self.sni = SniExtractor()
-        self.classifier = Classifier()
+        if _shared["classifier"] is None:
+            _shared["classifier"] = Classifier()
         self.lock = threading.Lock()
         self._flush_lock = threading.Lock()
         # CNAME 链里挑能认出应用的那一跳（按当时的识别器）
@@ -90,7 +105,6 @@ class Engine:
         # 访问日志：(host_key, 目标, app) -> [终端 IP, 远端 IP, 端口, 协议, 开始, 最近, 连接数, 上行, 下行, 来源, 行 ID, 已入库, 有变化]
         # 进行中的访问每分钟也写库（首次插入、之后按行 ID 更新），访问日志和时间线只慢一分钟
         self.visits: OrderedDict[tuple, list] = OrderedDict()
-        self._vid = 0
         self._pending: list[dict] | None = None  # 落库失败遗留的数据（按时间桶分开），下次 flush 依次写（数据库抖动不丢数据）
         # 私接路由检测：终端 -> {TTL: 包数}，镜像的 TLS / QUIC 首包里取，每天清零（sharing.py）
         self.ttl: dict[str, Counter] = {}
@@ -119,6 +133,15 @@ class Engine:
         self.proxy_active = False
         self.fakeip_nets = parse_cidrs(s.fakeip_cidrs)
 
+    @property
+    def classifier(self) -> Classifier:
+        return self.__dict__.get("_own_classifier") or _shared["classifier"]
+
+    @classifier.setter
+    def classifier(self, value: Classifier):
+        """直接赋值只换这一个实例的（测试用）；热加载走 reload_classifier，所有站点一起换"""
+        self.__dict__["_own_classifier"] = value
+
     # ---------- 配置 ----------
     def set_lan(self, text: str):
         self.lan_cidrs_text = text
@@ -146,7 +169,8 @@ class Engine:
         with database.session() as db:
             new.load_custom(db.scalars(select(CustomRule)).all())
         with self.lock:
-            self.classifier = new
+            _shared["classifier"] = new
+            self.__dict__.pop("_own_classifier", None)
 
     def reload_rules(self):
         """自定义规则变了：在新的识别器上建好再整体替换（以前原地清空重建，期间进来的流量查到半成品表，
@@ -204,6 +228,11 @@ class Engine:
             self.stats["rejected"] = self.stats.get("rejected", 0) + 1
             return
         self.stats["dns_packets"] += 1
+        if addr is not None:
+            ts = self.stats.setdefault("tzsp_sources", {})
+            if addr not in ts and len(ts) >= 64:
+                del ts[min(ts, key=ts.get)]
+            ts[addr] = int(time.time())
         frame = tzsp_payload(data)
         if frame and capture.active:
             capture.write(frame)   # 抓包采样（0.6.29）：原样存 pcap，给 nDPI 等工具离线对照
@@ -482,9 +511,7 @@ class Engine:
         v[7 if direction == "up" else 8] += nbytes
 
     def _next_vid(self) -> int:
-        """访问日志的行 ID：毫秒时间左移 10 位再递增（到 2039 年都在 JS 安全整数内），重启后也比之前的大，不会撞号"""
-        self._vid = max(self._vid + 1, int(time.time() * 1000) << 10)
-        return self._vid
+        return _next_visit_id()
 
     def take_visits(self, now: float, final: bool = False) -> tuple[list[dict], list[dict]]:
         """调用方持有 self.lock。返回 (要插入的行, 要更新的行)：有变化的进行中访问也写；
@@ -760,12 +787,16 @@ class Engine:
                 h.hostname = r["hostname"]
         return new
 
-    def load_state(self):
-        """启动时恢复 DNS 映射、自定义规则和界面设置。"""
+    def load_state(self, full: bool = True):
+        """启动时恢复 DNS 映射、自定义规则和界面设置。full=False（其它站点）：只恢复 DNS 映射，
+        一次性的升级回填、识别器加载由默认站点做一次（识别器共用）"""
         now = int(time.time())
         with database.session() as db:
             rows = db.execute(select(DnsCache.ip, DnsCache.name, DnsCache.cname, DnsCache.expires)
                               .where(DnsCache.expires > now)).all()
+            if not full:
+                self.dns.load(rows)
+                return
             lan = db.get(Setting, "lan_cidrs")
             hostnames.migrate_aliases(db)
         try:
@@ -797,7 +828,8 @@ class Engine:
             db.commit()
             print(f"[db] 已回填 {len(doms)} 个域名的主域名列", flush=True)
 
-    def cleanup(self):
+    def cleanup(self, db_too: bool = True):
+        """db_too：按保留期清理数据库（全站点共用的表，只由一个 Engine 做）"""
         # 内存表的清理不依赖数据库：安装向导完成前也要做，否则长时间不配置会一直涨
         self.dns.purge()
         with self.lock:
@@ -809,7 +841,7 @@ class Engine:
                 for name in ("_dom", "_ipdest", "_seen", "_unm"):
                     if len(getattr(self, name)) > 200_000:
                         getattr(self, name).clear()
-        if not database.is_configured():
+        if not database.is_configured() or not db_too:
             return
         from app import compliance
         r = compliance.retention()  # 网页里设置的留存天数优先于环境变量
