@@ -18,6 +18,7 @@ from app.sites import registry
 from app import audit  # noqa: F401  挂上审计（engine.audit）
 from app.routers import admin, auth, diag, setup, stats
 from app.routers import share as share_router
+from app.routers import sites as sites_router
 from app.routers import audit as audit_router
 from app.routers import compliance as compliance_router
 from app.routers import people as people_router
@@ -218,7 +219,7 @@ async def _unhandled(request: Request, exc: Exception):
 
 
 for r in (setup.router, auth.router, stats.router, admin.router, audit_router.router, people_router.router,
-          compliance_router.router, share_router.router, diag.router):
+          compliance_router.router, share_router.router, diag.router, sites_router.router):
     app.include_router(r)
 
 
