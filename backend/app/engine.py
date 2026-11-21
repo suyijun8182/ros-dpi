@@ -797,7 +797,6 @@ class Engine:
             if not full:
                 self.dns.load(rows)
                 return
-            lan = db.get(Setting, "lan_cidrs")
             hostnames.migrate_aliases(db)
         try:
             with database.session() as db:
@@ -811,9 +810,7 @@ class Engine:
         except Exception as e:  # noqa: BLE001
             print(f"[db] 大类迁移失败：{type(e).__name__}: {e}", flush=True)
         self.dns.load(rows)
-        if lan and lan.value:
-            self.set_lan(lan.value)
-        self.reload_rules()
+        self.reload_rules()      # LAN 网段按站点存在 sites 表，由 registry.load 设置
 
     @staticmethod
     def _backfill_base(db):

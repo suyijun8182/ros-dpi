@@ -14,7 +14,6 @@ from app.collector import start_listeners
 from app.config import get_settings
 from app.engine import engine
 from app.models import Setting
-from app.ros_poller import poller
 from app.sites import registry
 from app import audit  # noqa: F401  挂上审计（engine.audit）
 from app.routers import admin, auth, diag, setup, stats
@@ -38,13 +37,11 @@ def _safe(fn, name):
 
 
 def _apply_saved():
-    with ros_poller.settings_lock:
-        with database.session() as db:
-            wan = db.get(Setting, "wan_interface")
-            poller.wan_override = wan.value if wan and wan.value else ""
-            keys = (*integrations.KEYS, *ros_poller.ROS_KEYS)
-            saved = dict(db.query(Setting.key, Setting.value).filter(Setting.key.in_(keys)).all())
-        ros_poller.apply(saved)
+    """重新应用保存的配置：站点（RouterOS / LAN / WAN）和外部数据源"""
+    registry.load()
+    with database.session() as db:
+        keys = (*integrations.KEYS, integrations.SITE_KEY)
+        saved = dict(db.query(Setting.key, Setting.value).filter(Setting.key.in_(keys)).all())
     integrations.apply(saved)
 
 
@@ -190,11 +187,11 @@ async def lifespan(app: FastAPI):
         sched.add_job(_safe(_auto_update_db(rule_lists.update), "rule-lists"), "interval", hours=6,
                       max_instances=1, coalesce=True)
         asyncio.get_running_loop().run_in_executor(None, _safe(rule_lists.update, "rule-lists"))
-    sched.add_job(_safe(poller.sample, "ros-rate"), "interval", seconds=max(s.ros_rate_seconds, 2),
+    sched.add_job(_safe(registry.sample_all, "ros-rate"), "interval", seconds=max(s.ros_rate_seconds, 2),
                   max_instances=1, coalesce=True)
-    sched.add_job(_safe(poller.poll, "ros-poll"), "interval", seconds=s.ros_poll_seconds,
+    sched.add_job(_safe(registry.poll_all, "ros-poll"), "interval", seconds=s.ros_poll_seconds,
                   max_instances=1, coalesce=True)
-    asyncio.get_running_loop().run_in_executor(None, poller.poll)
+    asyncio.get_running_loop().run_in_executor(None, registry.poll_all)
     if not os.environ.get("ROSDPI_NO_JOBS"):  # 测试里不跑后台任务，避免整点落库打乱测试数据
         sched.start()
     print(f"[startup] ROS-DPI {__version__} 已启动，Web 端口 {s.http_port}", flush=True)

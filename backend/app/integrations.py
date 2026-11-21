@@ -433,8 +433,25 @@ def _make():
 singbox, mosdns, adguard, localdns = _make()
 
 
+SITE_KEY = "integrations_site"   # 多站点（0.7.0）：外部数据源都接到哪个站点（默认站点）
+
+
+def bind(slug: str | None):
+    """外部数据源喂给哪个站点的 Engine。换站点时把旧站点的旁路代理设置清掉"""
+    from app.sites import registry
+    from app.models import DEFAULT_SITE
+    e = registry.get(slug or DEFAULT_SITE) or registry.get(DEFAULT_SITE)
+    old = singbox.engine
+    if old is not e:
+        old.set_proxy(set(), False)
+    for p in (singbox, mosdns, adguard, localdns):
+        p.engine = e
+    return e
+
+
 def apply(db_values: dict):
-    """按网页 / 环境变量的配置更新三个轮询器和引擎里的旁路代理地址"""
+    """按网页 / 环境变量的配置更新四个轮询器和引擎里的旁路代理地址"""
+    bind(db_values.get(SITE_KEY))
     cfg = effective(db_values)
     singbox.configure(cfg["singbox_url"], cfg["singbox_secret"])
     mosdns.configure(cfg["mosdns_url"])

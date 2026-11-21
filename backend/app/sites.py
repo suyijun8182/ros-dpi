@@ -10,9 +10,10 @@ import time
 
 from sqlalchemy import delete, select
 
-from app import database
+from app import database, ros_poller
 from app.config import get_settings
 from app.engine import Engine, engine as default_engine
+from app.ros_poller import RosPoller, poller as default_poller
 from app.models import DEFAULT_SITE, Site, UnknownSource
 
 UNKNOWN_DAYS = 7
@@ -24,6 +25,14 @@ def norm_ip(text: str) -> str | None:
         return str(ipaddress.ip_address(text.strip()))
     except ValueError:
         return None
+
+
+def ros_values(row) -> dict:
+    """站点行里的 RouterOS 配置，换成 ros_poller.effective 认的格式（没保存过的为 None）"""
+    if row is None:
+        return {}
+    return {"ros_url": row.ros_url, "ros_user": row.ros_user, "ros_password": row.ros_password,
+            "ros_verify_tls": None if row.ros_verify_tls is None else ("1" if row.ros_verify_tls else "0")}
 
 
 def split_sources(text: str | None) -> list[str]:
@@ -39,6 +48,7 @@ class SiteRegistry:
     def __init__(self):
         self.lock = threading.Lock()
         self.engines: dict[str, Engine] = {DEFAULT_SITE: default_engine}
+        self.pollers: dict[str, RosPoller] = {DEFAULT_SITE: default_poller}
         self.info: dict[str, dict] = {DEFAULT_SITE: {"slug": DEFAULT_SITE, "name": "默认站点", "enabled": True,
                                                        "sources": [], "sort": 0}}
         self._by_ip: dict[str, str] = {}
@@ -53,7 +63,8 @@ class SiteRegistry:
                 return self.load(s)
         rows = db.scalars(select(Site).order_by(Site.sort, Site.created, Site.slug)).all()
         self.apply([{"slug": r.slug, "name": r.name, "enabled": bool(r.enabled), "sources": split_sources(r.sources),
-                     "lan_cidrs": r.lan_cidrs or "", "sort": r.sort or 0} for r in rows])
+                     "lan_cidrs": r.lan_cidrs or "", "sort": r.sort or 0, "wan_interface": r.wan_interface or "",
+                     "ros": ros_values(r)} for r in rows])
 
     def apply(self, sites: list[dict]):
         env_lan = get_settings().lan_cidrs
@@ -65,9 +76,14 @@ class SiteRegistry:
                     e = Engine(site=slug)
                     e.audit = default_engine.audit
                     self.engines[slug] = e
+                if slug not in self.pollers:
+                    p = RosPoller(self.engines[slug])
+                    p.env_wan = ""
+                    self.pollers[slug] = p
             for slug in list(self.engines):
                 if slug not in info and slug != DEFAULT_SITE:
                     removed.append(self.engines.pop(slug))
+                    self.pollers.pop(slug, None)
             for slug, s in info.items():
                 lan = s.get("lan_cidrs") or env_lan
                 e = self.engines[slug]
@@ -80,6 +96,14 @@ class SiteRegistry:
                     by_ip.setdefault(ip, s["slug"])
             self.info, self._by_ip = info, by_ip
             self.accept_all = enabled[0]["slug"] if len(enabled) == 1 and not enabled[0].get("sources") else None
+        for slug, s in info.items():
+            if "ros" not in s:
+                continue
+            p = self.pollers[slug]
+            # 停用的站点不轮询；默认站点没在网页保存过时用环境变量 ROS_*
+            ros_poller.apply(s["ros"] if s.get("enabled") else {"ros_url": ""}, target=p, env=slug == DEFAULT_SITE)
+            if p.wan_override != (s.get("wan_interface") or ""):
+                p.wan_override, p._wan_prev = s.get("wan_interface") or "", None
         for e in removed:   # 删掉的站点：把内存里还没写的先写掉
             try:
                 e.flush(final=True)
@@ -109,6 +133,34 @@ class SiteRegistry:
 
     def all(self) -> list[Engine]:
         return list(self.engines.values())
+
+    def poller(self, slug: str) -> RosPoller | None:
+        return self.pollers.get(slug)
+
+    # ---------- RouterOS 轮询：每个站点各跑各的，一台连不上（超时 10 秒）不拖住别的站点 ----------
+    def _each(self, method: str):
+        from concurrent.futures import ThreadPoolExecutor
+        if not hasattr(self, "_pool"):
+            self._pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="ros")
+        for slug, p in list(self.pollers.items()):
+            if not p.enabled or getattr(p, "_busy_" + method, False):
+                continue
+            setattr(p, "_busy_" + method, True)
+
+            def run(p=p, slug=slug):
+                try:
+                    getattr(p, method)()
+                except Exception as ex:  # noqa: BLE001
+                    print(f"[ros] 站点 {slug} {method} 失败：{type(ex).__name__}: {ex}", flush=True)
+                finally:
+                    setattr(p, "_busy_" + method, False)
+            self._pool.submit(run)
+
+    def poll_all(self):
+        self._each("poll")
+
+    def sample_all(self):
+        self._each("sample")
 
     # ---------- 收包 ----------
     def resolve(self, addr: str) -> Engine | None:

@@ -14,8 +14,10 @@ from app.config import get_settings
 from app import database, rulejobs
 from app.database import get_db
 from app.engine import engine, parse_cidrs
-from app.models import CustomRule, Setting
+from app import sites
+from app.models import DEFAULT_SITE, CustomRule, Setting, Site
 from app.ros_poller import poller
+from app.sites import registry
 from app.security import current_user
 
 router = APIRouter(prefix="/api", tags=["admin"], dependencies=[Depends(current_user)])
@@ -270,6 +272,7 @@ class SettingsIn(BaseModel):
     rules_auto_update: bool | None = None
     share_enabled: bool | None = None
     share_hub_url: str | None = Field(None, max_length=255)   # 社区主站地址；空字符串表示恢复内置默认
+    integrations_site: str | None = Field(None, max_length=32)  # 外部数据源接到哪个站点（多站点）
 
 
 def _get(db, key, default=""):
@@ -285,8 +288,15 @@ def _put(db, key, value):
         row.value = value
 
 
-def _ros_values(db):
-    return dict(db.query(Setting.key, Setting.value).filter(Setting.key.in_(ros_poller.ROS_KEYS)).all())
+def _site_row(db, slug: str = DEFAULT_SITE) -> Site:
+    row = db.get(Site, slug)
+    if row is None:
+        raise HTTPException(404, "站点不存在")
+    return row
+
+
+def _ros_values(db, slug: str = DEFAULT_SITE):
+    return sites.ros_values(db.get(Site, slug))
 
 
 def _ros_url(value: str) -> str:
@@ -324,10 +334,11 @@ def _same_origin(a: str, b: str) -> bool:
 def get_settings_api(db: Session = Depends(get_db)):
     s = get_settings()
     ros = ros_poller.effective(_ros_values(db))
+    row = db.get(Site, DEFAULT_SITE)
     return {
         "lan_cidrs": engine.lan_cidrs_text,
         "lan_auto": [str(n) for n in engine.auto_nets],
-        "wan_interface": _get(db, "wan_interface", s.wan_interface),
+        "wan_interface": (row.wan_interface if row is not None and row.wan_interface else "") or s.wan_interface,
         "wan_detected": poller.wan_name,
         "interfaces": [i["name"] for i in poller.interfaces],
         "retention": {"minute": s.retention_minute_days, "hour": s.retention_hour_days,
@@ -350,6 +361,7 @@ def _integrations(db):
             "mosdns_url": cfg["mosdns_url"], "localdns_url": cfg["localdns_url"],
             "adguard_url": cfg["adguard_url"], "adguard_username": cfg["adguard_username"],
             "has_adguard_password": bool(cfg["adguard_password"]),
+            "site": _get(db, integrations.SITE_KEY, DEFAULT_SITE) or DEFAULT_SITE,
             "proxy_auto": integrations.singbox.host_ip()}
 
 
@@ -390,16 +402,19 @@ def put_settings(req: SettingsIn, request: Request, background: BackgroundTasks,
             current = ros_poller.effective(_ros_values(db))
             if not _same_origin(changes["ros_url"], current["ros_url"]):
                 raise HTTPException(400, "地址改了，请重新输入密码")
-        if "ros_url" not in changes and _get(db, "ros_url", None) is None:
+        row = _site_row(db)
+        if "ros_url" not in changes and row.ros_url is None:
             # 首次只修改环境变量账号或 TLS 时，记录此次网页选择的地址和来源。
             changes["ros_url"] = get_settings().ros_url
         for key, value in changes.items():
-            _put(db, key, value)
+            setattr(row, key, (1 if value == "1" else 0) if key == "ros_verify_tls" else value)
         db.flush()
         saved = _ros_values(db)
+        p = registry.poller(DEFAULT_SITE)
+        changed = ros_poller.apply(saved, target=p) if row.enabled else False
         result = _save_settings(req, request, user, db)
-        if ros_poller.apply(saved) and poller.enabled:
-            background.add_task(poller.poll)  # 响应发出后再请求路由器，慢设备不会拖住保存
+        if changed and p.enabled:
+            background.add_task(p.poll)  # 响应发出后再请求路由器，慢设备不会拖住保存
     return result
 
 
@@ -409,8 +424,8 @@ def _save_settings(req, request, user, db):
         bad = [x for x in text.split(",") if x and not parse_cidrs(x)]
         if bad:
             raise HTTPException(400, f"无效网段：{', '.join(bad)}")
-        _put(db, "lan_cidrs", text)
-        engine.set_lan(text)
+        _site_row(db).lan_cidrs = text or None
+        engine.set_lan(text or get_settings().lan_cidrs)
     changed = False
     for k in integrations.KEYS:
         v = getattr(req, k)
@@ -421,9 +436,15 @@ def _save_settings(req, request, user, db):
             raise HTTPException(400, "地址要以 http:// 或 https:// 开头，例如 http://192.168.1.2:9090")
         _put(db, k, v)
         changed = True
+    if req.integrations_site is not None:
+        slug = req.integrations_site.strip() or DEFAULT_SITE
+        if db.get(Site, slug) is None:
+            raise HTTPException(400, "站点不存在")
+        _put(db, integrations.SITE_KEY, slug)
+        changed = True
     if changed:
         db.flush()
-        integrations.apply({k: _get(db, k, None) for k in integrations.KEYS})
+        integrations.apply({k: _get(db, k, None) for k in (*integrations.KEYS, integrations.SITE_KEY)})
     if req.rules_auto_update is not None:
         _put(db, "rules_auto_update", "1" if req.rules_auto_update else "0")
     share_changed = False
@@ -442,9 +463,9 @@ def _save_settings(req, request, user, db):
         from app import share
         share.kick(share.run_once)
     if req.wan_interface is not None:
-        _put(db, "wan_interface", req.wan_interface.strip())
-        poller.wan_override = req.wan_interface.strip()
-        poller._wan_prev = None
+        _site_row(db).wan_interface = req.wan_interface.strip() or None
+        db.flush()
+        registry.load(db)
     oplog.log(db, request, user, "settings", req.model_dump(exclude_none=True))
     return get_settings_api(db)
 

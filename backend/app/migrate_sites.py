@@ -115,6 +115,8 @@ def _ensure_default_site(engine) -> bool:
                                     0 if "ros_verify_tls" in saved else None),
                     lan_cidrs=saved.get("lan_cidrs") or None, wan_interface=saved.get("wan_interface") or None,
                     enabled=1, sort=0, created=int(time.time())))
+        # 这几项改由站点保存，从全局设置里删掉（以后网页改的是站点行）
+        db.query(Setting).filter(Setting.key.in_(SITE_KEYS)).delete(synchronize_session=False)
         for (uid,) in db.query(User.id).filter(User.role == "user").all():
             db.add(UserSite(user_id=uid, site=DEFAULT_SITE))
         db.commit()

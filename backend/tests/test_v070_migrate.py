@@ -77,6 +77,8 @@ def test_migrate_old_db(capsys):
         site = conn.execute(text("SELECT slug, ros_url, ros_user, ros_password, ros_verify_tls, lan_cidrs, sources "
                                  "FROM sites")).all()
         assert site == [("default", "https://192.168.88.1", "rosdpi", "S3cret!", 1, "192.168.88.0/24", "")]
+        # 搬进站点行的设置从全局设置里删掉
+        assert conn.execute(text("SELECT COUNT(*) FROM settings WHERE key LIKE 'ros_%' OR key = 'lan_cidrs'")).scalar() == 0
         # 普通用户自动授权默认站点，管理员不需要
         assert conn.execute(text("SELECT user_id, site FROM user_sites")).all() == [(2, "default")]
     out = capsys.readouterr().out

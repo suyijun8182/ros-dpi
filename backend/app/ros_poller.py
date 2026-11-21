@@ -14,18 +14,21 @@ settings_lock = threading.Lock()  # 串行化网页保存与数据库就绪时�
 ROS_KEYS = ("ros_url", "ros_user", "ros_password", "ros_verify_tls")
 
 
-def effective(db_values: dict) -> dict:
+def effective(db_values: dict, env: bool = True) -> dict:
+    """网页保存的值优先，其次环境变量 ROS_*。env=False（默认站点以外的站点）：不用环境变量"""
     settings = get_settings()
-    cfg = {k: db_values[k] if db_values.get(k) is not None else getattr(settings, k) for k in ROS_KEYS}
+    blank = {"ros_url": "", "ros_user": "", "ros_password": "", "ros_verify_tls": False}
+    cfg = {k: db_values[k] if db_values.get(k) is not None else (getattr(settings, k) if env else blank[k])
+           for k in ROS_KEYS}
     if db_values.get("ros_verify_tls") is not None:
         cfg["ros_verify_tls"] = db_values["ros_verify_tls"] == "1"
     cfg["source"] = "web" if db_values.get("ros_url") is not None else ("env" if cfg["ros_url"] else "none")
     return cfg
 
 
-def apply(db_values: dict) -> bool:
-    cfg = effective(db_values)
-    return poller.configure(*(cfg[k] for k in ROS_KEYS), source=cfg["source"])
+def apply(db_values: dict, target=None, env: bool = True) -> bool:
+    cfg = effective(db_values, env=env)
+    return (target or poller).configure(*(cfg[k] for k in ROS_KEYS), source=cfg["source"])
 
 
 def _global_v6(addr: str | None) -> bool:
@@ -46,6 +49,7 @@ class RosPoller:
         self.verify_tls = False
         self.source = "none"
         self.wan_override = ""
+        self.env_wan = get_settings().wan_interface   # 环境变量 WAN_INTERFACE 只对默认站点生效
         self._reset()
 
     def _reset(self):
@@ -185,7 +189,7 @@ class RosPoller:
              "rx": int(i.get("rx-byte", 0) or 0), "tx": int(i.get("tx-byte", 0) or 0)}
             for i in ifaces
         ]
-        self.wan_name = self.wan_override or get_settings().wan_interface or _default_route_iface(routes)
+        self.wan_name = self.wan_override or self.env_wan or _default_route_iface(routes)
         wan = next((i for i in self.interfaces if i["name"] == self.wan_name), None)
         if wan:
             if self._wan_prev and self._wan_prev[0] < now:

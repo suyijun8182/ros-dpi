@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app import database
 from app.main import _apply_saved, app
-from app.models import OpLog, Setting
+from app.models import DEFAULT_SITE, OpLog, Setting, Site
 
 from app.config import get_settings
 from app.ros_poller import ROS_KEYS, RosPoller, _explain, effective, poller
@@ -112,6 +112,8 @@ def api():
         yield client
     with database.session() as db:
         db.query(Setting).filter(Setting.key.in_(ROS_KEYS)).delete()
+        row = db.get(Site, DEFAULT_SITE)      # 0.7.0：RouterOS 配置存在默认站点行里
+        row.ros_url = row.ros_user = row.ros_password = row.ros_verify_tls = None
         db.commit()
     poller.configure("", "", "", False)
 

@@ -72,3 +72,64 @@ def test_disabled_site_gets_nothing_and_ids_do_not_collide():
     assert reg.resolve(OFFICE) is None and not reg.multi()
     a, b = reg.engines[DEFAULT_SITE]._next_vid(), reg.engines["office"]._next_vid()
     assert a != b
+
+
+def test_each_site_has_own_poller_without_env_fallback(monkeypatch):
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "ros_url", "https://env-router")
+    reg = SiteRegistry()
+    reg.pollers = {DEFAULT_SITE: __import__("app.ros_poller", fromlist=["RosPoller"]).RosPoller(reg.engines[DEFAULT_SITE])}
+    reg.apply([{"slug": DEFAULT_SITE, "name": "家里", "enabled": True, "sources": [HOME], "ros": {}},
+               {"slug": "office", "name": "公司", "enabled": True, "sources": [OFFICE],
+                "ros": {"ros_url": "https://10.8.0.1", "ros_user": "u", "ros_password": "p", "ros_verify_tls": None},
+                "wan_interface": "pppoe-out1", "lan_cidrs": "10.10.0.0/16"},
+               {"slug": "lab", "name": "实验室", "enabled": True, "sources": ["10.9.0.2"], "ros": {}}])
+    home, office, lab = reg.pollers[DEFAULT_SITE], reg.pollers["office"], reg.pollers["lab"]
+    assert home.url == "https://env-router" and home.source == "env"      # 只有默认站点用环境变量
+    assert office.url == "https://10.8.0.1" and office.engine is reg.engines["office"] and office.wan_override == "pppoe-out1"
+    assert not lab.enabled and lab.source == "none"
+    assert reg.engines["office"].is_lan("10.10.3.4") and not reg.engines["office"].is_lan("192.168.88.10")
+    # 停用的站点不轮询
+    reg.apply([{"slug": DEFAULT_SITE, "name": "家里", "enabled": True, "sources": [HOME], "ros": {}},
+               {"slug": "office", "name": "公司", "enabled": False, "sources": [OFFICE],
+                "ros": {"ros_url": "https://10.8.0.1", "ros_user": "u", "ros_password": "p", "ros_verify_tls": None}}])
+    assert not reg.pollers["office"].enabled and "lab" not in reg.pollers
+
+
+def test_slow_site_does_not_block_others(monkeypatch):
+    import threading
+    from app.ros_poller import RosPoller
+    reg = SiteRegistry()
+    reg.pollers = {DEFAULT_SITE: RosPoller(reg.engines[DEFAULT_SITE])}
+    reg.apply([{"slug": DEFAULT_SITE, "name": "家里", "enabled": True, "sources": [HOME],
+                "ros": {"ros_url": "https://192.168.88.1", "ros_user": "u", "ros_password": "p"}},
+               {"slug": "office", "name": "公司", "enabled": True, "sources": [OFFICE],
+                "ros": {"ros_url": "https://10.8.0.1", "ros_user": "u", "ros_password": "p"}}])
+    gate, done, calls = threading.Event(), threading.Event(), []
+    monkeypatch.setattr(reg.pollers["office"], "poll", lambda: (calls.append("office"), gate.wait(5)))
+    monkeypatch.setattr(reg.pollers[DEFAULT_SITE], "poll", lambda: (calls.append("home"), done.set()))
+    reg.poll_all()
+    assert done.wait(2)                      # 公司那台卡住时家里照常轮询
+    reg.poll_all()                           # 公司上一轮还没结束：不重复提交
+    gate.set()
+    time.sleep(0.2)
+    assert calls.count("office") == 1 and calls.count("home") >= 1
+
+
+def test_integrations_bind_to_site():
+    from app import integrations
+    reg_engine_default = integrations.singbox.engine
+    from app.sites import registry
+    registry.apply([{"slug": DEFAULT_SITE, "name": "家里", "enabled": True, "sources": [HOME]},
+                    {"slug": "office", "name": "公司", "enabled": True, "sources": [OFFICE]}])
+    try:
+        reg_engine_default.set_proxy({"192.168.88.249"}, True)
+        e = integrations.bind("office")
+        assert e is registry.engines["office"]
+        assert all(p.engine is e for p in (integrations.singbox, integrations.mosdns, integrations.adguard,
+                                            integrations.localdns))
+        assert reg_engine_default.proxy_ips == set()          # 旧站点的旁路代理设置清掉
+        assert integrations.bind("missing") is registry.engines[DEFAULT_SITE]
+    finally:
+        integrations.bind(DEFAULT_SITE)
+        registry.apply([{"slug": DEFAULT_SITE, "name": "默认站点", "enabled": True, "sources": []}])
