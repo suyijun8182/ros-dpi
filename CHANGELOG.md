@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+- 修复：多 WAN 用策略路由分表（每条线路的默认路由放在自定义 routing-table）时，概览页「WAN 线路」只列出 main 表的线路（#1）。现在会补上 interface-list `WAN` 的成员，以及自定义路由表里出口是 PPPoE / DHCP 客户端 / WAN 列表接口的默认路由；导给旁路由的 LAN 出口仍不算 WAN。
+- 改进：RouterOS 返回 HTTP 400 等错误时，提示里带上 RouterOS 给出的原因，并说明常见原因（协议和端口对不上、地址多写了路径、RouterOS 低于 7.1）（#2）。
+
 ## [0.7.0] - 2026-11-22
 
 **一个平台管多台 RouterOS（多站点）**。家里一台、公司一台，不用再各部署一份：一台 RouterOS 一个站点，界面模板相同，数据按站点分开。

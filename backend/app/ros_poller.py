@@ -145,8 +145,8 @@ class RosPoller:
                 addrs = self._get(c, "/ip/address")
                 # 只看主路由表：策略路由表（例如把流量导给旁路由的 sing-box 表）里的默认路由出口常是 LAN 网桥，
                 # 算进 WAN 会把网桥的收发和 WAN 叠加，上下行就变得几乎一样
-                routes = [r for r in self._get(c, "/ip/route?dst-address=0.0.0.0/0")
-                          if (r.get("routing-table") or "main") == "main"]
+                all_routes = self._get(c, "/ip/route?dst-address=0.0.0.0/0")
+                routes = [r for r in all_routes if (r.get("routing-table") or "main") == "main"]
                 try:
                     nb6 = self._get(c, "/ipv6/neighbor")
                     addrs6 = self._get(c, "/ipv6/address")
@@ -156,7 +156,9 @@ class RosPoller:
                     ("pools", "/ip/pool"), ("servers", "/ip/dhcp-server"), ("dhcpc", "/ip/dhcp-client"),
                     ("pppoe", "/interface/pppoe-client"), ("mangle", "/ip/firewall/mangle"),
                     ("mangle6", "/ipv6/firewall/mangle"), ("ipset", "/ip/settings"),
-                    ("filter", "/ip/firewall/filter"), ("filter6", "/ipv6/firewall/filter"))}
+                    ("filter", "/ip/firewall/filter"), ("filter6", "/ipv6/firewall/filter"),
+                    ("iflist", "/interface/list/member"))}
+                extra["routes_all"] = all_routes
             with self._lock:
                 if generation != self._generation:
                     return
@@ -248,18 +250,36 @@ class RosPoller:
                 self.if_rate[name] = (max(tx - prev[2], 0) / dt, max(rx - prev[1], 0) / dt)
             self._if_prev[name] = (now, rx, tx)
 
-        # WAN 线路：所有默认路由的出接口（多 WAN 时有多条），没有时用识别到的 WAN 口
+        # WAN 线路：主表所有默认路由的出接口（多 WAN 时有多条），没有时用识别到的 WAN 口；
+        # 再补上 interface-list WAN 的成员，和策略路由分表（每条线路的默认路由放在自定义 routing-table）里的 WAN 出口
         names = []
         lan = {sv.get("interface") for sv in extra["servers"] or [] if sv.get("disabled") != "true"}
-        for r in routes or []:
-            n = _default_route_iface([r])
-            if n and n not in names and n not in lan:  # 开着 DHCP 服务的是 LAN 口，不当 WAN 线路
-                names.append(n)
-        if self.wan_name and self.wan_name not in names:
-            names.insert(0, self.wan_name)
         by_name = {i.get("name"): i for i in ifaces}
         pppoe = {p.get("name"): p for p in extra["pppoe"] or []}
         dhcpc = {d.get("interface"): d for d in extra["dhcpc"] or []}
+        members = [m for m in extra.get("iflist") or [] if isinstance(m, dict) and m.get("disabled") != "true"]
+        wan_list = {m.get("interface") for m in members if m.get("list") == "WAN"}
+        lan_list = {m.get("interface") for m in members if m.get("list") == "LAN"}
+
+        def add(n):
+            if n and n in by_name and n not in names and n not in lan and n not in lan_list:
+                names.append(n)   # 开着 DHCP 服务 / 在 LAN 列表里的是 LAN 口，不当 WAN 线路
+
+        for r in routes or []:
+            n = _default_route_iface([r])
+            if n and n not in names and n not in lan:
+                names.append(n)
+        for n in sorted(wan_list):
+            add(n)
+        # 自定义表里的默认路由出口也可能是 LAN 网桥（例如导给旁路由 sing-box），只收看起来像 WAN 的接口
+        for r in extra.get("routes_all") or []:
+            if (r.get("routing-table") or "main") == "main":
+                continue
+            n = _default_route_iface([r])
+            if n in pppoe or n in dhcpc or n in wan_list or by_name.get(n, {}).get("type") == "pppoe-out":
+                add(n)
+        if self.wan_name and self.wan_name not in names:
+            names.insert(0, self.wan_name)
         wans = []
         for n in names:
             i = by_name.get(n, {})
@@ -416,7 +436,12 @@ def _explain(e: Exception) -> str:
             return "RouterOS 拒绝登录（401）：检查 用户名 / 密码，以及该用户的 address 是否允许本机 IP"
         if code == 403:
             return "RouterOS 权限不足（403）：用户组需要 read、rest-api 权限"
-        return f"RouterOS 返回 HTTP {code}"
+        detail = _ros_detail(e.response)
+        if code == 400:
+            return ("RouterOS 返回 HTTP 400" + (f"（{detail}）" if detail else "") +
+                    "：常见原因是地址的协议和端口对不上（http:// 对应 www 服务、默认 80 端口；https:// 对应 www-ssl、默认 443 端口），"
+                    "或地址里多写了路径（只填 http(s)://路由器IP[:端口]），或 RouterOS 版本低于 7.1（REST API 从 7.1 起才有）")
+        return f"RouterOS 返回 HTTP {code}" + (f"（{detail}）" if detail else "")
     if isinstance(e, httpx.ConnectError):
         if _cert_verification_failed(e):
             return "RouterOS 的 HTTPS 证书校验失败：路由器用自签证书时，请取消勾选「校验 HTTPS 证书」"
@@ -424,6 +449,17 @@ def _explain(e: Exception) -> str:
     if isinstance(e, httpx.TimeoutException):
         return "连接 RouterOS 超时：检查 RouterOS 地址 与防火墙"
     return f"RouterOS 响应异常（{type(e).__name__}）"
+
+
+def _ros_detail(resp: httpx.Response) -> str:
+    """RouterOS REST 出错时的响应体形如 {"error":400,"message":"Bad Request","detail":"no such command"}"""
+    try:
+        body = resp.json()
+    except Exception:  # noqa: BLE001  不是 JSON（例如别的 Web 服务的错误页）
+        return ""
+    if not isinstance(body, dict):
+        return ""
+    return str(body.get("detail") or body.get("message") or "")[:200]
 
 
 def _int(v):

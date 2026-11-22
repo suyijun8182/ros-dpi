@@ -138,3 +138,44 @@ def test_poll_401_gives_actionable_error_and_keeps_status_usable(monkeypatch):
     poller.poll()
     st = poller.status()
     assert not st["ok"] and "401" in st["error"] and "用户名 / 密码" in st["error"]
+
+
+def test_policy_routing_multi_wan_lines(monkeypatch):
+    """issue #1：每条线路的默认路由放在自定义 routing-table（策略路由多 WAN），概览页要列出全部线路"""
+    saved = {k: ROS.get(k) for k in ("/rest/interface", "/rest/ip/route", "/rest/interface/pppoe-client",
+                                     "/rest/interface/list/member")}
+    ROS["/rest/interface"] = saved["/rest/interface"] + [
+        {"name": f"pppoe-out{i}", "type": "pppoe-out", "running": "true", "rx-byte": "0", "tx-byte": "0"} for i in (1, 2, 3)
+    ] + [{"name": "ether8", "type": "ether", "running": "true", "rx-byte": "0", "tx-byte": "0"}]
+    ROS["/rest/ip/route"] = [
+        {"dst-address": "0.0.0.0/0", "gateway": "pppoe-out1", "active": "true"},
+        {"dst-address": "0.0.0.0/0", "gateway": "pppoe-out2", "routing-table": "CUCC", "active": "true"},
+        {"dst-address": "0.0.0.0/0", "gateway": "pppoe-out3", "routing-table": "CTCC", "active": "true"},
+        # 导给旁路由的表：出口是 LAN 网桥，不算 WAN
+        {"dst-address": "0.0.0.0/0", "gateway": "192.168.88.249", "immediate-gw": "192.168.88.249%bridge",
+         "routing-table": "sing-box-v4", "active": "true"}]
+    ROS["/rest/interface/pppoe-client"] = [{"name": f"pppoe-out{i}"} for i in (1, 2, 3)]
+    ROS["/rest/interface/list/member"] = [{"list": "WAN", "interface": "ether8"}, {"list": "LAN", "interface": "bridge"}]
+    try:
+        _use_mock(monkeypatch)
+        poller.poll()
+        assert poller.status()["wan_interface"] == "pppoe-out1"
+        assert [w["name"] for w in poller.wans] == ["pppoe-out1", "ether8", "pppoe-out2", "pppoe-out3"]
+        assert all(w["type"] == "pppoe" for w in poller.wans if w["name"].startswith("pppoe"))
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                ROS.pop(k, None)
+            else:
+                ROS[k] = v
+
+
+def test_http_400_explained():
+    """issue #2：HTTP 400 时带上 RouterOS 的 detail，并提示协议 / 端口 / 版本"""
+    from app.ros_poller import _explain
+    req = httpx.Request("GET", "http://192.168.88.1/rest/system/identity")
+    resp = httpx.Response(400, json={"error": 400, "message": "Bad Request", "detail": "no such command"}, request=req)
+    msg = _explain(httpx.HTTPStatusError("x", request=req, response=resp))
+    assert "no such command" in msg and "443" in msg and "7.1" in msg
+    resp = httpx.Response(400, text="<html>plain HTTP sent to HTTPS port</html>", request=req)
+    assert "HTTP 400：" in _explain(httpx.HTTPStatusError("x", request=req, response=resp))
