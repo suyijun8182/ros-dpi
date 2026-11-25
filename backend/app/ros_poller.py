@@ -272,6 +272,7 @@ class RosPoller:
             n = _default_route_iface([r])
             if n and n not in names and n not in lan:
                 names.append(n)
+        routed = set(names)
         for n in sorted(wan_list):
             add(n)
         # 自定义表里的默认路由出口也可能是 LAN 网桥（例如导给旁路由 sing-box），只收看起来像 WAN 的接口
@@ -281,8 +282,13 @@ class RosPoller:
             n = _default_route_iface([r])
             if n in pppoe or n in dhcpc or n in wan_list or by_name.get(n, {}).get("type") == "pppoe-out":
                 add(n)
+                routed.add(n)
         if self.wan_name and self.wan_name not in names:
             names.insert(0, self.wan_name)
+        # WAN 列表可能同时含 PPPoE 和承载网口；纯承载口不能再次累计同一份流量。
+        carriers = {p.get("interface") for n, p in pppoe.items()
+                    if n in names and n in by_name and p.get("disabled") != "true"}
+        names = [n for n in names if n not in carriers or n in routed or n == self.wan_name]
         wans = []
         for n in names:
             i = by_name.get(n, {})

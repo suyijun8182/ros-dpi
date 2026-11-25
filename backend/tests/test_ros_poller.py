@@ -179,3 +179,33 @@ def test_http_400_explained():
     assert "no such command" in msg and "443" in msg and "7.1" in msg
     resp = httpx.Response(400, text="<html>plain HTTP sent to HTTPS port</html>", request=req)
     assert "HTTP 400：" in _explain(httpx.HTTPStatusError("x", request=req, response=resp))
+
+
+def test_pppoe_wan_list_does_not_count_carrier_twice(monkeypatch):
+    from types import SimpleNamespace
+    from app.ros_poller import RosPoller
+
+    p = RosPoller(SimpleNamespace())
+    p.configure('http://router', 'u', 'p', False)
+    p.wan_name = 'pppoe-out1'
+    ifaces = [{'name': name, 'type': kind, 'running': 'true', 'rx-byte': '0', 'tx-byte': '0'}
+              for name, kind in [('ether1', 'ether'), ('pppoe-out1', 'pppoe-out'), ('ether8', 'ether')]]
+    extra = {'servers': [], 'pools': [], 'dhcpc': [],
+             'pppoe': [{'name': 'pppoe-out1', 'interface': 'ether1'}],
+             'iflist': [{'list': 'WAN', 'interface': i['name']} for i in ifaces]}
+    p._apply_status(ifaces, [], [], [{'gateway': 'pppoe-out1', 'active': 'true'}], extra)
+    monkeypatch.setattr(p, '_client', lambda *a: httpx.Client(
+        base_url='http://router', transport=httpx.MockTransport(lambda r: httpx.Response(200, json=ifaces))))
+    monkeypatch.setattr('app.ros_poller.time.time', lambda: 1)
+    p.sample()
+    for iface in ifaces[:2]:
+        iface.update({'tx-byte': '500', 'rx-byte': '1000'})
+    ifaces[2].update({'tx-byte': '100', 'rx-byte': '200'})
+    monkeypatch.setattr('app.ros_poller.time.time', lambda: 2)
+    p.sample()
+    assert p.wan_rate == (600, 1200)
+    assert [w['name'] for w in p.wans] == ['pppoe-out1', 'ether8']
+    # If the logical client is absent, the physical WAN remains discoverable.
+    p.wan_name = ''
+    p._apply_status([ifaces[0], ifaces[2]], [], [], [], extra)
+    assert [w['name'] for w in p.wans] == ['ether1', 'ether8']
