@@ -1,5 +1,6 @@
 """RouterOS connections must not leak into an unrelated system proxy."""
 import json
+import ssl
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
@@ -8,6 +9,21 @@ import httpx
 import pytest
 
 from app.ros_poller import RosPoller, _explain
+
+
+@pytest.mark.parametrize('verify', [True, False])
+def test_private_ca_configuration_is_preserved(monkeypatch, verify):
+    calls = []
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+
+    def create_context(*args, **kwargs):
+        calls.append(kwargs)
+        return context
+
+    monkeypatch.setenv('SSL_CERT_FILE', 'private-router-ca.pem')
+    monkeypatch.setattr(ssl, 'create_default_context', create_context)
+    with RosPoller._client('https://router', 'u', 'p', verify):
+        assert calls == ([{'cafile': 'private-router-ca.pem'}] if verify else [])
 
 
 def test_router_bypasses_environment_proxy(monkeypatch):

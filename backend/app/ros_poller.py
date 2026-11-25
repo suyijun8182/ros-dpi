@@ -99,8 +99,10 @@ class RosPoller:
     @staticmethod
     def _client(url, user, password, verify_tls, *, timeout=10.0) -> httpx.Client:
         # RouterOS 在内网 / VPN 内直连，不能把凭据和请求交给进程的下载代理。
+        # 单独构造 TLS 上下文，继续支持 SSL_CERT_FILE / SSL_CERT_DIR 指定的私有 CA。
+        tls = httpx.create_ssl_context(verify=verify_tls)
         return httpx.Client(base_url=url.rstrip("/") + "/rest", auth=(user, password),
-                            verify=verify_tls, timeout=timeout, follow_redirects=False, trust_env=False)
+                            verify=tls, timeout=timeout, follow_redirects=False, trust_env=False)
 
     def probe(self, url, user, password, verify_tls) -> dict:
         try:
