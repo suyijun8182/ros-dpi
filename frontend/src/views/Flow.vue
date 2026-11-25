@@ -14,6 +14,7 @@
     <div class="panel" v-if="tab === 'live'">
       <div class="panel-b head">
         <div class="info-bar"><span class="ic">i</span><div><b>{{ t('flow.tab.live') }}</b><span>{{ t('flow.info.live') }}</span></div></div>
+        <p class="faint small">{{ t('flow.urlLimit') }}</p>
         <div class="sum" v-if="live">
           <div><span class="muted small">{{ t('flow.active') }}</span><b class="num accent">{{ live.count.toLocaleString() }}</b></div>
           <div><span class="muted small">{{ t('common.up') }}</span><b class="num up">{{ rate(live.rate_up) }}</b></div>
@@ -33,10 +34,11 @@
             <th class="r">{{ t('common.rate') }}</th><th class="r m-hide">{{ t('flow.bytes') }}</th><th class="r m-hide">{{ t('flow.duration') }}</th><th class="m-hide">{{ t('flow.source') }}</th>
           </tr></thead>
           <tbody>
-            <tr v-for="s in live.sessions" :key="s.host + s.remote + s.port + s.proto + s.host_port">
+            <tr v-for="s in liveRows" :key="s.host + s.remote + s.port + s.proto + s.host_port">
               <td><router-link :to="`/hosts/${enc(s.host)}`" class="hl"><span class="dot" :class="{ on: s.online }" />{{ s.host_name }}</router-link>
                 <div class="faint addr small">{{ s.host_ip }}<span v-if="s.host_port">:{{ s.host_port }}</span></div></td>
               <td class="rm"><div class="dn" :title="s.domain || s.remote">{{ s.domain || s.remote }}</div>
+                <a v-if="s.entry" :href="s.entry" target="_blank" rel="noopener noreferrer" class="link small dn" :title="t('flow.entryHint')">{{ s.entry }} ↗</a>
                 <div class="faint addr small" v-if="s.domain && s.remote !== s.domain">{{ s.remote }}</div>
                 <div class="faint small dn" v-else-if="s.asn">{{ countryName(s.asn.country) || s.asn.country }} · {{ s.asn.name }}</div>
                 <div class="small dn route" v-if="s.route" :title="s.route.rule">{{ s.route.group }} · {{ s.route.node }}</div>
@@ -190,6 +192,7 @@ import WorldMap from '../components/WorldMap.vue'
 import { duration, exportCsv } from '../csv.js'
 import { appName, bytes, catColor, countryName, pct, rate } from '../format.js'
 import { ui } from '../state.js'
+import { remoteEntry } from '../remote-link.js'
 
 const TABS = ['live', 'dest', 'proxy']
 const SRC_CLASS = { conn: 'ok', proxy: 'ok', pair: '', ip: 'grey', none: 'warn' }
@@ -203,6 +206,7 @@ const proto = p => ({ 6: 'TCP', 17: 'UDP', 1: 'ICMP', 58: 'ICMPv6', 47: 'GRE', 5
 
 // ---------- 实时连接：10 秒刷新，可暂停 ----------
 const live = ref(null)
+const liveRows = computed(() => (live.value?.sessions || []).map(s => ({ ...s, entry: remoteEntry(s) })))
 const liveQ = ref('')
 const paused = ref(false)
 const limit = ref(100)

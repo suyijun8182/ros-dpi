@@ -1,12 +1,12 @@
 <template>
-  <!-- 多站点（0.7.0）：一个平台管多台 RouterOS。只有一个站点时只显示一句说明和「添加站点」 -->
+  <!-- 单站点也显示编辑入口，默认站点同样可以改名。 -->
   <div class="panel" id="sites">
     <div class="panel-b head">
       <div class="info-bar"><span class="ic">i</span><div><b>{{ t('sites.title') }}</b><span>{{ t(list.length > 1 ? 'sites.infoMulti' : 'sites.infoSingle') }}</span></div></div>
       <div class="sec">{{ t('sites.list') }}<span class="faint small">{{ list.length }}</span><span class="sp" />
         <button class="btn sm primary" :disabled="!loaded" @click="openAdd">{{ t('sites.add') }}</button></div>
     </div>
-    <div class="tbl-wrap" v-if="list.length > 1">
+    <div class="tbl-wrap" v-if="list.length">
       <table class="tbl">
         <thead><tr><th>{{ t('sites.name') }}</th><th>{{ t('sites.status') }}</th><th>{{ t('sites.sources') }}</th>
           <th class="m-hide">{{ t('sites.platformAddr') }}</th><th /></tr></thead>
@@ -57,6 +57,7 @@
         </template>
         <label for="sf-name">{{ t('sites.name') }}</label>
         <input id="sf-name" class="input" v-model.trim="form.name" required maxlength="64" :placeholder="t('sites.namePh')" />
+        <div class="faint small">{{ t('sites.nameHint') }}</div>
         <label for="sf-src">{{ t('sites.sources') }}</label>
         <input id="sf-src" class="input num" v-model="form.sources" placeholder="10.8.0.2" autocomplete="off" />
         <div class="faint small">{{ t('sites.sourcesHint') }}</div>

@@ -116,10 +116,14 @@ IPv6 把 `/ip` 换成 `/ipv6` 再加两条。连接很多（尤其开着 P2P 下
 ```routeros
 /user group add name=rosdpi policy=read,rest-api,api,!write,!policy,!sensitive
 /user add name=rosdpi group=rosdpi password=<强密码> address=192.168.88.10
-/ip service set www-ssl disabled=no   # REST API 走 HTTPS（或用 www 的 HTTP）
+/ip service set www-ssl certificate=<已签发的服务端证书名> disabled=no
 ```
 
 然后在 ROS-DPI 网页 **系统设置 → RouterOS API** 填写地址、用户名和密码，点击「测试连接」，成功后保存。密码框留空会保留当前密码。也可以在 `.env` 或二进制部署的 `/etc/ros-dpi.env` 中填写下列变量，网页填写的值优先。
+
+HTTPS 需要先给 `www-ssl` 绑定有私钥的有效服务端证书，`Certificate=none` 不能正常完成本客户端的 TLS 握手。页面的「校验 HTTPS 证书」仅控制客户端是否校验证书，取消勾选不能代替路由器配置证书。证书生成和签发见 [MikroTik REST API 文档](https://manual.mikrotik.com/docs/developer-guides/rest-api/#set-up-https)。没有证书时，可在可信内网或加密隧道内启用 `/ip service set www disabled=no`，地址相应改为 `http://`（HTTP REST 要求 RouterOS 7.9+）。
+
+地址以 **ROS-DPI 服务器能访问到目标路由器** 为准，可以是该路由器的 LAN 网关地址，也可以是 WireGuard IP；不是必须填隧道 IP。若填中转网关，它必须将相应端口转发到目标路由器的 REST 服务，否则查询到的是中转路由器。只读账号的 `address=` 应允许路由器实际看到的平台来源 IP，经过 NAT 时不一定等于上面的采集目标。
 
 ```
 ROS_URL=https://192.168.88.1
@@ -162,16 +166,18 @@ ROS-DPI 用 LAN 网段判断哪一端是终端。默认是三个私网段，以�
 /ip route add dst-address=192.168.88.10/32 gateway=wg-home
 ```
 
-公钥用 `/interface wireguard print` 查看。家里的 RouterOS 收到 `10.8.0.2` 发来的包后会转给内网的平台（`192.168.88.10`），平台回给 `10.8.0.0/30` 的包走 RouterOS 默认路由回到隧道，一般不用另加路由；平台装在别的机器上、默认网关不是这台 RouterOS 时，给它加一条到 `10.8.0.0/30` 的路由。
+公钥用 `/interface wireguard print` 查看。家里的 RouterOS 收到 `10.8.0.2` 发来的包后会转给内网的平台（`192.168.88.10`），平台回给 `10.8.0.0/30` 的包走 RouterOS 默认路由回到隧道；平台默认网关不是这台 RouterOS 时，要配置返回路由。两端防火墙还需允许对应的转发流量。
 
-公司要让平台读 REST API（可选）时，平台访问的是 `https://10.8.0.2`，公司 RouterOS 的 `www-ssl` 和只读账号的 `address=` 要允许这个来源。
+这里的平台在 ROS_B 内网，拓扑是 `ROS_A → WireGuard → ROS_B → ROS-DPI`。平台地址应填可路由到的服务器 IP `192.168.88.10`；仅当 ROS_B 配置了 UDP/2055、UDP/37008 转发到平台时，才可将 ROS_B 地址作为采集目标。如果 ROS_B 的 masquerade 匹配这些流量，平台看到的源 IP 会变成 ROS_B 的 LAN 地址。应以平台「最近收到数据的地址」为准；多个站点若都被改写成同一地址，当前按源 IP 分站点的方式无法区分它们，需要为采集流量保留不同源 IP（例如调整对应的 NAT 规则并配置回程路由）。
+
+公司要让平台读 REST API（可选）时，平台访问的是 `https://10.8.0.2`。公司 WireGuard peer 的 `allowed-address` 还要允许平台来源（无 NAT 时为 `192.168.88.10/32`），并配置经隧道返回该地址的路由；公司 RouterOS 的防火墙、`www-ssl` 和只读账号的 `address=` 都要允许实际来源。
 
 ### 2. 在平台里登记站点
 
 **系统设置 → 场景与网络 → 站点 → 添加站点**：
 
-- **标识**：用在地址里，例如 `office`，创建后不能改。
-- **源 IP**：公司 RouterOS 发 IPFIX / TZSP 用的地址，走上面的隧道时就是 `10.8.0.2`。
+- **标识**：只填 `office`，不要填 `?site=office`，创建后不能改。显示名称可随时编辑，默认站点也能改名。
+- **源 IP**：平台实际收到 IPFIX / TZSP 时看到的来源；上面的隧道在没有 NAT 时通常是 `10.8.0.2`，有 masquerade 时以平台显示的来源为准。
 - **平台地址（从该站点看）**：公司 RouterOS 访问平台用的地址，这里是 `192.168.88.10`（走隧道可达）。
 - 第一次添加时还要填**家里**那台的源 IP（一般是家里 RouterOS 的内网地址，例如 `192.168.88.1`）。弹窗里会列出最近收到数据的地址，点一下即可填入。
 
@@ -179,11 +185,27 @@ ROS-DPI 用 LAN 网段判断哪一端是终端。默认是三个私网段，以�
 
 ### 3. 在公司那台上执行接入命令
 
-顶部切换到「公司」，**系统设置 → 接入与自检** 生成的命令已经把目标换成平台地址，并给 traffic-flow 加上 `src-address=10.8.0.2`（固定 IPFIX 的源地址）。TZSP 镜像包没有 `src-address` 选项，源地址由路由决定，走隧道时一般也是 `10.8.0.2`；如果「未登记来源」里出现了别的地址，把它也登记到公司站点。
+顶部切换到「公司」，**系统设置 → 接入与自检** 生成的命令会把目标换成平台地址，发送源 IP 默认由路由决定。如果要固定 IPFIX 来源，可手动追加 `src-address=10.8.0.2`，但必须是发送路由器自身拥有的 IP；不能把平台收到的 NAT 后地址直接当成 `src-address`。TZSP 的源地址同样受路由和 NAT 影响；如果「未登记来源」里出现了别的地址，把它也登记到对应站点。
 
 之后在 **运行状态 → RouterOS API** 填公司那台的只读账号（地址填 `https://10.8.0.2`）。LAN 网段、WAN 口、外部数据源也都按站点设置。
 
 ## 排错
+
+### RouterOS 返回 HTTP 400
+
+先看页面返回的具体原因和 `GET /rest/...` 路径。能登录 WebFig 并不等于能访问 REST：账号组需要 `read,api,rest-api`，还要允许平台实际来源 IP。对于支持 `/ip service webserver` 的版本，核对 `rest-plain` / `rest-secure`；HTTP 与 HTTPS 的端口应分别对应 `www` 与 `www-ssl`。
+
+可在 **ROS-DPI 所在服务器** 执行只读请求，`curl` 会提示输入密码：
+
+```bash
+curl --noproxy '*' -i -u rosdpi http://192.168.10.1/rest/system/identity
+```
+
+将地址替换为实际地址；HTTPS 配置对应证书信任。若测试连接成功但轮询仍失败，对页面显示的失败路径再做同样检查。ROS-DPI 的 RouterOS 客户端不再继承系统 HTTP 代理，避免路由器请求被代理接管。报告问题时提供失败路径、状态码和响应原因，不要提供密码或 Authorization。
+
+### 远端链接与完整 URL
+
+实时连接中的链接只是按 TCP/80、TCP/443、UDP/443 推测的站点入口，并非抓到的实际访问 URL，也不证明连接一定使用 HTTP。IPFIX 没有 HTTP 路径；当前镜像解析用于 DNS 和 TLS/QUIC SNI，未采集 HTTP/WS 请求路径。HTTPS/WSS 的路径、查询参数在加密载荷中，不能从域名或 IP 恢复。完整 URL 审计需要应用服务器或具备相应可见性的代理访问日志，不能把补出的 `/` 当成实际访问路径。
 
 **系统设置 → 运行状态** 会显示：
 
