@@ -66,19 +66,20 @@ jobs:
           npm run build
           npm audit --omit=dev --audit-level=high
 
-  # PR 也构建一次镜像（单架构、不推送）：Dockerfile 破损在 PR 阶段就能发现，不用等到 push main
+  # PR 验证两个发布架构（不推送），提前发现仅在 arm64 / QEMU 下出现的构建问题。
   docker-smoke:
     needs: test
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1  # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
           context: .
           push: false
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           cache-from: type=gha
 
   build-and-push:

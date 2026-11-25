@@ -1,5 +1,6 @@
 # ---------- 阶段 1：构建前端 ----------
-FROM node:20-alpine AS frontend
+# 静态前端与目标 CPU 无关；原生构建避免 arm64 的 npm 安装在 QEMU 下停滞。
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend
 WORKDIR /fe
 COPY frontend/package*.json ./
 RUN npm ci
