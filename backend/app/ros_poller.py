@@ -98,8 +98,9 @@ class RosPoller:
 
     @staticmethod
     def _client(url, user, password, verify_tls, *, timeout=10.0) -> httpx.Client:
+        # RouterOS 在内网 / VPN 内直连，不能把凭据和请求交给进程的下载代理。
         return httpx.Client(base_url=url.rstrip("/") + "/rest", auth=(user, password),
-                            verify=verify_tls, timeout=timeout, follow_redirects=False)
+                            verify=verify_tls, timeout=timeout, follow_redirects=False, trust_env=False)
 
     def probe(self, url, user, password, verify_tls) -> dict:
         try:
@@ -432,20 +433,26 @@ def _explain(e: Exception) -> str:
     """常见错误翻译成可操作的提示。"""
     if isinstance(e, httpx.HTTPStatusError):
         code = e.response.status_code
+        # 只显示路径，不回显 URL 中的账号、查询参数或 Authorization。
+        where = f"；请求：{e.request.method} {e.request.url.path}"
         if code == 401:
-            return "RouterOS 拒绝登录（401）：检查 用户名 / 密码，以及该用户的 address 是否允许本机 IP"
+            return "RouterOS 拒绝登录（401）：检查用户名 / 密码、用户组的 rest-api 权限，以及用户的 address 是否允许平台实际来源 IP" + where
         if code == 403:
-            return "RouterOS 权限不足（403）：用户组需要 read、rest-api 权限"
+            return ("RouterOS 拒绝 REST 访问（403）：检查用户组的 read、api、rest-api 权限；"
+                    "若版本支持 /ip service webserver，检查对应的 rest-plain / rest-secure 是否启用" + where)
         detail = _ros_detail(e.response)
         if code == 400:
             return ("RouterOS 返回 HTTP 400" + (f"（{detail}）" if detail else "") +
-                    "：常见原因是地址的协议和端口对不上（http:// 对应 www 服务、默认 80 端口；https:// 对应 www-ssl、默认 443 端口），"
-                    "或地址里多写了路径（只填 http(s)://路由器IP[:端口]），或 RouterOS 版本低于 7.1（REST API 从 7.1 起才有）")
-        return f"RouterOS 返回 HTTP {code}" + (f"（{detail}）" if detail else "")
+                    "：请结合返回原因和请求路径排查。确认协议与端口匹配（HTTP 对应 www，默认 80；HTTPS 对应 www-ssl，默认 443），"
+                    "地址只填 http(s)://路由器IP[:端口]；REST 需要 RouterOS 7.1+，HTTP 需要 7.9+。"
+                    "能登录 WebFig 不代表 REST 可用，用户组需有 read、api、rest-api 权限" + where)
+        hint = "；检查用户组的 read、api、rest-api 权限" if code == 500 and ("not allowed" in detail or "permissions" in detail) else ""
+        return f"RouterOS 返回 HTTP {code}" + (f"（{detail}）" if detail else "") + hint + where
     if isinstance(e, httpx.ConnectError):
         if _cert_verification_failed(e):
             return "RouterOS 的 HTTPS 证书校验失败：路由器用自签证书时，请取消勾选「校验 HTTPS 证书」"
-        return "连不上 RouterOS：检查 RouterOS 地址，并确认 /ip service 中 www-ssl（或 www）已启用"
+        return ("连不上 RouterOS：检查 RouterOS 地址，并确认 /ip service 中 www-ssl（或 www）已启用；"
+                "HTTPS 的 www-ssl 必须绑定证书（Certificate 不能为 none），取消证书校验不能代替配置服务端证书")
     if isinstance(e, httpx.TimeoutException):
         return "连接 RouterOS 超时：检查 RouterOS 地址 与防火墙"
     return f"RouterOS 响应异常（{type(e).__name__}）"
