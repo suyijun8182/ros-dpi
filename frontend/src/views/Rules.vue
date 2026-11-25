@@ -95,22 +95,7 @@
           <button class="btn sm" v-if="isAdmin" @click="reclassify" :disabled="reclassing" :title="t('rules.reclassifyHint')">
             {{ reclassing ? t('rules.reclassifying') : t('rules.reclassify') }}</button>
           <span v-if="reclassRes" class="muted small">{{ reclassRes }}</span></div>
-        <div class="tbl-wrap">
-          <table class="tbl">
-            <thead><tr><th>{{ t('rules.kind') }}</th><th>{{ t('rules.pattern') }}</th><th>{{ t('rules.target') }}</th><th /></tr></thead>
-            <tbody>
-              <tr v-for="r in rules" :key="r.id">
-                <td><span class="tag">{{ t('rules.kinds.' + r.kind) }}</span></td>
-                <td class="addr">{{ r.pattern }}</td>
-                <td>{{ appLabel(r.app_id) }} <span v-if="r.share" class="pill grey" :title="t('rules.cm.share')">{{ t('rules.cm.shared1') }}</span></td>
-                <td class="r acts"><template v-if="isAdmin">
-                  <button class="btn sm" @click="openCm('edit', [], r)">{{ t('common.edit') }}</button>
-                  <button class="btn sm danger" @click="del(r)">{{ t('common.delete') }}</button></template></td>
-              </tr>
-            </tbody>
-          </table>
-          <div v-if="!rules.length" class="empty">{{ t('common.empty') }}</div>
-        </div>
+        <CustomRulesTable :rules="rules" :apps="meta.apps" :editable="isAdmin" @edit="openCm('edit', [], $event)" @delete="del" />
       </div>
     </div>
 
@@ -192,6 +177,7 @@ import AccuracyPanel from '../components/AccuracyPanel.vue'
 import BarList from '../components/BarList.vue'
 import CapturePanel from '../components/CapturePanel.vue'
 import ClassifyModal from '../components/ClassifyModal.vue'
+import CustomRulesTable from '../components/CustomRulesTable.vue'
 import Icon from '../components/Icon.vue'
 import RangeTabs from '../components/RangeTabs.vue'
 import { CAT_GROUP, ago, appName, bytes, catColor, catName, datetime, groupName, pct } from '../format.js'
@@ -283,11 +269,6 @@ watch(() => ui.range, () => { sel.value = {}; loadUnknown(); loadUnm() })
 
 // 下拉框里分类带上所属大类，例如"影音娱乐 · 短视频"
 const catLabel = c => `${groupName(meta.value.groups.find(g => g.id === c.group))} · ${catName(c)}`
-
-function appLabel(id) {
-  const a = meta.value.apps.find(x => x.id === id)
-  return a ? appName(a) : id
-}
 
 // ---------- 归类 / 忽略 / 修改弹窗（debug26） ----------
 const cm = ref(null)                 // { mode, rows, rule }

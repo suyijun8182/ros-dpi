@@ -265,6 +265,7 @@ def test_rule(domain: str):
 
 # ---------- 设置 ----------
 class SettingsIn(BaseModel):
+    dashboard_title: str | None = Field(None, max_length=64)
     ros_url: str | None = Field(None, max_length=255)
     ros_user: str | None = Field(None, max_length=64)
     ros_password: str | None = Field(None, max_length=255)
@@ -355,7 +356,8 @@ def get_settings_api(db: Session = Depends(get_db)):
     eng, poller = site_engine(db), site_poller(db)
     return {
         "site": slug,
-        # 多站点：接入向导用（sniff-target / traffic-flow 目标填平台地址，traffic-flow 加 src-address）
+        "dashboard_title": _get(db, "dashboard_title", ""),
+        # 多站点：接入向导的采集目标，以及平台实际收到的源 IP（可能经过 NAT）。
         "site_platform_addr": (row.platform_addr if row is not None else "") or "",
         "site_sources": sites.split_sources(row.sources if row is not None else ""),
         "lan_cidrs": eng.lan_cidrs_text,
@@ -442,6 +444,8 @@ def put_settings(req: SettingsIn, request: Request, background: BackgroundTasks,
 
 
 def _save_settings(req, request, user, db):
+    if req.dashboard_title is not None:
+        _put(db, "dashboard_title", req.dashboard_title.strip())
     if req.lan_cidrs is not None:
         text = ",".join(x.strip() for x in req.lan_cidrs.replace("\n", ",").split(",") if x.strip())
         bad = [x for x in text.split(",") if x and not parse_cidrs(x)]
@@ -501,6 +505,7 @@ def system(db: Session = Depends(get_db)):
     now = int(time.time())
     return {
         "version": __version__,
+        "dashboard_title": _get(db, "dashboard_title", ""),
         "collector": {
             "flows": st["flows"], "flows_dropped": st["flows_dropped"], "bytes": st["bytes_seen"],
             "last_flow": st["last_flow"], "exporters": st["exporters"],

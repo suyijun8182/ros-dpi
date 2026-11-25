@@ -3,10 +3,10 @@
   <div v-else class="shell" :class="{ mini: ui.side === 'mini', drawer }">
     <!-- 顶栏：logo 区与侧边栏同宽，然后是折叠按钮、面包屑、搜索、工具按钮 -->
     <header class="top">
-      <router-link to="/" class="brand" :aria-label="'ROS-DPI'"><Logo /></router-link>
+      <router-link to="/" class="brand" :aria-label="dashboardTitle || 'ROS-DPI'"><Logo :title="dashboardTitle" /></router-link>
       <button class="btn ghost icon" @click="toggleSide" :aria-label="t('shell.toggleMenu')" :title="t('shell.toggleMenu')"><Icon name="menu" /></button>
       <nav class="crumb" aria-label="breadcrumb">
-        <span class="faint">ROS-DPI</span>
+        <span class="faint brand-crumb" :title="dashboardTitle || 'ROS-DPI'">{{ dashboardTitle || 'ROS-DPI' }}</span>
         <template v-for="c in crumbs" :key="c.label"><Icon name="chevron" :size="14" class="faint" />
           <router-link v-if="c.to" :to="c.to">{{ c.label }}</router-link><b v-else>{{ c.label }}</b></template>
       </nav>
@@ -62,6 +62,7 @@ import { setLang } from './i18n/index.js'
 import { toggleTheme, ui } from './state.js'
 import { L, loadScene } from './scenario.js'
 import { siteState } from './site.js'
+import { dashboardTitle } from './branding.js'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -113,11 +114,15 @@ async function loadInfo() {
       auth.role = me.value.role || ''  // 管理员可能改了你的角色
       try { localStorage.setItem('rosdpi.role', auth.role) } catch (e) { /* ignore */ }
     }
-    if (sys.status === 'fulfilled') status.value = sys.value.collector.flow_ok ? 'on' : 'warn'
+    if (sys.status === 'fulfilled') {
+      status.value = sys.value.collector.flow_ok ? 'on' : 'warn'
+      dashboardTitle.value = sys.value.dashboard_title || ''
+    }
     loadScene()
   } catch (e) { /* 只影响侧边栏底部的小字 */ }
 }
 watch(() => !route.meta.public && !!auth.token && route.name, ok => { if (ok && !version.value) loadInfo() }, { immediate: true })
+watch(dashboardTitle, title => { document.title = title || 'ROS-DPI' })
 
 // 站点离线：停用了，或配了 RouterOS 但连不上，或 3 分钟没收到流量
 const siteDown = s => !s.enabled || (s.ros_enabled && !s.ros_ok && s.ros_last_poll) || !s.receiving
@@ -138,6 +143,7 @@ function logout() {
 </script>
 
 <style scoped>
+.brand-crumb { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user .role { margin-left: 6px; height: 20px; font-size: 11px; }
 .site-pick { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 4px 0 10px; border: 1px solid var(--line);
   border-radius: 10px; background: var(--panel); flex: none; }
@@ -193,7 +199,7 @@ function logout() {
 
 @media (max-width: 860px) {
   .top { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 8px; }
-  .brand, .mini .brand { width: auto; padding-left: 0; }
+  .brand, .mini .brand { width: auto; max-width: 160px; padding-left: 0; }
   .mini .brand :deep(.wm) { display: grid; }
   .crumb { display: none; }
   .search { order: 5; flex-basis: 100%; }

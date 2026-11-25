@@ -247,6 +247,7 @@
       </div>
     </div>
     <SitesPanel v-if="tab === 'system' && isAdmin" class="mb" @changed="loadCfg" />
+    <BrandingSettings v-if="tab === 'system' && isAdmin && s" :title="s.dashboard_title" @saved="s = $event" />
     <div class="grid g2 sys" v-if="tab === 'system'">
       <div class="panel" v-if="s">
         <div class="panel-h">{{ t('settings.network') }}</div>
@@ -306,6 +307,7 @@ import ApiTokensPanel from '../components/ApiTokensPanel.vue'
 import ScenePicker from '../components/ScenePicker.vue'
 import CompliancePanel from '../components/CompliancePanel.vue'
 import SitesPanel from '../components/SitesPanel.vue'
+import BrandingSettings from '../components/BrandingSettings.vue'
 import { siteName, siteState } from '../site.js'
 import { ago, bytes, datetime, pct } from '../format.js'
 
@@ -480,14 +482,14 @@ async function changePw() {
 const guide = computed(() => {
   const ip = hostIp.value || '<HOST_IP>'
   const p = s.value?.ports || { ipfix: 2055, tzsp: 37008 }
-  // 多站点：平台按源 IP 认站点，IPFIX 固定用登记的源 IP 发；TZSP 镜像的源地址由路由决定（走 WireGuard 时一般就是隧道 IP）
+  // 登记的是 NAT 后平台看到的来源，不能用它替路由器选择本地 src-address。
   const multi = siteState.multi
   const src = multi ? ((s.value?.site_sources || [])[0] || '<SRC_IP>') : ''
   const multiNote = multi ? `# ${t('sites.guideNote', { name: siteName(siteState.current), src })}
 ` : ''
   return `${multiNote}# 1. 流量采集（IPFIX）
 /ip traffic-flow set enabled=yes interfaces=all active-flow-timeout=1m inactive-flow-timeout=15s
-/ip traffic-flow target add dst-address=${ip} port=${p.ipfix} version=ipfix${multi ? ` src-address=${src}` : ''}
+/ip traffic-flow target add dst-address=${ip} port=${p.ipfix} version=ipfix
 
 # 2. DNS 嗅探（应用识别）：只镜像 DNS 应答，用来知道"远端 IP 是哪个域名"
 #    output：路由器自己当 DNS 服务器时发给终端的应答
@@ -515,7 +517,7 @@ const guide = computed(() => {
 # 4. 只读 API 账号（可选，用于主机名、WAN 速率）
 /user group add name=rosdpi policy=read,rest-api,api,!write,!policy,!sensitive
 /user add name=rosdpi group=rosdpi password=<强密码> address=${ip}
-/ip service set www-ssl disabled=no
+/ip service set www-ssl certificate=<CERTIFICATE_NAME> disabled=no
 # ${t('settings.rosHttpNote')}`
 })
 
