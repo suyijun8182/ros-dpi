@@ -131,7 +131,7 @@ Open `http://<host>:8080`. The setup wizard has two steps. 打开网页后按两
 | `ADMIN_PASSWORD` | empty | initial password for `admin` |
 | `ROS_URL` / `ROS_USER` / `ROS_PASSWORD` | empty | Default RouterOS REST address and read-only credentials. Web settings take precedence. |
 | `SINGBOX_URL` / `MOSDNS_URL` / `LOCALDNS_URL` / `ADGUARD_URL` | empty | external sources (Clash API, MosDNS audit, LocalDNS query log, AdGuard Home query log) |
-| `SHARE_HUB_URL` | `https://rosdpi.vviip.dpdns.org:8443` | community hub (built in); point it at your own hub for a private community |
+| `SHARE_HUB_URL` | `https://rosdpi.vviip.dpdns.org:18443` | community hub (built in); point it at your own hub for a private community |
 | `SHARE_HUB` | `false` | run this instance as the community hub (only the hub sets `true`) |
 | `SHARE_VERIFY_TLS` | `true` | verify the hub certificate; set `false` only for a private hub with a self-signed cert |
 | `COLLECTOR_ALLOWED` | empty | accept IPFIX / TZSP only from these IPs / CIDRs (usually the router); empty = any |

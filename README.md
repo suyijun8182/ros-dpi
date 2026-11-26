@@ -298,7 +298,7 @@ Linux 一键安装写在 `/etc/ros-dpi.env`，Docker 写在 compose 的 `environ
 |---|---|---|
 | `ASN_DB` / `CHINA_DB` / `IPLIST_DB` / `BM7_DB` / `HAGEZI_DB` / `UT1_DB` / `OUI_DB` | `true` | 各识别库是否自动下载；机器上不了外网时设 `false` |
 | `SHARE_ENABLED` | `true` | 社区共享库总开关（网页可改） |
-| `SHARE_HUB_URL` | `https://rosdpi.vviip.dpdns.org:8443` | 社区主站地址，一般不用改（网页可改） |
+| `SHARE_HUB_URL` | `https://rosdpi.vviip.dpdns.org:18443` | 社区主站地址，一般不用改（网页可改） |
 | `SHARE_VERIFY_TLS` | `true` | 校验主站证书；私有社区用自签证书时才设 `false` |
 | `SHARE_HUB` | `false` | 把本实例当作社区主站（只有主站部署才设 `true`） |
 | `SHARE_TRUSTED_PROXIES` | 空 | 主站用：只信任这些反向代理传来的 `X-Forwarded-For`；留空 = 内网和本机地址 |

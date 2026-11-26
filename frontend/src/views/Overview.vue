@@ -25,7 +25,7 @@
               <dl class="kv">
                 <div><dt>{{ t('overview.model') }}</dt><dd>{{ d.router.board || '-' }}</dd></div>
                 <div><dt>{{ t('overview.rosVersion') }}</dt><dd class="num">{{ d.router.version || '-' }}</dd></div>
-                <div><dt>{{ t('overview.uptime') }}</dt><dd class="num">{{ d.router.uptime || '-' }}</dd></div>
+                <div><dt>{{ t('overview.uptime') }}</dt><dd class="num uptime">{{ routerUptime(d.router.uptime) }}</dd></div>
               </dl>
               <div class="bars" v-if="d.router.ok">
                 <div><span>{{ t('overview.cpu') }}</span><span class="meter" :class="lvl(d.router.cpu_load / 100)"><i :style="{ width: (d.router.cpu_load || 0) + '%' }" /></span><b class="num">{{ d.router.cpu_load ?? '-' }}%</b></div>
@@ -169,7 +169,7 @@ import Icon from '../components/Icon.vue'
 import Modal from '../components/Modal.vue'
 import RangeTabs from '../components/RangeTabs.vue'
 import TrafficPanel from '../components/TrafficPanel.vue'
-import { appName, bytes, catColor, catName, groupName, pct, rate } from '../format.js'
+import { appName, bytes, catColor, catName, groupName, pct, rate, routerUptime } from '../format.js'
 import { usePoll } from '../poll.js'
 import { ui } from '../state.js'
 
@@ -227,6 +227,7 @@ const hostItems = computed(() => d.value.top_hosts.map(h => ({
 .kv div { display: flex; justify-content: space-between; gap: 10px; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv dd.uptime { white-space: normal; }
 .bars { display: grid; gap: 6px; margin-top: auto; font-size: 12.5px; }
 .bars div { display: grid; grid-template-columns: 36px 1fr 40px; align-items: center; gap: 8px; color: var(--muted); }
 .bars b { color: var(--ink); text-align: right; font-weight: 600; }

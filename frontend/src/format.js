@@ -2,6 +2,20 @@ import { i18n } from './i18n/index.js'
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
 
+export function routerUptime(raw) {
+  if (!raw) return '-'
+  if (i18n.global.locale.value !== 'zh') return raw
+  const parts = /^(?:(\d+)w)?(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(raw)
+  if (!parts) return raw
+  const [, weeks, days, hours, minutes, seconds] = parts
+  return [
+    (weeks || days) && `${Number(weeks || 0) * 7 + Number(days || 0)} 天`,
+    hours && `${Number(hours)} 小时`,
+    minutes && `${Number(minutes)} 分`,
+    seconds && `${Number(seconds)} 秒`,
+  ].filter(Boolean).join(' ')
+}
+
 export function bytes(n, digits = 1) {
   n = Number(n) || 0
   let i = 0
